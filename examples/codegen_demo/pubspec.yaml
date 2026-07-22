@@ -1,6 +1,6 @@
 name: codegen_demo
 description: Fixture for dart_cpp_bridge codegen (SYNC/ASYNC/NORMAL).
-version: 0.1.0
+version: 0.1.0-dev.2
 publish_to: none
 
 environment:
