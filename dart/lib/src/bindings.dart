@@ -56,6 +56,9 @@ typedef _DartFnReplyD = void Function(
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeD = void Function(Pointer<Void>);
 
+typedef _DropObjectC = Void Function(Uint64);
+typedef _DropObjectD = void Function(int);
+
 class NativeBindings {
   NativeBindings(this.lib)
       : initDartApi = lib.lookupFunction<_InitDartApiC, _InitDartApiD>('dcb_init_dart_api'),
@@ -69,7 +72,10 @@ class NativeBindings {
         invokeAsync = lib.lookupFunction<_InvokeAsyncC, _InvokeAsyncD>('dcb_invoke_async'),
         streamClose = lib.lookupFunction<_StreamCloseC, _StreamCloseD>('dcb_stream_close'),
         dartFnReply = lib.lookupFunction<_DartFnReplyC, _DartFnReplyD>('dcb_dart_fn_reply'),
-        free = lib.lookupFunction<_FreeC, _FreeD>('dcb_free');
+        free = lib.lookupFunction<_FreeC, _FreeD>('dcb_free'),
+        dropObject = lib.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
+          'dcb_drop_object',
+        );
 
   final DynamicLibrary lib;
   final _InitDartApiD initDartApi;
@@ -82,6 +88,7 @@ class NativeBindings {
   final _StreamCloseD streamClose;
   final _DartFnReplyD dartFnReply;
   final _FreeD free;
+  final Pointer<NativeFunction<Void Function(Pointer<Void>)>> dropObject;
 
   static DynamicLibrary openDefault({String? path}) {
     if (path != null) {

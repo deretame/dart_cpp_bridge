@@ -284,6 +284,24 @@ void main() {
     });
   });
 
+  group('class method export (opaque object)', () {
+    test('Counter increments and retains state', () async {
+      final counter = await bridge.createCounter(initialValue: 10);
+      expect(await counter.value(), 10);
+      await counter.increment(5);
+      expect(await counter.value(), 15);
+      await counter.increment(-3);
+      expect(await counter.value(), 12);
+      counter.dispose();
+    });
+
+    test('Counter disposed twice is no-op', () async {
+      final counter = await bridge.createCounter(initialValue: 0);
+      counter.dispose();
+      counter.dispose(); // Should not throw.
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

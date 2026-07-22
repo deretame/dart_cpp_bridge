@@ -538,6 +538,34 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
+  /// Async demo: create an opaque Counter object on the C++ side.
+  Future<Counter> createCounter({int initialValue = 0}) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..i32(initialValue);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.counterCreate.value,
+      payload: payload.takeBytes(),
+    ));
+    final handle = ByteReader(await c.future).u64();
+    return Counter._(bridge: this, handle: handle);
+  }
+
+  Future<void> _counterIncrement(int handle, int delta) async {
+    final payload = ByteWriter()
+      ..u64(handle)
+      ..i32(delta);
+    await invokeAsyncMethod(MethodId.counterIncrement.value, payload.takeBytes());
+  }
+
+  Future<int> _counterGetValue(int handle) async {
+    final payload = ByteWriter()..u64(handle);
+    return ByteReader(await invokeAsyncMethod(MethodId.counterGetValue.value, payload.takeBytes())).i32();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
@@ -644,6 +672,55 @@ final class DartCppBridge implements Finalizable {
     }
   }
 } 
+
+/// Demo opaque object for hand-written class-method export test (Counter).
+final class Counter implements Finalizable {
+  Counter._({required DartCppBridge bridge, required int handle})
+      : _bridge = bridge,
+        _handle = handle {
+    _finalizer = NativeFinalizer(_bridge._b.dropObject);
+    _finalizer.attach(
+      this,
+      Pointer.fromAddress(_handle).cast<Void>(),
+      externalSize: 64,
+    );
+  }
+
+  final DartCppBridge _bridge;
+  final int _handle;
+  late final NativeFinalizer _finalizer;
+  bool _disposed = false;
+
+  void _ensureAlive() {
+    if (_disposed) {
+      throw StateError('Counter disposed');
+    }
+  }
+
+  /// Increment the counter by [delta].
+  Future<void> increment(int delta) async {
+    _ensureAlive();
+    await _bridge._counterIncrement(_handle, delta);
+  }
+
+  /// Return the current value.
+  Future<int> value() async {
+    _ensureAlive();
+    return _bridge._counterGetValue(_handle);
+  }
+
+  /// Explicitly drop the native object. Optional — [NativeFinalizer] will drop
+  /// it when this Dart object is GC'd or the isolate shuts down.
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _finalizer.detach(this);
+    _bridge._b.dropObject
+        .asFunction<void Function(Pointer<Void>)>()(
+          Pointer.fromAddress(_handle).cast<Void>(),
+        );
+  }
+}
 
 /// Demo struct for hand-written codegen test (Person).
 class Person {

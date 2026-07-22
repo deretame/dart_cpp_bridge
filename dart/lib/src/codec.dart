@@ -100,7 +100,13 @@ enum MethodId {
   nextI128(18),
 
   /// Async list<Person> -> i32 total ages test.
-  totalAges(19);
+  totalAges(19),
+
+  /// Counter class method export test.
+  counterCreate(20),
+  counterIncrement(21),
+  counterGetValue(22),
+  counterDrop(23);
 
   /// Numeric method id on the wire.
   final int value;

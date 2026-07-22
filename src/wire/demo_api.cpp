@@ -1,5 +1,6 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
@@ -142,6 +143,44 @@ void fail_stream(I32Sink sink, std::string message) {
                sink.add(1);
                sink.error(message.empty() ? "fail_stream" : message);
              });
+}
+
+// Counter fixture for hand-written class-method export test.
+class Counter {
+ public:
+  explicit Counter(std::int32_t initial_value) : value_(initial_value) {}
+
+  void increment(std::int32_t delta) { value_ += delta; }
+  std::int32_t value() const { return value_; }
+
+ private:
+  std::int32_t value_;
+};
+
+std::uint64_t counter_create(std::int32_t initial_value) {
+  auto obj = std::make_shared<Counter>(initial_value);
+  return ObjectHandleRegistry::instance().insert(
+      std::static_pointer_cast<void>(obj),
+      [](std::shared_ptr<void>&) {
+        // shared_ptr destruction handles cleanup.
+      });
+}
+
+std::int32_t counter_increment(std::uint64_t handle, std::int32_t delta) {
+  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+  if (!obj) {
+    throw std::runtime_error("Counter handle not found");
+  }
+  obj->increment(delta);
+  return obj->value();
+}
+
+std::int32_t counter_get_value(std::uint64_t handle) {
+  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+  if (!obj) {
+    throw std::runtime_error("Counter handle not found");
+  }
+  return obj->value();
 }
 
 namespace {
@@ -474,6 +513,74 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
               }
               co_return;
             });
+        break;
+      }
+      case MethodId::kCounterCreate: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto initial_value = r.i32();
+        try {
+          auto handle = counter_create(initial_value);
+          ByteWriter w;
+          w.u64(handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "unknown");
+        }
+        break;
+      }
+      case MethodId::kCounterIncrement: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto handle = r.u64();
+        auto delta = r.i32();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle, delta]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = counter_increment(handle, delta);
+                ByteWriter w;
+                w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterGetValue: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto handle = r.u64();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = counter_get_value(handle);
+                ByteWriter w;
+                w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterDrop: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto handle = r.u64();
+        try {
+          ObjectHandleRegistry::instance().drop(handle);
+          ByteWriter w;
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "unknown");
+        }
         break;
       }
       case MethodId::kFailAsync: {

@@ -1,6 +1,7 @@
 #include "dart_cpp_bridge/ffi.h"
 
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
@@ -155,6 +156,10 @@ DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t o
   }
   std::string err = error_msg ? error_msg : "";
   session->complete_dart_fn(reply_id, ok != 0, std::move(bytes), std::move(err));
+}
+
+DCB_API void dcb_drop_object(uint64_t handle) {
+  dcb::ObjectHandleRegistry::instance().drop(handle);
 }
 
 DCB_API void dcb_free(void* p) { std::free(p); }

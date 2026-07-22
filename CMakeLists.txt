@@ -49,6 +49,7 @@ endif()
 
 add_library(dart_cpp_bridge SHARED
   src/runtime/runtime.cpp
+  src/runtime/object_handle.cpp
   src/wire/demo_api.cpp
   src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
@@ -79,6 +80,7 @@ if(DCB_BUILD_SMOKE)
   add_executable(dcb_smoke
     examples/phase1_demo/smoke_main.cpp
     src/runtime/runtime.cpp
+    src/runtime/object_handle.cpp
     src/wire/demo_api.cpp
   )
   target_include_directories(dcb_smoke PRIVATE

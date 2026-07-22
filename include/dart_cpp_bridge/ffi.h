@@ -47,6 +47,10 @@ DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id);
 DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t ok,
                                const uint8_t* payload, size_t payload_len, const char* error_msg);
 
+// Drop an object handle created by a constructor method (e.g. Counter::new()).
+// Safe to call with an invalid/expired handle (no-op).
+DCB_API void dcb_drop_object(uint64_t handle);
+
 DCB_API void dcb_free(void* p);
 
 #ifdef __cplusplus

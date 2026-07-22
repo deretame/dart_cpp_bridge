@@ -90,6 +90,14 @@ enum class MethodId : std::uint32_t {
   kNextI128 = 18,
   // payload: list<Person> — async nested struct list test
   kTotalAges = 19,
+  // payload: initial_value i32 — create Counter, returns handle u64
+  kCounterCreate = 20,
+  // payload: handle u64 + delta i32 — increment Counter
+  kCounterIncrement = 21,
+  // payload: handle u64 — returns i32 value
+  kCounterGetValue = 22,
+  // payload: handle u64 — drop Counter (also used by NativeFinalizer via dcb_drop_object)
+  kCounterDrop = 23,
 };
 
 class ByteWriter {
