@@ -460,7 +460,10 @@ class Counter implements CppOpaqueInterface {
 - 当前阶段（P3）尚未实现，手写测试阶段只做了一个最小 Counter fixture。
 - 导出为 Dart 类的 `class` / `struct` **必须定义在 API 头文件**（codegen 扫描的用户头文件，如 `native/api/*.h`）中，否则 codegen 不会进入 IR。
 - **不支持虚函数、纯虚函数、重载运算符**作为导出方法。
+- **不支持多态继承**：不能把 `class B : public A` 当作 `A` 来传参或返回。
+- **不支持抽象类**：导出的类必须有完整实现，不能是抽象基类。
 - **Opaque 对象（带导出成员函数的类）不支持跨 Isolate 共享**：因为对象句柄注册表是 per-Session 的，不同 Isolate 的 Session 看不到彼此的对象。
+- **Opaque 对象不能按值返回**：成员函数返回 opaque 对象时必须返回 handle（Dart 侧为 `Counter` 等 opaque 类），不能按值拷贝；只有 trivially copyable 的数据类可以按值返回。
 - 但**普通数据类 / 数据结构体**（只有 public 字段、没有导出方法）仍然可以跨 Isolate 使用，因为它们按值编码传递，不依赖句柄生命周期。
 - 暂不支持对象的方法在 Dart 侧被多线程并发调用时的默认加锁（由业务代码自己保证线程安全）。
 
