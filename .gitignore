@@ -32,7 +32,7 @@ CMakeSettings.json
 **/generated_plugin_registrant.dart
 .packages
 
-# Codegen toolchain cache
+# Codegen: legacy in-repo cache (toolchain is user-level now)
 codegen/.cache/
 codegen/toolchain/
 

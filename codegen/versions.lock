@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "note": "Pinned codegen toolchain. Do not use host Python/LLVM. Bootstrap validates sha256 before use.",
+  "python": {
+    "version": "3.13.13",
+    "source": "python-build-standalone",
+    "release_tag": "20260414",
+    "artifact": "install_only_stripped",
+    "platforms": {
+      "windows-x86_64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "b84dce293464cfd366ee792a3d5b42abe5174fc9cce733ba895b3ef467cb3161"
+      },
+      "windows-aarch64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-aarch64-pc-windows-msvc-install_only_stripped.tar.gz",
+        "sha256": "d0facb213d81b8c2133804f8e382d7af92c971c087bfbc77cd8c761a56223eac"
+      },
+      "linux-x86_64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "13d3b6d15f4c3c1dd1955a3c81e06bdc5aef4cb5cb65076878374948be3b0412"
+      },
+      "linux-aarch64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": "0556f1260a9a1fc83210dcecf9d4cbacf17eb4a684541c84798ffc8b4d618c35"
+      },
+      "macos-x86_64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-x86_64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "d34198cd856fa80ebf3aa821fe329a25fab66eeda44f72ac9576591282e31bb7"
+      },
+      "macos-aarch64": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260414/cpython-3.13.13%2B20260414-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": "874f9931ad40dcce38caf6f408aa7e10ec3d0dfce2184ba7af62a965a66b9cd9"
+      }
+    }
+  },
+  "libclang_ng": {
+    "version": "22.1.4.2",
+    "package": "libclang-ng",
+    "pypi": "https://pypi.org/project/libclang-ng/22.1.4.2/",
+    "clang_llvm": "22.1.4",
+    "note": "Bundles clang.cindex + platform native libclang; no separate LLVM install.",
+    "platforms": {
+      "windows-x86_64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-win_amd64.whl",
+        "url": "https://files.pythonhosted.org/packages/bb/21/45df66fce5a3d9cf6b42131d1ecc1423bc1f70b8304e27c1ccb3edd40eae/libclang_ng-22.1.4.2-py3-none-win_amd64.whl",
+        "sha256": "701b282404800d3fcf6d7d408cfd49ebae3e6a85dfb3f80a920deba67000dfa9"
+      },
+      "windows-aarch64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-win_arm64.whl",
+        "url": "https://files.pythonhosted.org/packages/b4/05/de1e969a73ac5412b06bb72361c7763767c87be3d7eee12963afa155621f/libclang_ng-22.1.4.2-py3-none-win_arm64.whl",
+        "sha256": "a76d7748d13fd47c0a604bfb752c5957171dbd715796daad8cd21b19fe5d8bcf"
+      },
+      "linux-x86_64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "url": "https://files.pythonhosted.org/packages/29/5b/465354e121f7e4ab0023e464d1e5f09165460b0aefbd2fe6250a57620e6d/libclang_ng-22.1.4.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "sha256": "be0c485e086b1fd66fab5441df8507e863838f5b84f8cd327fe1eda2e93fb07a"
+      },
+      "linux-aarch64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+        "url": "https://files.pythonhosted.org/packages/61/c6/ef0cae4dfb871eaae6811fb7873c64366ca7065ea1a590e858b267a96514/libclang_ng-22.1.4.2-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+        "sha256": "41ee012632993d0ea25c60da539d63ad858bc3261aaa706e5a4286bd2afc8372"
+      },
+      "macos-x86_64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-macosx_10_9_x86_64.whl",
+        "url": "https://files.pythonhosted.org/packages/9d/79/93dd7866db6c0b37e1f93abfcc8e87879a46ecd5f52ca46673dd63ff605a/libclang_ng-22.1.4.2-py3-none-macosx_10_9_x86_64.whl",
+        "sha256": "25c2a760f92e5a05f70b363e59607a97341a7a778c30b2987cea4bf186c56b57"
+      },
+      "macos-aarch64": {
+        "filename": "libclang_ng-22.1.4.2-py3-none-macosx_11_0_arm64.whl",
+        "url": "https://files.pythonhosted.org/packages/e2/2b/67a2cc4b12c0c7ce1e918e74f0f7fcd40f4509b6a1a1f3b18bd438098b6e/libclang_ng-22.1.4.2-py3-none-macosx_11_0_arm64.whl",
+        "sha256": "959cb4b15883b19e56704a68eceea015674c0830ecea423aa72e920225cf50ef"
+      }
+    }
+  }
+}
