@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace dcb {
 
@@ -53,6 +55,10 @@ enum class MethodId : std::uint32_t {
   kSumFixedFour = 14,
   // payload: string + i32 — async struct test
   kGreet = 15,
+  // payload: map<string, i32> — async map test
+  kScoreTotal = 16,
+  // payload: set<i32> — async set test
+  kSetSum = 17,
 };
 
 class ByteWriter {
@@ -93,6 +99,23 @@ class ByteWriter {
   template <typename T, std::size_t N, typename WriteValue>
   void arr(const std::array<T, N>& v, WriteValue write_value) {
     for (const auto& item : v) {
+      write_value(item);
+    }
+  }
+
+  template <typename K, typename V, typename WriteKey, typename WriteValue>
+  void map(const std::unordered_map<K, V>& m, WriteKey write_key, WriteValue write_value) {
+    u32(static_cast<std::uint32_t>(m.size()));
+    for (const auto& [k, v] : m) {
+      write_key(k);
+      write_value(v);
+    }
+  }
+
+  template <typename T, typename WriteValue>
+  void set(const std::unordered_set<T>& s, WriteValue write_value) {
+    u32(static_cast<std::uint32_t>(s.size()));
+    for (const auto& item : s) {
       write_value(item);
     }
   }
@@ -179,6 +202,30 @@ class ByteReader {
     std::array<T, N> result{};
     for (std::size_t i = 0; i < N; ++i) {
       result[i] = read_value();
+    }
+    return result;
+  }
+
+  template <typename K, typename V, typename ReadKey, typename ReadValue>
+  std::unordered_map<K, V> map(ReadKey read_key, ReadValue read_value) {
+    auto n = u32();
+    std::unordered_map<K, V> result;
+    result.reserve(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+      auto k = read_key();
+      auto v = read_value();
+      result.emplace(std::move(k), std::move(v));
+    }
+    return result;
+  }
+
+  template <typename T, typename ReadValue>
+  std::unordered_set<T> set(ReadValue read_value) {
+    auto n = u32();
+    std::unordered_set<T> result;
+    result.reserve(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+      result.insert(read_value());
     }
     return result;
   }

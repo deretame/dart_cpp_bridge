@@ -88,7 +88,13 @@ enum MethodId {
   sumFixedFour(14),
 
   /// Async struct Person -> string greet test.
-  greet(15);
+  greet(15),
+
+  /// Async map<string, i32> -> i32 total test.
+  scoreTotal(16),
+
+  /// Async set<i32> -> i32 sum test.
+  setSum(17);
 
   /// Numeric method id on the wire.
   final int value;
@@ -159,6 +165,23 @@ class ByteWriter {
   /// Append a fixed-length array of `i32` (without length prefix).
   void writeFixedArrayI32(List<int> v) {
     for (final x in v) {
+      i32(x);
+    }
+  }
+
+  /// Append a length-prefixed map<string, i32>.
+  void writeMapStringToI32(Map<String, int> m) {
+    u32(m.length);
+    m.forEach((k, v) {
+      str(k);
+      i32(v);
+    });
+  }
+
+  /// Append a length-prefixed set<i32>.
+  void writeSetI32(Set<int> s) {
+    u32(s.length);
+    for (final x in s) {
       i32(x);
     }
   }
@@ -263,6 +286,26 @@ class ByteReader {
   /// Read a fixed-length array of `i32` (without length prefix).
   List<int> readFixedArrayI32(int n) {
     return List.generate(n, (_) => i32());
+  }
+
+  /// Read a length-prefixed map<string, i32>.
+  Map<String, int> readMapStringToI32() {
+    final n = u32();
+    final result = <String, int>{};
+    for (var i = 0; i < n; i++) {
+      result[str()] = i32();
+    }
+    return result;
+  }
+
+  /// Read a length-prefixed set<i32>.
+  Set<int> readSetI32() {
+    final n = u32();
+    final result = <int>{};
+    for (var i = 0; i < n; i++) {
+      result.add(i32());
+    }
+    return result;
   }
 
   /// Read `u32` length + UTF-8 string.

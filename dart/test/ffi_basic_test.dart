@@ -233,6 +233,27 @@ void main() {
     });
   });
 
+  group('unordered_map<K, V> ↔ Map<K, V>', () {
+    test('scoreTotal sums map values', () async {
+      final scores = {'Alice': 10, 'Bob': 20, 'Charlie': 30};
+      expect(await bridge.scoreTotal(scores), 60);
+    });
+
+    test('scoreTotal handles empty map', () async {
+      expect(await bridge.scoreTotal({}), 0);
+    });
+  });
+
+  group('unordered_set<T> ↔ Set<T>', () {
+    test('setSum sums set values', () async {
+      expect(await bridge.setSum({1, 2, 3, 4}), 10);
+    });
+
+    test('setSum handles empty set', () async {
+      expect(await bridge.setSum(<int>{}), 0);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');
