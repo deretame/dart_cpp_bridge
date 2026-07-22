@@ -143,6 +143,20 @@ DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {
   }
 }
 
+DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t ok,
+                               const uint8_t* payload, size_t payload_len, const char* error_msg) {
+  auto session = dcb::SessionRegistry::instance().get(session_id);
+  if (!session) {
+    return;
+  }
+  std::vector<std::uint8_t> bytes;
+  if (payload != nullptr && payload_len > 0) {
+    bytes.assign(payload, payload + payload_len);
+  }
+  std::string err = error_msg ? error_msg : "";
+  session->complete_dart_fn(reply_id, ok != 0, std::move(bytes), std::move(err));
+}
+
 DCB_API void dcb_free(void* p) { std::free(p); }
 
 }  // extern "C"

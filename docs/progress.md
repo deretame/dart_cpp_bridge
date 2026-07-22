@@ -16,6 +16,8 @@
 
 当前仓库是 **独立实验工程**，与 Breeze 等业务仓解耦。
 
+Dart 测试：`cd dart && dart test`（约 **36** 例，含 DartFn）。
+
 ---
 
 ## 2. 已落地（相对设计 §0 锁定决策）
@@ -35,6 +37,7 @@
 | Stream 关订阅后 add 静默丢 | ✅ | `dcb_stream_close` |
 | NativeFinalizer 自动关 session | ✅ | 对齐 FRB：日常可不手动 dispose |
 | 可选 `dispose` / 进程 `shutdown` | ✅ | worker 勿调 shutdown |
+| **DartFn 反向调用（参数式）** | ✅ | `callDartHello(cb)`；C++ `co_await cb("Tom")`；sync/async 回调 |
 
 ### 2.2 通道与错误
 

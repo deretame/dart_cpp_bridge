@@ -22,6 +22,9 @@ enum class MsgType : std::uint8_t {
   kStreamData = 4,
   kStreamEnd = 5,
   kStreamErr = 6,
+  // C++ → Dart: invoke a callback registered for this session (FRB DartFn style).
+  // frame.request_id = dartfn_reply_id; payload = fn_id u64 + args...
+  kDartFnCall = 7,
 };
 
 enum class MethodId : std::uint32_t {
@@ -32,6 +35,8 @@ enum class MethodId : std::uint32_t {
   kEcho = 5,
   kFailAsync = 6,
   kFailStream = 7,
+  // payload: fn_id u64 — DartFn(String)->String (sync or async on Dart side)
+  kCallDartHello = 8,
 };
 
 class ByteWriter {

@@ -41,6 +41,12 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id);
 
+// Dart finished a DartFn invocation started by C++ (ok=1 success).
+// payload is the encoded return value (e.g. string) on success; ignored on error
+// when error_msg is non-NULL.
+DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t ok,
+                               const uint8_t* payload, size_t payload_len, const char* error_msg);
+
 DCB_API void dcb_free(void* p);
 
 #ifdef __cplusplus

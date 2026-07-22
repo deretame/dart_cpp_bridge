@@ -46,7 +46,10 @@ final class DartCppBridge implements Finalizable {
   final Pointer<Uint64> _finalizerToken;
   final Map<int, Completer<Uint8List>> _pending = {};
   final Map<int, StreamController<int>> _streams = {};
+  /// FRB-style: callbacks passed into C++ calls, keyed by fn_id for this session.
+  final Map<int, FutureOr<String> Function(String)> _dartFns = {};
   int _nextId = 1;
+  int _nextFnId = 1;
   StreamSubscription<dynamic>? _sub;
   bool _alive = true;
   bool _finalizerDetached = false;
@@ -116,6 +119,7 @@ final class DartCppBridge implements Finalizable {
       if (!s.isClosed) s.close();
     }
     _streams.clear();
+    _dartFns.clear();
 
     _detachFinalizer();
     _b.sessionClose(_sessionId);
@@ -170,9 +174,72 @@ final class DartCppBridge implements Finalizable {
           s.addError(StateError(r.str()));
           s.close();
         }
+      case MsgType.dartFnCall:
+        // fire-and-forget async handle; reply goes back via FFI.
+        unawaited(_handleDartFnCall(frame));
       case MsgType.request:
         break;
     }
+  }
+
+  Future<void> _handleDartFnCall(Frame frame) async {
+    final replyId = frame.requestId;
+    try {
+      final r = ByteReader(frame.payload);
+      final fnId = r.u64();
+      final arg = r.str();
+      final fn = _dartFns[fnId];
+      if (fn == null) {
+        _replyDartFn(replyId, ok: false, error: 'unknown dart fn $fnId');
+        return;
+      }
+      final result = await fn(arg);
+      final payload = ByteWriter()..str(result);
+      _replyDartFn(replyId, ok: true, payload: payload.takeBytes());
+    } catch (e) {
+      _replyDartFn(replyId, ok: false, error: e.toString());
+    }
+  }
+
+  void _replyDartFn(
+    int replyId, {
+    required bool ok,
+    Uint8List? payload,
+    String? error,
+  }) {
+    final p = payload ?? Uint8List(0);
+    final Pointer<Uint8> ptr = p.isEmpty ? nullptr : malloc<Uint8>(p.length);
+    if (p.isNotEmpty) {
+      ptr.asTypedList(p.length).setAll(0, p);
+    }
+    final Pointer<Utf8> errPtr = error == null ? nullptr : error.toNativeUtf8();
+    try {
+      _b.dartFnReply(
+        _sessionId,
+        replyId,
+        ok ? 1 : 0,
+        ptr,
+        p.length,
+        errPtr,
+      );
+    } finally {
+      if (ptr != nullptr) {
+        malloc.free(ptr);
+      }
+      if (errPtr != nullptr) {
+        malloc.free(errPtr);
+      }
+    }
+  }
+
+  int _registerDartFn(FutureOr<String> Function(String) fn) {
+    final id = _nextFnId++;
+    _dartFns[id] = fn;
+    return id;
+  }
+
+  void _unregisterDartFn(int id) {
+    _dartFns.remove(id);
   }
 
   Uint8List _invokeSyncRaw(Uint8List req) {
@@ -346,5 +413,32 @@ final class DartCppBridge implements Finalizable {
     _pending[0] = c;
     _invokeAsyncRaw(Uint8List.fromList([1, 2, 3, 4, 5]));
     await c.future;
+  }
+
+  /// FRB-style reverse call: pass a Dart callback into C++.
+  ///
+  /// ```dart
+  /// final s = await bridge.callDartHello((name) => 'Hello, $name!');
+  /// // s == 'Hello, Tom!'
+  /// ```
+  ///
+  /// [dartCallback] may be sync or `async` (`FutureOr<String>`).
+  Future<String> callDartHello(FutureOr<String> Function(String name) dartCallback) async {
+    final fnId = _registerDartFn(dartCallback);
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..u64(fnId);
+    try {
+      _invokeAsyncRaw(makeFrame(
+        type: MsgType.request,
+        requestId: id,
+        methodId: MethodId.callDartHello.value,
+        payload: payload.takeBytes(),
+      ));
+      return ByteReader(await c.future).str();
+    } finally {
+      _unregisterDartFn(fnId);
+    }
   }
 }

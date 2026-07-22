@@ -166,6 +166,28 @@ void main() {
     });
   });
 
+  group('DartFn reverse call (FRB-style)', () {
+    test('sync dart callback String->String', () async {
+      final out = await bridge.callDartHello((name) => 'Hello, $name!');
+      expect(out, 'Hello, Tom!');
+    });
+
+    test('async dart callback', () async {
+      final out = await bridge.callDartHello((name) async {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return 'Hi, $name';
+      });
+      expect(out, 'Hi, Tom');
+    });
+
+    test('dart callback throw surfaces to C++ then Dart', () async {
+      await expectLater(
+        bridge.callDartHello((_) => throw StateError('cb-boom')),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('cb-boom'))),
+      );
+    });
+  });
+
   group('multi isolate (per-isolate session, shared runtime)', () {
     test('background isolates can async add', () async {
       final results = await Future.wait([

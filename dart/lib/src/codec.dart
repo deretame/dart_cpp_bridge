@@ -10,7 +10,8 @@ enum MsgType {
   responseErr(3),
   streamData(4),
   streamEnd(5),
-  streamErr(6);
+  streamErr(6),
+  dartFnCall(7);
 
   final int value;
   const MsgType(this.value);
@@ -30,7 +31,8 @@ enum MethodId {
   ticks(4),
   echo(5),
   failAsync(6),
-  failStream(7);
+  failStream(7),
+  callDartHello(8);
 
   final int value;
   const MethodId(this.value);
@@ -55,6 +57,9 @@ class ByteWriter {
     final bd = ByteData(8)..setUint64(0, v, Endian.little);
     _b.add(bd.buffer.asUint8List());
   }
+
+  // expose for composing payloads
+  void writeRaw(List<int> data) => _b.add(data);
 
   void i32(int v) {
     final bd = ByteData(4)..setInt32(0, v, Endian.little);

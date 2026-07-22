@@ -42,6 +42,31 @@ void Runtime::stop() {
   }
 }
 
+void Session::dispose() {
+  generation_.fetch_add(1, std::memory_order_acq_rel);
+  std::vector<std::shared_ptr<std::promise<DartFnReply>>> abandoned;
+  {
+    std::lock_guard lock(dart_fn_mu_);
+    for (auto& kv : dart_fn_pending_) {
+      abandoned.push_back(std::move(kv.second));
+    }
+    dart_fn_pending_.clear();
+  }
+  for (auto& p : abandoned) {
+    if (!p) {
+      continue;
+    }
+    try {
+      DartFnReply r;
+      r.ok = false;
+      r.error = "session disposed";
+      p->set_value(std::move(r));
+    } catch (...) {
+      // already satisfied
+    }
+  }
+}
+
 void Session::set_stream_open(std::uint64_t stream_id, bool open) {
   std::lock_guard lock(streams_mu_);
   if (open) {
@@ -55,6 +80,62 @@ bool Session::stream_open(std::uint64_t stream_id) const {
   std::lock_guard lock(streams_mu_);
   auto it = streams_open_.find(stream_id);
   return it != streams_open_.end() && it->second;
+}
+
+std::vector<std::uint8_t> Session::invoke_dart_fn_blocking(std::uint64_t generation,
+                                                           std::uint64_t fn_id,
+                                                           std::vector<std::uint8_t> args_payload) {
+  if (!alive(generation)) {
+    throw std::runtime_error("DartFn: session generation expired");
+  }
+
+  auto promise = std::make_shared<std::promise<DartFnReply>>();
+  auto future = promise->get_future();
+  const auto reply_id = next_dart_fn_reply_.fetch_add(1, std::memory_order_relaxed);
+  {
+    std::lock_guard lock(dart_fn_mu_);
+    dart_fn_pending_.emplace(reply_id, promise);
+  }
+
+  ByteWriter payload;
+  payload.u64(fn_id);
+  if (!args_payload.empty()) {
+    payload.bytes(args_payload.data(), args_payload.size());
+  }
+  auto frame = make_frame(MsgType::kDartFnCall, reply_id, /*method_id=*/0, payload.raw());
+  try_post(generation, frame);
+
+  auto reply = future.get();
+  if (!reply.ok) {
+    throw std::runtime_error(reply.error.empty() ? "DartFn failed" : reply.error);
+  }
+  return std::move(reply.payload);
+}
+
+void Session::complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
+                               std::string error) {
+  std::shared_ptr<std::promise<DartFnReply>> promise;
+  {
+    std::lock_guard lock(dart_fn_mu_);
+    auto it = dart_fn_pending_.find(reply_id);
+    if (it == dart_fn_pending_.end()) {
+      return;
+    }
+    promise = std::move(it->second);
+    dart_fn_pending_.erase(it);
+  }
+  if (!promise) {
+    return;
+  }
+  DartFnReply r;
+  r.ok = ok;
+  r.payload = std::move(payload);
+  r.error = std::move(error);
+  try {
+    promise->set_value(std::move(r));
+  } catch (...) {
+    // already satisfied
+  }
 }
 
 SessionRegistry& SessionRegistry::instance() {

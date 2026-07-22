@@ -36,6 +36,23 @@ typedef _InvokeAsyncD = void Function(int, Pointer<Uint8>, int);
 typedef _StreamCloseC = Void Function(Uint64, Uint64);
 typedef _StreamCloseD = void Function(int, int);
 
+typedef _DartFnReplyC = Void Function(
+  Uint64,
+  Uint64,
+  Uint8,
+  Pointer<Uint8>,
+  IntPtr,
+  Pointer<Utf8>,
+);
+typedef _DartFnReplyD = void Function(
+  int,
+  int,
+  int,
+  Pointer<Uint8>,
+  int,
+  Pointer<Utf8>,
+);
+
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeD = void Function(Pointer<Void>);
 
@@ -51,6 +68,7 @@ class NativeBindings {
         invokeSync = lib.lookupFunction<_InvokeSyncC, _InvokeSyncD>('dcb_invoke_sync'),
         invokeAsync = lib.lookupFunction<_InvokeAsyncC, _InvokeAsyncD>('dcb_invoke_async'),
         streamClose = lib.lookupFunction<_StreamCloseC, _StreamCloseD>('dcb_stream_close'),
+        dartFnReply = lib.lookupFunction<_DartFnReplyC, _DartFnReplyD>('dcb_dart_fn_reply'),
         free = lib.lookupFunction<_FreeC, _FreeD>('dcb_free');
 
   final DynamicLibrary lib;
@@ -62,6 +80,7 @@ class NativeBindings {
   final _InvokeSyncD invokeSync;
   final _InvokeAsyncD invokeAsync;
   final _StreamCloseD streamClose;
+  final _DartFnReplyD dartFnReply;
   final _FreeD free;
 
   static DynamicLibrary openDefault({String? path}) {

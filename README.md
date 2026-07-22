@@ -18,6 +18,7 @@
 | sync / async / normal / stream | ✅ |
 | NativeFinalizer 自动关 session | ✅ |
 | Dart 测试（含多 isolate async） | ✅ |
+| DartFn 反向调用（调用时传回调，类 FRB） | ✅ |
 | Codegen / Native Assets hook | ⏳ |
 
 Demo API：
@@ -26,6 +27,7 @@ Demo API：
 - `add(a,b)` async (`Lazy`) → `Future<int>`
 - `sleepTest()` normal（`spawn_blocking`）→ `Future<String>`
 - `ticks(count, intervalMs)` stream → `Stream<int>`
+- `callDartHello((name) => 'Hello, $name!')` DartFn 反向 → `Future<String>`
 
 ## 目录
 

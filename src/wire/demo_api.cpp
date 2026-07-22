@@ -1,4 +1,5 @@
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
@@ -53,6 +54,11 @@ void fail_stream(I32Sink sink, std::string message) {
                sink.add(1);
                sink.error(message.empty() ? "fail_stream" : message);
              });
+}
+
+// FRB-style: callback passed in. Blocks caller thread (use on thread_pool only).
+std::string call_dart_hello(const DartFnStringToString& dart_callback) {
+  return dart_callback.call("Tom");
 }
 
 namespace {
@@ -189,6 +195,33 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
         auto msg = r.str();
         auto sink = make_i32_sink(session.get(), req, gen, method);
         fail_stream(std::move(sink), std::move(msg));
+        break;
+      }
+      case MethodId::kCallDartHello: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto fn_id = r.u64();
+        DartFnStringToString cb(session, gen, fn_id);
+        // Run on thread_pool: DartFn.call blocks until Dart replies.
+        auto* io = &Runtime::instance().io();
+        asio::post(Runtime::instance().pool(),
+                   [session, gen, req, method, cb = std::move(cb), io]() {
+                     try {
+                       auto out = call_dart_hello(cb);
+                       asio::post(*io, [session, gen, req, method, out = std::move(out)]() {
+                         ByteWriter w;
+                         w.str(out);
+                         post_ok(session, gen, req, method, w.raw());
+                       });
+                     } catch (const std::exception& e) {
+                       asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
+                         post_err(session, gen, req, method, msg);
+                       });
+                     } catch (...) {
+                       asio::post(*io, [session, gen, req, method]() {
+                         post_err(session, gen, req, method, "unknown");
+                       });
+                     }
+                   });
         break;
       }
       default:

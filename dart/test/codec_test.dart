@@ -55,6 +55,14 @@ void main() {
         expect(f.type, t);
       }
     });
+
+    test('dartFnCall msg type', () {
+      final f = parseFrame(
+        makeFrame(type: MsgType.dartFnCall, requestId: 9, methodId: 0),
+      );
+      expect(f.type, MsgType.dartFnCall);
+      expect(f.requestId, 9);
+    });
   });
 
   group('codec errors', () {
