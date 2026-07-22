@@ -6,6 +6,7 @@
 
 - 设计全文：[`docs/frb_and_cpp_bridge_design.md`](docs/frb_and_cpp_bridge_design.md)
 - **实现进度**：[`docs/progress.md`](docs/progress.md)
+- **已知问题**：[`docs/known_issues.md`](docs/known_issues.md)（含 DartFn io 挂起未达成的原因）
 
 ## 当前状态（Phase 1）
 

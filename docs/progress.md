@@ -1,6 +1,7 @@
 # dart_cpp_bridge 实现进度
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
+> **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
 > 更新日期：2026-07-22
 
 ---
@@ -16,7 +17,7 @@
 
 当前仓库是 **独立实验工程**，与 Breeze 等业务仓解耦。
 
-Dart 测试：`cd dart && dart test`（约 **36** 例，含 DartFn）。
+Dart 测试：`cd dart && dart test`（约 **38** 例，含 DartFn sync/async 入口）。
 
 ---
 
@@ -44,7 +45,7 @@ Dart 测试：`cd dart && dart test`（约 **36** 例，含 DartFn）。
 | C++ API | 行为 | 谁承担风险 |
 |---------|------|------------|
 | `callSync` / `callDartHelloSync` | **当前线程**阻塞直到 Dart reply | 若在 **io 线程**调用，会卡住调度器——用户自负 |
-| `callDartHello`（async 入口） | 在 **thread_pool** 上阻塞等，**不堵 io** | 占用 pool 线程；与 normal 任务共享池 |
+| `callDartHello`（async 入口） | 在 **thread_pool** 上阻塞等，**不堵 io** | 占用 pool；**尚未**做到 io 上 `co_await` 挂起（见 [known_issues.md](./known_issues.md) §1） |
 
 Dart 侧回调无论 sync/async 都在 **Isolate 事件循环**执行，不在 C++ 线程池里跑。
 
@@ -76,7 +77,7 @@ Dart 侧回调无论 sync/async 都在 **Isolate 事件循环**执行，不在 C
 | CMake + FetchContent asio / async-simple | ✅ |
 | vendored `third_party/dart_api` | ✅（`cmake/fetch_dart_api.cmake`） |
 | `dcb_smoke` 原生冒烟 | ✅ |
-| `dart test`（codec + FFI） | ✅ **32** 用例量级 |
+| `dart test`（codec + FFI） | ✅ **38** 例量级 |
 | 远端固定版 Python/libclang codegen | ❌ |
 | Native Assets hook | ❌ |
 | examples 用户模板 + PUBLIC 暴露依赖 | ⏳ 骨架有，未产品化 |
@@ -127,12 +128,13 @@ dart test
 
 ## 5. 下一步建议
 
-1. **Phase 2**：`versions.lock` + 远端 Python/libclang + 解析窄头 → 生成 wire/Dart（替换手写 demo_api）。
-2. **Phase 3**：Native Assets `hook/build.dart`；完善 CMake export / examples 模板。
-3. 可选加固：`spawn_blocking` Lazy 路径稳定化与单测；Finalizer 行为专项说明；跨平台 CI。
+1. **优先技术债**（[known_issues.md](./known_issues.md) §1）：打通 async_simple + asio 的「外部完成 → resume Lazy」，让 DartFn async 真正挂在 io 上。  
+2. **Phase 2**：`versions.lock` + 远端 Python/libclang + 解析窄头 → 生成 wire/Dart。  
+3. **Phase 3**：Native Assets hook；CMake export / examples。  
+4. 可选：Finalizer 说明、跨平台 CI。
 
 ---
 
 ## 6. 一句话
 
-**Phase 1 手写桥已跑通四通道、多 Isolate 异步、自动 session 回收与较完整 Dart 测试；codegen 与 hook 尚未开始。**
+**Phase 1 手写桥已跑通四通道、多 Isolate、DartFn 与较完整测试；codegen/hook 未开始；DartFn 的 io 协程挂起等待仍是未解技术债（现用 pool 阻塞顶上）。**
