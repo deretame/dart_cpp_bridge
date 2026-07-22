@@ -83,6 +83,15 @@ DCB_API void dcb_session_close(uint64_t session_id) {
   dcb::SessionRegistry::instance().close(session_id);
 }
 
+DCB_API void dcb_session_finalizer(void* token) {
+  if (token == nullptr) {
+    return;
+  }
+  const auto id = *static_cast<uint64_t*>(token);
+  std::free(token);
+  dcb::SessionRegistry::instance().close(id);
+}
+
 DCB_API void dcb_shutdown(void) {
   dcb::SessionRegistry::instance().close_all();
   dcb::Runtime::instance().set_dart_post(nullptr, nullptr);

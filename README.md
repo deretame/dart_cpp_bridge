@@ -95,6 +95,11 @@ dart test
 
 模型：**Runtime 进程唯一；Session 每 Isolate 一个**（后台 isolate 也可 async/stream）。
 
+生命周期（对齐 FRB 思路）：
+- isolate 使用前 `init`
+- **一般不必手动 `dispose`**：`NativeFinalizer` 在对象不可达 / isolate 结束时自动 `session_close`
+- 可选 `dispose` 立即释放；`shutdown` 仅主 isolate 退出时停整个 runtime
+
 默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
 
 ```powershell

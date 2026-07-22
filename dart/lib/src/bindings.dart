@@ -40,19 +40,24 @@ typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeD = void Function(Pointer<Void>);
 
 class NativeBindings {
-  NativeBindings(DynamicLibrary lib)
+  NativeBindings(this.lib)
       : initDartApi = lib.lookupFunction<_InitDartApiC, _InitDartApiD>('dcb_init_dart_api'),
         sessionOpen = lib.lookupFunction<_SessionOpenC, _SessionOpenD>('dcb_session_open'),
         sessionClose = lib.lookupFunction<_SessionCloseC, _SessionCloseD>('dcb_session_close'),
+        sessionFinalizer = lib.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
+          'dcb_session_finalizer',
+        ),
         shutdown = lib.lookupFunction<_ShutdownC, _ShutdownD>('dcb_shutdown'),
         invokeSync = lib.lookupFunction<_InvokeSyncC, _InvokeSyncD>('dcb_invoke_sync'),
         invokeAsync = lib.lookupFunction<_InvokeAsyncC, _InvokeAsyncD>('dcb_invoke_async'),
         streamClose = lib.lookupFunction<_StreamCloseC, _StreamCloseD>('dcb_stream_close'),
         free = lib.lookupFunction<_FreeC, _FreeD>('dcb_free');
 
+  final DynamicLibrary lib;
   final _InitDartApiD initDartApi;
   final _SessionOpenD sessionOpen;
   final _SessionCloseD sessionClose;
+  final Pointer<NativeFunction<Void Function(Pointer<Void>)>> sessionFinalizer;
   final _ShutdownD shutdown;
   final _InvokeSyncD invokeSync;
   final _InvokeAsyncD invokeAsync;

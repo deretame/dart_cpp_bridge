@@ -7,26 +7,18 @@ import 'package:test/test.dart';
 import 'support/library_path.dart';
 
 /// Top-level entry for worker isolates (must not capture main bridge).
+/// No manual dispose — NativeFinalizer closes the session when the isolate ends.
 Future<int> _workerAdd(String libraryPath, int a, int b) {
   return Isolate.run(() async {
     final bridge = await DartCppBridge.init(libraryPath: libraryPath);
-    try {
-      return await bridge.add(a, b);
-    } finally {
-      // Close only this isolate's session; keep process runtime alive.
-      bridge.dispose();
-    }
+    return bridge.add(a, b);
   });
 }
 
 Future<List<int>> _workerTicks(String libraryPath) {
   return Isolate.run(() async {
     final bridge = await DartCppBridge.init(libraryPath: libraryPath);
-    try {
-      return await bridge.ticks(count: 3, intervalMs: 5).toList();
-    } finally {
-      bridge.dispose();
-    }
+    return bridge.ticks(count: 3, intervalMs: 5).toList();
   });
 }
 

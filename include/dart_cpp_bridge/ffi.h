@@ -27,6 +27,10 @@ DCB_API uint64_t dcb_session_open(int64_t reply_native_port);
 // Close one session (does not stop runtime).
 DCB_API void dcb_session_close(uint64_t session_id);
 
+// NativeFinalizer callback: [token] points to a malloc'd uint64_t session_id.
+// Frees [token] after close. Safe if session already closed.
+DCB_API void dcb_session_finalizer(void* token);
+
 // Close all sessions + stop runtime.
 DCB_API void dcb_shutdown(void);
 

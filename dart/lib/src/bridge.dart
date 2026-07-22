@@ -10,36 +10,58 @@ import 'codec.dart';
 
 /// Dart ↔ C++ bridge.
 ///
-/// - **Runtime**: process-wide (shared asio loop / thread pool).
-/// - **Session**: per-isolate (own [ReceivePort] so async works on workers).
-final class DartCppBridge {
+/// - **Runtime**: process-wide.
+/// - **Session**: per-isolate (own reply port).
+///
+/// Lifecycle (aligned with FRB style):
+/// - Call [init] when the isolate starts using the bridge.
+/// - **No need to manually [dispose]** in normal use: a [NativeFinalizer]
+///   closes the native session when this object becomes unreachable or the
+///   isolate shuts down (same idea as FRB's finalizer / isolate cleanup).
+/// - Optional [dispose] for prompt cleanup (e.g. tests).
+/// - [shutdown] stops the **process-wide** runtime — only call from the main
+///   isolate when the app exits, never from short-lived workers.
+final class DartCppBridge implements Finalizable {
   DartCppBridge._({
     required NativeBindings bindings,
     required int sessionId,
     required ReceivePort receivePort,
+    required Pointer<Uint64> finalizerToken,
   })  : _b = bindings,
         _sessionId = sessionId,
-        _rp = receivePort {
+        _rp = receivePort,
+        _finalizerToken = finalizerToken {
     _sub = _rp.listen(_onMessage);
+    _nativeFinalizer.attach(
+      this,
+      finalizerToken.cast(),
+      detach: this,
+      externalSize: 64,
+    );
   }
 
   final NativeBindings _b;
   final int _sessionId;
   final ReceivePort _rp;
+  final Pointer<Uint64> _finalizerToken;
   final Map<int, Completer<Uint8List>> _pending = {};
   final Map<int, StreamController<int>> _streams = {};
   int _nextId = 1;
   StreamSubscription<dynamic>? _sub;
   bool _alive = true;
+  bool _finalizerDetached = false;
 
-  /// Isolate-local singleton.
   static DartCppBridge? _instance;
+  static NativeFinalizer? _sharedFinalizer;
+  static NativeFinalizer get _nativeFinalizer => _sharedFinalizer!;
 
-  /// Open a session on this isolate (safe to call from any isolate).
+  /// Open a session on **this** isolate.
   static Future<DartCppBridge> init({String? libraryPath}) async {
     if (_instance != null) return _instance!;
 
     final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
+    _sharedFinalizer ??= NativeFinalizer(b.sessionFinalizer);
+
     final rc = b.initDartApi(NativeApi.initializeApiDLData);
     if (rc != 0) {
       throw StateError('Dart_InitializeApiDL failed: $rc');
@@ -52,10 +74,15 @@ final class DartCppBridge {
       throw StateError('dcb_session_open failed');
     }
 
+    // Token owned by NativeFinalizer (freed in dcb_session_finalizer),
+    // unless dispose() detaches and frees it manually.
+    final token = malloc<Uint64>()..value = sessionId;
+
     final bridge = DartCppBridge._(
       bindings: b,
       sessionId: sessionId,
       receivePort: rp,
+      finalizerToken: token,
     );
     _instance = bridge;
     return bridge;
@@ -67,7 +94,15 @@ final class DartCppBridge {
     }
   }
 
-  /// Close this isolate's session. Does not stop the process runtime.
+  void _detachFinalizer() {
+    if (_finalizerDetached) return;
+    _finalizerDetached = true;
+    _nativeFinalizer.detach(this);
+    malloc.free(_finalizerToken);
+  }
+
+  /// Promptly close this isolate's session.
+  /// Optional — [NativeFinalizer] will close it on GC / isolate shutdown.
   void dispose() {
     if (!_alive) return;
     _alive = false;
@@ -81,10 +116,14 @@ final class DartCppBridge {
       if (!s.isClosed) s.close();
     }
     _streams.clear();
+
+    _detachFinalizer();
     _b.sessionClose(_sessionId);
     _sub?.cancel();
     _rp.close();
-    _instance = null;
+    if (identical(_instance, this)) {
+      _instance = null;
+    }
   }
 
   /// Close all sessions and stop the shared runtime (process-wide).
