@@ -1,5 +1,6 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
@@ -69,4 +70,55 @@ class NativeBindings {
     }
     throw UnsupportedError('unsupported platform');
   }
+}
+
+/// Sync-only helper for worker isolates that share the process-wide runtime/session.
+/// Does **not** call dcb_init (must not steal the owning isolate's reply port).
+int invokeBridgeVersionSync({required String libraryPath}) {
+  final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
+  final req = _versionRequest();
+  final ptr = malloc<Uint8>(req.length);
+  ptr.asTypedList(req.length).setAll(0, req);
+  final outLen = malloc<IntPtr>();
+  final errPtr = malloc<Pointer<Utf8>>();
+  errPtr.value = nullptr;
+  try {
+    final out = b.invokeSync(ptr, req.length, outLen, errPtr);
+    if (out == nullptr) {
+      final err = errPtr.value;
+      final msg = err == nullptr ? 'sync failed' : err.toDartString();
+      if (err != nullptr) b.free(err.cast());
+      throw StateError(msg);
+    }
+    final n = outLen.value;
+    final bytes = out.asTypedList(n);
+    // Parse inline to avoid importing codec cycle issues in minimal helper.
+    // Frame: skip to payload after header 4+2+1+1+8+4+4 = 24
+    if (n < 28) {
+      throw StateError('short sync response');
+    }
+    final bd = ByteData.sublistView(bytes);
+    final plen = bd.getUint32(20, Endian.little);
+    if (24 + plen > n || plen < 4) {
+      throw StateError('bad sync payload');
+    }
+    return bd.getInt32(24, Endian.little);
+  } finally {
+    malloc.free(ptr);
+    malloc.free(outLen);
+    malloc.free(errPtr);
+  }
+}
+
+Uint8List _versionRequest() {
+  // Minimal DCB1 request for bridgeVersion — duplicated header layout.
+  final bd = ByteData(24);
+  bd.setUint32(0, 0x31424344, Endian.little); // magic
+  bd.setUint16(4, 1, Endian.little); // version
+  bd.setUint8(6, 1); // request
+  bd.setUint8(7, 0);
+  bd.setUint64(8, 0, Endian.little); // request_id
+  bd.setUint32(16, 1, Endian.little); // method bridgeVersion
+  bd.setUint32(20, 0, Endian.little); // payload_len
+  return bd.buffer.asUint8List();
 }

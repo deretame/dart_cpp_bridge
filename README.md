@@ -90,7 +90,10 @@ cd dart
 dart test
 ```
 
-覆盖：sync / async / normal / stream、关订阅、dispose 再 init、错误路径、UTF-8 echo、纯 Dart codec。
+覆盖：sync / async / normal / stream、关订阅、dispose / shutdown、错误路径、坏帧、大 payload、
+**多 Isolate 共用单一 session 的 sync**（后台 isolate 不得 `init` 抢 port）、纯 Dart codec。
+
+单 session 约定：进程内一个 reply port（owning isolate）；其它 isolate 仅可 sync 调同一 runtime。
 
 默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
 

@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <unordered_map>
@@ -20,7 +21,6 @@
 
 namespace dcb {
 
-// Posts encoded frames back to the Dart isolate (Dart_PostCObject_DL).
 using DartPostFn = void (*)(std::int64_t port, const std::uint8_t* data, std::size_t len,
                             void* userdata);
 
@@ -33,27 +33,33 @@ class Runtime {
 
   void start();
   void stop();
+  bool running() const { return started_.load(std::memory_order_acquire); }
+
+  void ensure_running() {
+    if (!running()) {
+      throw std::runtime_error("runtime stopped");
+    }
+  }
 
   asio::io_context& io() { return io_; }
   asio::thread_pool& pool() { return *pool_; }
 
-  // Fire-and-forget: schedule a Lazy<> on the single io thread.
   template <class LazyFactory>
   void spawn_on_asio(LazyFactory&& factory) {
+    ensure_running();
     asio::post(io_, [factory = std::forward<LazyFactory>(factory)]() mutable {
       auto lazy = factory();
       std::move(lazy).start([](auto&&) {});
     });
   }
 
-  // Blocking work on thread_pool; completion posted back to io_context before resuming Lazy.
   template <class F>
   auto spawn_blocking(F func)
       -> async_simple::coro::Lazy<std::invoke_result_t<std::decay_t<F>>> {
     using R = std::invoke_result_t<std::decay_t<F>>;
+    ensure_running();
     auto promise = std::make_shared<async_simple::Promise<R>>();
     auto future = promise->getFuture();
-
     auto* io = &io_;
     asio::post(*pool_, [promise, func = std::move(func), io]() mutable {
       try {
@@ -71,7 +77,6 @@ class Runtime {
         asio::post(*io, [promise, ep]() { promise->setException(ep); });
       }
     });
-
     if constexpr (std::is_void_v<R>) {
       co_await std::move(future);
       co_return;
@@ -86,6 +91,9 @@ class Runtime {
   }
 
   void post_to_dart(std::int64_t port, const std::uint8_t* data, std::size_t len) {
+    if (!running()) {
+      return;
+    }
     auto fn = post_fn_;
     if (fn) {
       fn(port, data, len, post_userdata_);
@@ -101,11 +109,11 @@ class Runtime {
   std::unique_ptr<std::thread> io_thread_;
   std::unique_ptr<asio::thread_pool> pool_;
   std::atomic<bool> started_{false};
-
   DartPostFn post_fn_{nullptr};
   void* post_userdata_{nullptr};
 };
 
+// Process-wide single session: one reply port (owning isolate). Sync may be used from any isolate.
 class Session {
  public:
   Session() = default;
@@ -114,9 +122,7 @@ class Session {
   std::int64_t reply_port() const { return reply_port_; }
 
   std::uint64_t generation() const { return generation_.load(std::memory_order_acquire); }
-
   void dispose() { generation_.fetch_add(1, std::memory_order_acq_rel); }
-
   bool alive(std::uint64_t gen) const {
     return generation_.load(std::memory_order_acquire) == gen;
   }

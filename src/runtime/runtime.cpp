@@ -1,8 +1,5 @@
 #include "dart_cpp_bridge/runtime.hpp"
 
-#include <mutex>
-#include <unordered_map>
-
 namespace dcb {
 
 Runtime& Runtime::instance() {
@@ -11,7 +8,6 @@ Runtime& Runtime::instance() {
 }
 
 Runtime::Runtime() = default;
-
 Runtime::~Runtime() { stop(); }
 
 void Runtime::start() {
@@ -19,12 +15,11 @@ void Runtime::start() {
   if (!started_.compare_exchange_strong(expected, true)) {
     return;
   }
+  io_.restart();
   pool_ = std::make_unique<asio::thread_pool>(4);
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
-  io_thread_ = std::make_unique<std::thread>([this] {
-    io_.run();
-  });
+  io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
 }
 
 void Runtime::stop() {
@@ -40,7 +35,6 @@ void Runtime::stop() {
     io_thread_->join();
   }
   io_thread_.reset();
-  io_.restart();
   if (pool_) {
     pool_->join();
     pool_.reset();

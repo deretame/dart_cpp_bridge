@@ -13,8 +13,6 @@
 
 namespace dcb {
 
-// Thread-safe sink: add/end/error may be called from io_context or thread_pool.
-// After Dart closes the subscription (or session dispose), add is a silent no-op.
 template <class EncodeFn>
 class StreamSink {
  public:
@@ -48,7 +46,6 @@ class StreamSink {
       auto frame = make_frame(MsgType::kStreamData, st->stream_id, st->method_id, payload);
       st->session->try_post(st->generation, frame);
     } catch (...) {
-      // Encoding failure: surface as stream error once.
       post_err_locked(st, "encode failed");
     }
   }
@@ -66,8 +63,7 @@ class StreamSink {
     if (!st->session->alive(st->generation)) {
       return;
     }
-    auto frame =
-        make_frame(MsgType::kStreamEnd, st->stream_id, st->method_id, {});
+    auto frame = make_frame(MsgType::kStreamEnd, st->stream_id, st->method_id, {});
     st->session->try_post(st->generation, frame);
     st->session->set_stream_open(st->stream_id, false);
   }
@@ -103,8 +99,7 @@ class StreamSink {
     ByteWriter w;
     w.i32(1);
     w.str(message);
-    auto frame =
-        make_frame(MsgType::kStreamErr, st->stream_id, st->method_id, w.raw());
+    auto frame = make_frame(MsgType::kStreamErr, st->stream_id, st->method_id, w.raw());
     st->session->try_post(st->generation, frame);
     st->session->set_stream_open(st->stream_id, false);
   }

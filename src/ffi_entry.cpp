@@ -14,7 +14,7 @@
 
 namespace dcb {
 namespace demo {
-void dispatch_request(const std::uint8_t* data, std::size_t len);
+void dispatch_request(Session* session, const std::uint8_t* data, std::size_t len);
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
 }  // namespace demo
 }  // namespace dcb
@@ -29,7 +29,6 @@ void dart_post_impl(std::int64_t port, const std::uint8_t* data, std::size_t len
   obj.type = Dart_CObject_kTypedData;
   obj.value.as_typed_data.type = Dart_TypedData_kUint8;
   obj.value.as_typed_data.length = static_cast<intptr_t>(len);
-  // Dart_PostCObject copies typed data when posting from native.
   obj.value.as_typed_data.values = const_cast<uint8_t*>(data);
   Dart_PostCObject_DL(static_cast<Dart_Port_DL>(port), &obj);
 }
@@ -72,9 +71,7 @@ DCB_API void dcb_init(int64_t reply_native_port) {
   dcb::global_session().bind_reply_port(reply_native_port);
 }
 
-DCB_API void dcb_dispose(void) {
-  dcb::global_session().dispose();
-}
+DCB_API void dcb_dispose(void) { dcb::global_session().dispose(); }
 
 DCB_API void dcb_shutdown(void) {
   dcb::global_session().dispose();
@@ -88,6 +85,7 @@ DCB_API uint8_t* dcb_invoke_sync(const uint8_t* req, size_t req_len, size_t* out
     *error_out = nullptr;
   }
   try {
+    dcb::Runtime::instance().ensure_running();
     auto out = dcb::demo::dispatch_sync(req, req_len);
     return dup_bytes(out, out_len);
   } catch (const std::exception& e) {
@@ -104,10 +102,12 @@ DCB_API uint8_t* dcb_invoke_sync(const uint8_t* req, size_t req_len, size_t* out
 }
 
 DCB_API void dcb_invoke_async(const uint8_t* req, size_t req_len) {
-  // Copy request — caller buffer may die when FFI returns.
+  if (!dcb::Runtime::instance().running()) {
+    return;
+  }
   std::vector<std::uint8_t> copy(req, req + req_len);
   dcb::Runtime::instance().spawn_on_asio([copy = std::move(copy)]() -> async_simple::coro::Lazy<> {
-    dcb::demo::dispatch_request(copy.data(), copy.size());
+    dcb::demo::dispatch_request(&dcb::global_session(), copy.data(), copy.size());
     co_return;
   });
 }

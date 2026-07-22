@@ -1,16 +1,21 @@
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 import 'package:test/test.dart';
 
 import 'support/library_path.dart';
 
+/// Top-level so Isolate.run does not capture the owning [DartCppBridge].
+Future<int> _workerSyncVersion(String libraryPath) {
+  return Isolate.run(() => invokeBridgeVersionSync(libraryPath: libraryPath));
+}
+
 void main() {
   late String libraryPath;
   late DartCppBridge bridge;
 
-  Future<DartCppBridge> openBridge() =>
-      DartCppBridge.init(libraryPath: libraryPath);
+  Future<DartCppBridge> openBridge() => DartCppBridge.init(libraryPath: libraryPath);
 
   setUpAll(() async {
     libraryPath = resolveNativeLibraryPath();
@@ -77,14 +82,11 @@ void main() {
       final received = <int>[];
       final sub = bridge.ticks(count: 30, intervalMs: 40).listen(received.add);
 
-      // Wait until at least one event arrives.
       await Future<void>.delayed(const Duration(milliseconds: 80));
       expect(received, isNotEmpty);
       final atCancel = received.length;
 
       await sub.cancel();
-
-      // Give C++ time to keep producing; Dart must not get more events.
       await Future<void>.delayed(const Duration(milliseconds: 300));
       expect(received.length, atCancel);
     });
@@ -102,6 +104,14 @@ void main() {
     test('echo roundtrips utf-8 string', () async {
       const s = '你好 dart_cpp_bridge ✓';
       expect(await bridge.echo(s), s);
+    });
+
+    test('echo large payload (~256KiB)', () async {
+      final s = 'x' * (256 * 1024);
+      final out = await bridge.echo(s);
+      expect(out.length, s.length);
+      expect(out.startsWith('xxx'), isTrue);
+      expect(out.endsWith('xxx'), isTrue);
     });
 
     test('failAsync surfaces as Future error', () async {
@@ -137,20 +147,42 @@ void main() {
       expect(
         () => bridge.invokeSyncNonSyncMethodForTest(),
         throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('not sync-capable'),
-          ),
+          isA<StateError>().having((e) => e.message, 'message', contains('not sync-capable')),
         ),
       );
+    });
+
+    test('bad frame from FFI surfaces error', () async {
+      await expectLater(
+        bridge.invokeBadFrameForTest(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('bad frame'))),
+      );
+    });
+  });
+
+  group('multi isolate (single shared session)', () {
+    test('background isolates use same runtime via sync FFI', () async {
+      // Owning isolate keeps the single session; workers must NOT call init.
+      final results = await Future.wait([
+        _workerSyncVersion(libraryPath),
+        _workerSyncVersion(libraryPath),
+        _workerSyncVersion(libraryPath),
+      ]);
+      expect(results, [1, 1, 1]);
+      // Owning isolate async still works on the same session.
+      expect(await bridge.add(2, 3), 5);
+    });
+
+    test('many concurrent worker sync calls', () async {
+      final futures = List.generate(16, (_) => _workerSyncVersion(libraryPath));
+      final results = await Future.wait(futures);
+      expect(results.every((v) => v == 1), isTrue);
     });
   });
 
   group('lifecycle', () {
     test('dispose completes pending Future with error', () async {
       final pending = bridge.sleepTest();
-      // Let native start the blocking sleep.
       await Future<void>.delayed(const Duration(milliseconds: 50));
       bridge.dispose();
 
@@ -159,7 +191,6 @@ void main() {
         throwsA(isA<StateError>().having((e) => e.message, 'message', contains('disposed'))),
       );
 
-      // Re-open so later groups / tearDown can use a live bridge.
       bridge = await openBridge();
       expect(bridge.bridgeVersion(), 1);
     }, timeout: const Timeout(Duration(seconds: 10)));
@@ -167,6 +198,15 @@ void main() {
     test('works after re-init', () async {
       expect(await bridge.add(1, 1), 2);
       expect(await bridge.ticks(count: 2, intervalMs: 0).toList(), [0, 1]);
+    });
+
+    test('shutdown then call fails; can start again', () async {
+      bridge.shutdown();
+      expect(() => bridge.bridgeVersion(), throwsA(isA<StateError>()));
+
+      bridge = await openBridge();
+      expect(bridge.bridgeVersion(), 1);
+      expect(await bridge.add(4, 5), 9);
     });
   });
 }

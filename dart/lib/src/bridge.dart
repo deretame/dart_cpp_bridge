@@ -8,7 +8,11 @@ import 'package:ffi/ffi.dart';
 import 'bindings.dart';
 import 'codec.dart';
 
-/// Phase-1 hand-written bridge facade (long-lived reply port + request_id).
+/// Phase-1 hand-written bridge facade.
+///
+/// **Single process-wide session:** one reply port owned by the isolate that
+/// called [init]. Other isolates may call **sync** FFI against the same runtime
+/// (see [invokeBridgeVersionSync]) but must not call [init] (would rebind port).
 final class DartCppBridge {
   DartCppBridge._(this._b);
 
@@ -18,9 +22,11 @@ final class DartCppBridge {
   final Map<int, StreamController<int>> _streams = {};
   int _nextId = 1;
   StreamSubscription<dynamic>? _sub;
+  bool _alive = true;
 
   static DartCppBridge? _instance;
 
+  /// Owning isolate: binds the single session reply port.
   static Future<DartCppBridge> init({String? libraryPath}) async {
     if (_instance != null) return _instance!;
     final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
@@ -39,7 +45,15 @@ final class DartCppBridge {
     _b.init(_rp.sendPort.nativePort);
   }
 
+  void _ensureAlive() {
+    if (!_alive) {
+      throw StateError('bridge disposed or runtime stopped');
+    }
+  }
+
   void dispose() {
+    if (!_alive) return;
+    _alive = false;
     for (final c in _pending.values) {
       if (!c.isCompleted) {
         c.completeError(StateError('bridge disposed'));
@@ -109,6 +123,7 @@ final class DartCppBridge {
   }
 
   Uint8List _invokeSyncRaw(Uint8List req) {
+    _ensureAlive();
     final ptr = malloc<Uint8>(req.length);
     ptr.asTypedList(req.length).setAll(0, req);
     final outLen = malloc<IntPtr>();
@@ -134,6 +149,7 @@ final class DartCppBridge {
   }
 
   void _invokeAsyncRaw(Uint8List req) {
+    _ensureAlive();
     final ptr = malloc<Uint8>(req.length);
     ptr.asTypedList(req.length).setAll(0, req);
     try {
@@ -142,8 +158,6 @@ final class DartCppBridge {
       malloc.free(ptr);
     }
   }
-
-  // ---- demo APIs ----
 
   int bridgeVersion() {
     final req = makeFrame(
@@ -264,7 +278,6 @@ final class DartCppBridge {
     return controller.stream;
   }
 
-  /// Calls sync FFI with a non-sync method id (for tests).
   void invokeSyncNonSyncMethodForTest() {
     final req = makeFrame(
       type: MsgType.request,
@@ -274,7 +287,6 @@ final class DartCppBridge {
     _invokeSyncRaw(req);
   }
 
-  /// Calls async FFI with an unknown method id (for tests).
   Future<void> invokeUnknownMethodForTest() async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -285,6 +297,14 @@ final class DartCppBridge {
       methodId: 0x7ffffffe,
     );
     _invokeAsyncRaw(req);
+    await c.future;
+  }
+
+  /// Sends garbage bytes; native posts error on request_id 0.
+  Future<void> invokeBadFrameForTest() async {
+    final c = Completer<Uint8List>();
+    _pending[0] = c;
+    _invokeAsyncRaw(Uint8List.fromList([1, 2, 3, 4, 5]));
     await c.future;
   }
 }
