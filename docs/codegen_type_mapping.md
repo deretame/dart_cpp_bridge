@@ -335,7 +335,106 @@ FRB 的类编解码也是按字段顺序生成：
 
 本项目采用相同的顺序编解码策略，只是 C++ 侧需要 codegen 生成每个导出类的 `encode` / `decode` 函数（或直接用 `ByteReader` / `ByteWriter` 内联到 wire dispatch 中）。
 
----
+### 5.9 成员函数导出（P3 设计）
+
+#### 5.9.1 为什么不能当作普通函数
+
+成员函数（method）和普通自由函数有本质区别：
+
+1. **绑定到对象实例**：方法调用必须有 `this` / `self`，不能脱离对象存在。
+2. **可修改对象状态**：`obj.increment(5)` 会改变 `obj` 的内部字段。
+3. **需要生命周期管理**：对象创建后不能立即释放，Dart 侧对象被 GC 或显式 `dispose` 时，C++ 侧才能销毁对应实例。
+4. **可能涉及线程安全/锁**：如果对象会被多线程访问，调用方法时需要加锁。
+
+因此，成员函数导出**不是**简单地把对象按值编码成方法参数，而是需要一套"对象句柄 + 注册表 + 生命周期管理"机制。
+
+#### 5.9.2 参考 FRB 的实现方式
+
+参考 Flutter Rust Bridge 生成的代码（例如 `frb_generated.rs` / `frb_generated.io.dart`），FRB 处理成员函数的核心是 **`RustOpaque<T>` / opaque 对象**。
+
+**Rust 侧**（来自 `frb_generated.rs`）：
+
+```rust
+fn wire__crate__api__http__HttpClient_base_url_impl(...) {
+    // ...
+    let api_that = <RustOpaque<HttpClient>>::sse_decode(&mut deserializer);
+    // ...
+    let api_that_guard = api_that.lockable_decode_sync_ref();
+    let output_ok = crate::api::http::HttpClient::base_url(&*api_that_guard)?;
+    // ...
+}
+```
+
+要点：
+- Dart 侧只持有一个不透明句柄（opaque handle）。
+- 方法调用时，Dart 把句柄传回 Rust。
+- Rust 根据句柄找到对象，获取引用（必要时加锁），再调用真实方法。
+- 对象生命周期由引用计数或 `NativeFinalizer` 管理。
+
+**Dart 侧**（来自 `frb_generated.io.dart`，概念示意）：
+
+```dart
+class HttpClient extends RustOpaque {
+  String baseUrl() {
+    return _apiImpl.httpClientBaseUrl(this);
+  }
+}
+```
+
+Dart 的 `HttpClient` 类只保存一个句柄，方法调用通过 FFI 转发到 Rust，Rust 再分派到真实成员函数。
+
+#### 5.9.3 本项目最小实现设计
+
+C++ 侧（运行时层）需要新增：
+
+1. **对象注册表**：`std::unordered_map<std::uint64_t, std::shared_ptr<void>>` 或按类型区分的注册表，存储 `std::shared_ptr<T>`。
+2. **对象句柄分配**：`std::uint64_t allocate_handle()`，单调递增。
+3. **构造函数导出**：`BRIDGE_SYNC` / `BRIDGE_ASYNC` 标记的构造函数，创建对象并返回 handle。
+4. **析构函数**：`dcb_drop_object(std::uint64_t handle)`，从注册表删除并释放对象。
+5. **方法 dispatch**：成员函数 wire 方法的 payload 包含 `handle` + 其他参数，C++ 侧根据 handle 找到对象，调用方法。
+
+Dart 侧生成形态：
+
+```dart
+class Counter implements Finalizable {
+  final int _handle;
+  final NativeFinalizer _finalizer;
+
+  Counter({required int initialValue})
+      : _handle = bridge.createCounter(initialValue),
+        _finalizer = NativeFinalizer(bridge.dropObjectPtr) {
+    _finalizer.attach(this, _handle, externalSize: 64);
+  }
+
+  void increment(int delta) {
+    bridge.counterIncrement(_handle, delta);
+  }
+
+  int get value {
+    return bridge.counterGetValue(_handle);
+  }
+
+  void dispose() {
+    _finalizer.detach(this);
+    bridge.dropObject(_handle);
+  }
+}
+```
+
+#### 5.9.4 标记规则
+
+- 只有标记了 `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 的 public 成员函数才会导出。
+- 未标记的成员函数不导出。
+- 构造函数和析构函数需要特殊标记（如 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`），或通过约定识别（如 `T()` 作为构造函数）。
+- 友元函数、private/protected 方法不导出。
+
+#### 5.9.5 限制
+
+- 当前阶段（P3）尚未实现，手写测试阶段也不包含。
+- 暂不支持虚函数、纯虚函数、重载运算符作为导出方法。
+- 暂不支持对象跨 Isolate 共享（每个 Isolate 的注册表独立）。
+- 暂不支持对象的方法在 Dart 侧被多线程并发调用时的默认加锁（由业务代码自己保证线程安全）。
+
 
 ## 6. 当前白名单（实现优先级）
 
