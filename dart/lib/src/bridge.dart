@@ -427,6 +427,21 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).readUint8List();
   }
 
+  /// Async demo: returns the next status code on the C++ side.
+  Future<StatusCode> nextStatus(StatusCode current) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..writeEnum(current.index);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.nextStatus.value,
+      payload: payload.takeBytes(),
+    ));
+    return StatusCode.values[ByteReader(await c.future).readEnum()];
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
@@ -532,4 +547,13 @@ final class DartCppBridge implements Finalizable {
       _unregisterDartFn(fnId);
     }
   }
+}
+
+/// Demo enum for hand-written codegen test (StatusCode).
+///
+/// Values must match the C++ `StatusCode` enum class ordering.
+enum StatusCode {
+  ok,
+  notFound,
+  serverError,
 }

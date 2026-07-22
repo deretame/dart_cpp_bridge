@@ -208,6 +208,14 @@ void main() {
     });
   });
 
+  group('enum class ↔ Dart enum', () {
+    test('nextStatus cycles through enum values', () async {
+      expect(await bridge.nextStatus(StatusCode.ok), StatusCode.notFound);
+      expect(await bridge.nextStatus(StatusCode.notFound), StatusCode.serverError);
+      expect(await bridge.nextStatus(StatusCode.serverError), StatusCode.ok);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

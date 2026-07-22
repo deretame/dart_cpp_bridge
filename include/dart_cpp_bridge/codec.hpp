@@ -46,6 +46,8 @@ enum class MethodId : std::uint32_t {
   kSumVec = 11,
   // payload: u8vec — async typed list test
   kReverseBytes = 12,
+  // payload: i32 enum — async enum test
+  kNextStatus = 13,
 };
 
 class ByteWriter {
@@ -76,6 +78,11 @@ class ByteWriter {
     } else {
       u8(0);
     }
+  }
+
+  template <typename E>
+  void enume(E v) {
+    i32(static_cast<std::int32_t>(v));
   }
 
   template <typename T, typename WriteValue>
@@ -148,6 +155,11 @@ class ByteReader {
     const bool has_value = u8() != 0;
     if (!has_value) return std::nullopt;
     return read_value();
+  }
+
+  template <typename E>
+  E enume() {
+    return static_cast<E>(i32());
   }
 
   template <typename T, typename ReadValue>

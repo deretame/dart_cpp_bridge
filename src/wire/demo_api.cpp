@@ -67,6 +67,19 @@ async_simple::coro::Lazy<std::vector<std::uint8_t>> reverse_bytes(
   co_return input;
 }
 
+enum class StatusCode : std::int32_t { kOk = 0, kNotFound = 1, kServerError = 2 };
+
+async_simple::coro::Lazy<StatusCode> next_status(StatusCode current) {
+  switch (current) {
+    case StatusCode::kOk:
+      co_return StatusCode::kNotFound;
+    case StatusCode::kNotFound:
+      co_return StatusCode::kServerError;
+    default:
+      co_return StatusCode::kOk;
+  }
+}
+
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
   co_return 0;
@@ -256,6 +269,25 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await reverse_bytes(input);
                 ByteWriter w;
                 w.u8vec(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kNextStatus: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto current = r.enume<StatusCode>();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, current]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await next_status(current);
+                ByteWriter w;
+                w.enume(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

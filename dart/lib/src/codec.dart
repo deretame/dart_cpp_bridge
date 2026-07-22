@@ -79,7 +79,10 @@ enum MethodId {
   sumVec(11),
 
   /// Async Uint8List -> Uint8List reverse test.
-  reverseBytes(12);
+  reverseBytes(12),
+
+  /// Async enum -> enum next test.
+  nextStatus(13);
 
   /// Numeric method id on the wire.
   final int value;
@@ -143,6 +146,9 @@ class ByteWriter {
     u32(v.length);
     bytes(v);
   }
+
+  /// Append an enum value as `i32` (underlying value / index).
+  void writeEnum(int v) => i32(v);
 
   /// Append `u32` length + UTF-8 bytes.
   void str(String s) {
@@ -237,6 +243,9 @@ class ByteReader {
     _pos += n;
     return result;
   }
+
+  /// Read an enum value as `i32` (underlying value / index).
+  int readEnum() => i32();
 
   /// Read `u32` length + UTF-8 string.
   String str() {
