@@ -144,7 +144,8 @@ dart test
 
 ## 5. 下一步建议
 
-1. **Phase 2**：bootstrap 已通 → 解析窄头（`bridge_api.h`）→ IR → 生成 wire/Dart。  
+1. **Phase 2**：bootstrap 已通 → 用户工程 `dart_cpp_bridge.yaml`（`scan` 目录）→ 扫头 + **仅生成标记** → IR → wire/Dart。  
+   （约定已写入设计 §0 / §6.1；实现未做。）  
 2. **Phase 3**：Native Assets hook；CMake export / examples。  
 3. 可选：`spawn_blocking` 复用 oneshot 唤醒；Finalizer 说明、跨平台 CI。
 

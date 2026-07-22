@@ -30,6 +30,9 @@
 | Codegen 工具链 | **Python 解释器 + libclang 均为远端下载的固定版本**（URL + hash 锁定）；**禁止**使用本机 Python、本机 LLVM/系统 libclang |
 | Codegen 冷启动 / 校验 | 每次启动 codegen **先检测**缓存的 Python、libclang 的 **hash**；缺失或与 `versions.lock` 不符 → **重新下载**后再跑 |
 | Codegen 触发 | **仅手动**（改 API 头后执行）；与构建**解耦** |
+| Codegen 工程配置 | 用户工程根目录 **`dart_cpp_bridge.yaml`**（类 FRB 的 `flutter_rust_bridge.yaml`）：声明扫描目录、输出路径、`include_paths` 等 |
+| Codegen 输入范围 | 只扫描配置中的 **`scan` 目录**下的 `.h` / `.hpp`；**不**扫整个工程、**不**扫 `.cpp`、**不**默认扫第三方 |
+| Codegen 导出过滤 | 扫描到的头文件里，**仅**带生成标记的声明进入 IR/生成物；无标记的函数/类型当作普通 C++，忽略 |
 | 构建 / 链接 | **Dart Native Assets hook** 只负责自动编译 C++ 并链接动态库；**不**在 hook 里跑 codegen |
 | Hook vs Codegen 工具链 | **不同**：codegen 用远端 Python/libclang；**hook 编译 C++ 仍用本机/CI 的** MSVC、NDK、Xcode 等（不可避免） |
 | C++ 依赖分发 | 提供 **依赖库**（内含并 **对外暴露** 钉死版本的 **asio** 与 **async-simple**）；用户工程用 **CMake `FetchContent`** 拉取该库 |
@@ -626,16 +629,23 @@ payload:     bytes
 
 ### 6.1 原则
 
-- 只解析 **窄桥接头**（如 `bridge_api.h` + `bridge_types.h`）；
-- 业务 API **可以**包含 `Lazy<T>`（async-simple 头）；asio 实现、wire 细节仍不进业务 AST 也可拆文件；
-- 结构体 / 函数用注解宏（见 §6.1.1）；
-- **stream 不靠返回 `Stream<T>`**，靠参数列表里出现 `StreamSink<T>`（与 FRB 相同）；
-- 解析用 compile flags 与真编译一致（`-std=c++20`、`-I`、宏）；
+- **工程配置驱动**（见 §6.1.2）：在用户工程根读 `dart_cpp_bridge.yaml`，而不是写死单一 `bridge_api.h` 路径。
+- **按目录扫描 + 按标记过滤**（核心约定）：
+  1. 只遍历配置 `scan` 下列出的目录（可多个）内的 **`.h` / `.hpp`**；
+  2. 对每个头文件用 libclang 解析 AST；
+  3. **仅**带生成标记的声明进入 IR / 生成 Dart 与 C++ wire；
+  4. 同目录下无标记的辅助声明、实现细节头、未导出类型 → **忽略**（可被 `#include`，但不单独导出）。
+- **不**递归扫描整个应用仓库；**不**扫描 `.cpp`；**不**把第三方 include 树当作 API 面（第三方只出现在 `include_paths` 里供解析）。
+- 业务 API **可以**包含 `Lazy<T>`（async-simple 头）；asio 实现、wire 细节仍不进业务 AST 也可拆文件。
+- 结构体 / 函数用注解宏（见 §6.1.1）。
+- **stream 不靠返回 `Stream<T>`**，靠参数列表里出现 `StreamSink<T>`（与 FRB 相同）；带 `StreamSink` 参数即视为生成标记。
+- 解析用 compile flags 与真编译一致（`-std=c++20`、`-I`、宏）。
 - **Python 与 libclang 均仓库锁定 + 远端拉取 + hash 校验；明确禁止回落到本机安装。**
+- 工具链缓存为**用户级目录**，按 `versions.lock` 指纹分 `envs/`（多项目 / 多锁版本并存）；详见仓库 `codegen/README.md`。
 
 #### 6.1.1 注解宏（减少非标准告警）
 
-`[[bridge::sync]]` 等自定义属性在 Clang/GCC/MSVC 上通常**可编译**（忽略未知属性），但可能 **warning**，在 `-Werror` 下会失败。  
+`[[bridge::*]]` 等自定义属性在 Clang/GCC/MSVC 上通常**可编译**（忽略未知属性），但可能 **warning**，在 `-Werror` 下会失败。  
 作为公用库，**正常编译路径应零告警**：
 
 ```cpp
@@ -645,10 +655,12 @@ payload:     bytes
 #if defined(BRIDGE_CODEGEN)
 #  define BRIDGE_SYNC   [[bridge::sync]]
 #  define BRIDGE_ASYNC  [[bridge::async]]
+#  define BRIDGE_NORMAL [[bridge::normal]]
 #  define BRIDGE_EXPORT [[bridge::export]]
 #else
 #  define BRIDGE_SYNC
 #  define BRIDGE_ASYNC
+#  define BRIDGE_NORMAL
 #  define BRIDGE_EXPORT
 #endif
 ```
@@ -656,10 +668,64 @@ payload:     bytes
 - **业务编译 / 用户集成：** 不定义 `BRIDGE_CODEGEN`，宏展开为空。
 - **codegen：** 以 `-DBRIDGE_CODEGEN` 喂给 libclang，AST 中可见 `[[bridge::sync]]` 等。
 
+**何谓「有生成标记」（函数进入 IR 的充要条件，满足任一即可）：**
+
+| 标记 / 形态 | 含义 |
+|-------------|------|
+| `BRIDGE_SYNC` | 导出为 Dart **同步** API |
+| `BRIDGE_ASYNC` | 导出为 Dart `Future`；业务侧 `Lazy` + asio |
+| `BRIDGE_NORMAL` | 导出为 Dart `Future`；wire 走 **blocking 池**（业务普通同步函数） |
+| 参数含 `StreamSink<T>` | 导出为 Dart `Stream<T>`（可与上列宏并存；以 stream 规则为准） |
+
+- **无上述标记的自由函数：不生成。**
+- **类型：** `struct` / `class` 带 `BRIDGE_EXPORT` 则作为可编解码导出类型；若仅被已导出函数的签名引用、自身无 `BRIDGE_EXPORT`，实现可选择「自动拉入依赖类型」或「要求显式 `BRIDGE_EXPORT`」——**推荐显式 `BRIDGE_EXPORT`**，避免误导出内部结构。
+
+#### 6.1.2 用户工程配置（`dart_cpp_bridge.yaml`）
+
+类 FRB 的 `flutter_rust_bridge.yaml`：放在**用户工程根**（或 codegen 入口 `--config` 指定路径）。Codegen **只读这份配置 + 仓库内 `versions.lock`**，不读本机 LLVM/Python。
+
+```yaml
+# dart_cpp_bridge.yaml — 概念示例（字段名实现时可微调，语义锁定）
+
+# C++ 工程根（相对本 yaml；用作相对路径基准）
+cpp_root: native/
+
+# 扫描目录（相对工程根或 cpp_root；可多个）
+# 仅这些目录下的 .h / .hpp 会被打开解析
+scan:
+  - native/api/
+  # - native/bridge/
+
+# 解析时额外 -I（async-simple、本桥 public 头、用户公共头等）
+include_paths:
+  - native
+  # 由工具/模板注入桥包 include 亦可
+
+# 生成物
+dart_output: lib/src/native_gen/
+cpp_wire_output: native/generated/
+
+# 可选
+std: c++20
+defines:
+  - BRIDGE_CODEGEN
+# 文件名过滤（可选；默认 *.h / *.hpp）
+# header_globs: ["*.h", "*.hpp"]
+```
+
+| 字段 | 作用 |
+|------|------|
+| `scan` | **唯一**决定「哪些目录里的头文件可能成为 API」 |
+| 头内标记 | **唯一**决定「目录里哪些声明真正导出」 |
+| `dart_output` / `cpp_wire_output` | 生成物落点（是否提交 Git 由用户自定） |
+| `include_paths` / `std` / `defines` | 拼 libclang parse args，须与真编译足够一致 |
+
+**与「单文件 bridge_api.h」的关系：** 模板工程仍可只放一个 `native/api/bridge_api.h`，配置 `scan: [native/api/]` 即可；多文件拆分时同一 `scan` 目录下多个带头文件标记的头都会被收齐，无需改工具入口。
+
 ### 6.2 API 面示例（对齐 FRB）
 
 ```cpp
-// bridge_api.h — codegen 唯一入口（概念）
+// native/api/bridge_api.h — 位于 scan 目录内；仅带标记的声明会生成
 #pragma once
 #include "bridge_annotate.h"
 #include "bridge_types.h"  // StreamSink<T> 等
@@ -682,17 +748,20 @@ struct BRIDGE_EXPORT Progress {
   int64_t total;
 };
 
+// 无标记：即使写在同一头文件里，codegen 也忽略
+int32_t internal_helper();
+
 // sync → Dart: int bridgeVersion()
 BRIDGE_SYNC
 int32_t bridge_version();
 
 // async：Lazy + 协程体 → Dart: Future<FetchResponse> fetch(...)
-// 依赖 Lazy 是正常的；不要写成业务返回 bridge::Future
 BRIDGE_ASYNC
 async_simple::coro::Lazy<FetchResponse> fetch(FetchRequest req);
 
 // normal：同步函数 → Dart: Future<String> sleepTest()
 // wire：spawn_blocking，业务无 Lazy
+BRIDGE_NORMAL
 std::string sleep_test();
 
 // stream：参数带 StreamSink → Dart: Stream<Progress> download(url, path)
@@ -704,26 +773,26 @@ void create_log_stream(StreamSink<std::string> sink);
 }  // namespace demo::api
 ```
 
-Codegen 识别规则：
+Codegen 通道判定（在「已有生成标记」的前提下）：
 
 | 条件 | 生成 |
 |------|------|
 | 参数含 `StreamSink<T>` | Dart `Stream<T>`；C++ wire 注入 sink |
-| `BRIDGE_ASYNC` 或返回 `Lazy<T>` | Dart `Future<T>`；wire asio `spawn` + 单次 reply |
+| `BRIDGE_ASYNC`（或标记为 async 且返回 `Lazy<T>`） | Dart `Future<T>`；wire asio `spawn` + 单次 reply |
 | `BRIDGE_SYNC` | Dart 同步调用 |
-| 仅普通 `T foo(...)` 且非 sync | Dart `Future<T>`；wire **blocking 池**（类 FRB normal） |
+| `BRIDGE_NORMAL` | Dart `Future<T>`；wire **blocking 池**（类 FRB normal） |
 
 ### 6.3 流水线
 
 ```text
-手动: ./codegen 或 codegen.bat 等入口（不要直接用本机 python）
-    → 读 versions.lock
-    → 校验缓存 Python 的 hash（无文件或失败 → 远端重下固定版）
-    → 校验缓存 libclang 的 hash（无文件或失败 → 远端重下固定版）
-    → 用「下载的 Python」+「下载的 libclang」跑 clang.cindex
-    → 解析 bridge_api.h（-DBRIDGE_CODEGEN + 固定 flags）
-    → 过滤标记 / 签名推断 → IR (JSON)
-    → Dart 生成物 + C++ wire/dispatch + schema
+手动: 在用户工程根执行 codegen 入口（不要直接用本机 python）
+    → 读 dart_cpp_bridge.yaml（--config 可覆盖路径）
+    → 读桥包装内 versions.lock
+    → 校验/拉取用户级 cache 中的固定 Python + libclang-ng（按 lock 指纹分 env）
+    → 枚举 scan 目录下所有 .h / .hpp
+    → 对每个头：libclang parse（-DBRIDGE_CODEGEN + include_paths + std）
+    → AST walk：只收集带生成标记的函数/导出类型 → IR (JSON)
+    → 写 dart_output + cpp_wire_output
        （是否 git add generated/：用户自定）
 
 之后: flutter build / run
@@ -811,7 +880,8 @@ abstract final class NativeBridge {
 
 | 维度 | FRB 2.x 默认 | C++ 草案 |
 |------|----------------|----------|
-| API 标记 | `#[frb]` 等 | `BRIDGE_*` → codegen 时 `[[bridge::*]]` |
+| API 标记 | `#[frb]` 等 | `BRIDGE_*` / `StreamSink` → codegen 时 `[[bridge::*]]`；**按目录扫头 + 仅标记导出** |
+| 工程配置 | `flutter_rust_bridge.yaml` | 用户工程 `dart_cpp_bridge.yaml`（`scan` / 输出路径） |
 | 解析 / 生成 | FRB codegen | **手动**；**远端固定版 Python + 远端固定版 libclang**（均不用本机） |
 | 构建集成 | 视项目 | **Native Assets hook** 只编链接，不 codegen；C++ 编译器用本机/CI |
 | C++ 依赖 | 用户自管 | **FetchContent 依赖库**，PUBLIC 暴露 asio + async-simple |
@@ -856,9 +926,10 @@ abstract final class NativeBridge {
 ### Phase 2 — 手动 codegen + 依赖库骨架
 
 - `versions.lock`：钉死 **Python** 与 **libclang** 的版本、URL、hash（按 OS/arch）
-- 入口：**每次** hash 校验，失败则重下；**拒绝**本机 Python / LLVM
-- 解析窄头 → IR → 生成 Dart + wire
-- CMake 依赖库：FetchContent 拉 asio/async-simple，**export** 给下游；最小 `examples/` 模板
+- 入口：**每次** hash 校验，失败则重下；**拒绝**本机 Python / LLVM；用户级 cache + lock 指纹 `envs/`
+- 用户工程 **`dart_cpp_bridge.yaml`**：`scan` 目录 + 输出路径
+- 扫描 `scan` 下 `.h`/`.hpp` → 仅 **生成标记** 进 IR → 生成 Dart + wire
+- CMake 依赖库：FetchContent 拉 asio/async-simple，**export** 给下游；最小 `examples/` 模板（含 yaml + 示例 API 头）
 - CI：同一套 codegen 下载逻辑 + 可选生成物 diff（是否提交 generated 不强制）
 - **仍不**把 codegen 塞进 hook
 
@@ -897,8 +968,9 @@ native_bridge/                 # 或拆成 runtime 库 + examples 仓库
 │   ├── parse_libclang.py
 │   └── templates/             # 生成物模板
 ├── examples/                  # 用户起步模板（CMake + 示例 API + 说明）
+│   ├── dart_cpp_bridge.yaml   # scan / dart_output / cpp_wire_output
 │   ├── CMakeLists.txt         # FetchContent 本库 + 示例 target
-│   ├── bridge_api.h
+│   ├── native/api/*.h         # scan 目录；仅 BRIDGE_* / StreamSink 导出
 │   ├── api_impl/
 │   └── README.md              # 手动 codegen 步骤；generated 是否入库自定
 ├── hook/

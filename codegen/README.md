@@ -55,6 +55,15 @@ chmod +x codegen.sh bootstrap.sh
 ./codegen.sh --force
 ```
 
+## 用户工程约定（设计已锁定，实现未做）
+
+见 [docs/frb_and_cpp_bridge_design.md](../docs/frb_and_cpp_bridge_design.md) §6.1：
+
+- 工程根 **`dart_cpp_bridge.yaml`**：`scan` / `dart_output` / `cpp_wire_output` / `include_paths`
+- 只扫 `scan` 目录下的 `.h` / `.hpp`
+- **仅**带生成标记的声明导出：`BRIDGE_SYNC` / `ASYNC` / `NORMAL` / `EXPORT`，或参数含 `StreamSink<T>`
+- 无标记 → 忽略（可同文件存在）
+
 ## 流水线状态
 
 | 步骤 | 状态 |
@@ -62,4 +71,5 @@ chmod +x codegen.sh bootstrap.sh
 | `versions.lock` | ✅ |
 | 用户 cache + lock 指纹 env | ✅ |
 | bootstrap / smoke | ✅ |
+| 配置 yaml + 扫目录 + 按标记过滤 | 📄 设计已写，代码未做 |
 | 解析 API → 生成 wire/Dart | ❌ |
