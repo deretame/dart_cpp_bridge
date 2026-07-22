@@ -31,19 +31,17 @@ std::string sleep_test() {
 using I32Sink = decltype(make_i32_sink(nullptr, 0, 0, 0));
 
 void ticks(I32Sink sink, std::int32_t count, std::int32_t interval_ms) {
-  Runtime::instance().spawn_on_asio(
-      [sink = std::move(sink), count, interval_ms]() mutable -> async_simple::coro::Lazy<> {
-        for (std::int32_t i = 0; i < count; ++i) {
-          sink.add(i);
-          if (interval_ms > 0) {
-            co_await Runtime::instance().spawn_blocking([interval_ms] {
-              std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-            });
-          }
-        }
-        sink.end();
-        co_return;
-      });
+  // Drive the loop on the blocking pool so interval sleep never stalls io_context.
+  asio::post(Runtime::instance().pool(),
+             [sink = std::move(sink), count, interval_ms]() mutable {
+               for (std::int32_t i = 0; i < count; ++i) {
+                 sink.add(i);
+                 if (interval_ms > 0) {
+                   std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+                 }
+               }
+               sink.end();
+             });
 }
 
 // ---- wire ----

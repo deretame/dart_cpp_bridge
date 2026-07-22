@@ -87,14 +87,16 @@ b.shutdown();
 
 ```powershell
 cd dart
-dart test test/ffi_sync_async_test.dart
+dart test
 ```
+
+覆盖：sync、async、normal（线程池）、stream、关订阅、dispose 后再 init。
 
 默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
 
 ```powershell
 $env:DCB_LIBRARY_PATH = "D:\path\to\dart_cpp_bridge.dll"
-dart test test/ffi_sync_async_test.dart
+dart test
 ```
 
 ## 设计要点（已锁定）
