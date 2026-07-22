@@ -1,67 +1,130 @@
 # dart_cpp_bridge
 
-类 [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/) 的 **Dart ↔ C++20** 桥（独立实验仓库）。
+**English** | [中文](README.zh-CN.md)
 
-文档：
+A **C++20** interoperability bridge for **Dart / Flutter**: connect existing C/C++ code to Dart with coroutines and an event loop, aiming for an experience close to [Flutter Rust Bridge (FRB)](https://cjycode.com/flutter_rust_bridge/).
 
-- 设计全文：[`docs/frb_and_cpp_bridge_design.md`](docs/frb_and_cpp_bridge_design.md)
-- **实现进度**：[`docs/progress.md`](docs/progress.md)
-- **已知问题**：[`docs/known_issues.md`](docs/known_issues.md)（含 DartFn io 挂起未达成的原因）
+Repository: <https://github.com/deretame/dart_cpp_bridge>
 
-## 当前状态（Phase 1）
+> **Status**: Experimental standalone repo. Phase 1 hand-written skeleton is largely done. **Codegen / Native Assets are not ready** — do not treat this as a drop-in production replacement for FRB yet.
 
-手写骨架已基本完成，**无 codegen**。摘要：
+---
 
-| 能力 | 状态 |
-|------|------|
-| 单线程 asio + thread_pool | ✅ |
-| Session 每 Isolate + Runtime 进程共享 | ✅ |
-| sync / async / normal / stream | ✅ |
-| NativeFinalizer 自动关 session | ✅ |
-| Dart 测试（含多 isolate async） | ✅ |
-| DartFn 反向调用（调用时传回调，类 FRB） | ✅ |
-| Codegen / Native Assets hook | ⏳ |
+## Why this project?
 
-Demo API：
+In the ecosystem today:
 
-- `bridgeVersion()` sync → `int`
-- `add(a,b)` async (`Lazy`) → `Future<int>`
-- `sleepTest()` normal（`spawn_blocking`）→ `Future<String>`
-- `ticks(count, intervalMs)` stream → `Stream<int>`
-- `callDartHello(cb)` DartFn 异步入口（C++ 在 pool 上等，不堵 io）
-- `callDartHelloSync(cb)` DartFn 同步入口（阻塞当前原生线程；堵 io 自负）
+- **Rust** has a mature [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/) with a clear path from business functions to Dart APIs;
+- **C / C++** still powers a huge amount of existing code (media, networking, games, embedded, legacy business libs…), but there is no equally ergonomic Dart integration story.
 
-## 目录
+Typical options are hand-rolled FFI plus homemade threading/callbacks, or fragmented JNI / platform channels. Async and streaming often turn into callback hell or a blocked event loop.
+
+**This project aims to fill that gap:**
+
+- Give C++ code a **clear integration surface** (sync / async / stream / reverse Dart closures);
+- Write async logic with **C++20 coroutines**, semantically close to Dart `async` / `await` / `Stream`;
+- Follow FRB-like runtime ideas (process-wide Runtime, per-Isolate Session, long-lived port + `request_id`) to reduce mental overhead.
+
+---
+
+## Design principles
+
+| Principle | Notes |
+|-----------|--------|
+| FRB-aligned UX | Channels, lifecycle, and DartFn reverse calls mirror FRB concepts for easy comparison |
+| Coroutines first | Business code uses `async_simple::coro::Lazy<T>` and `co_await` on the io thread — not `std::future::get` everywhere |
+| No babysitting misuse | e.g. `callSync` on the io thread stalls the scheduler — documented; caller owns the risk |
+| Incremental delivery | Phase 1 hand-written demo → Phase 2 codegen → Phase 3 Native Assets / productization |
+
+Business code does **not** return a bridge-specific Future wrapper. Write normal sync functions or `Lazy`; the bridge handles codec and scheduling.
+
+---
+
+## Tech stack
+
+| Layer | Choice | Role |
+|-------|--------|------|
+| Language | **C++20** (minimum) | Coroutines, concepts, etc. Use a C++20-capable compiler (recent MSVC / GCC / Clang) |
+| Event loop | **[Asio](https://think-async.com/Asio/)** (standalone) | Single-threaded `io_context`: timers, post, external completion |
+| Coroutines & channels | **[async-simple](https://github.com/alibaba/async-simple)** | `Lazy`, `Executor`; plus this repo’s `co::oneshot` / mpsc-style channels |
+| Dart side | Dart 3 + `package:ffi` | Isolates, ReceivePort, Completer / Stream |
+| Reference | Flutter Rust Bridge | Architecture & API shape — not a code dependency |
+
+Runtime (simplified):
 
 ```text
-docs/                      # 设计 + 进度
-include/dart_cpp_bridge/   # 公共头
-src/                       # runtime / session / wire / ffi
-third_party/dart_api/      # Dart API DL
-dart/                      # Dart 包 + test
-examples/phase1_demo/      # C++ smoke
-cmake/                     # 工具脚本
-codegen/                   # Phase 2 预留
+┌─────────────────────────────────────────────────────────┐
+│  Dart Isolate(s)                                        │
+│    Session (one reply port per Isolate)                 │
+│    Future / Stream / DartFn callbacks                   │
+└──────────────────────────▲──────────────────────────────┘
+                           │ FFI + binary frames
+┌──────────────────────────┴──────────────────────────────┐
+│  Runtime (process-wide)                                 │
+│    asio::io_context (single-threaded) + AsioExecutor    │
+│    asio::thread_pool (normal / blocking work)           │
+│    wire: sync / async Lazy / stream / DartFn            │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 构建（C++）
+**DartFn (C++ → Dart closure) async path**: true `co_await` on oneshot on the io thread — **does not block io, does not occupy a pool thread**. Sync path blocks the current thread (blocking io is the caller’s problem).
 
-依赖：CMake ≥ 3.20、C++20 编译器、Git（FetchContent 拉 asio / async-simple）。
+---
+
+## Current capabilities (Phase 1)
+
+| Capability | Status |
+|------------|--------|
+| Single-threaded asio + thread_pool | ✅ |
+| Process-wide Runtime / per-Isolate Session | ✅ |
+| sync / async (`Lazy`) / normal / stream | ✅ |
+| DartFn reverse calls (parameter-style closures, FRB-like) | ✅ (async = true io suspend) |
+| NativeFinalizer auto session close | ✅ |
+| Dart tests (incl. multi-Isolate) | ✅ |
+| C++ smoke (oneshot / DartFn e2e) | ✅ |
+| Codegen (annotations → wire / Dart) | ⏳ not started |
+| Native Assets hook productization | ⏳ not started |
+
+### Demo API (hand-written)
+
+| C++ / concept | Dart | Channel |
+|---------------|------|---------|
+| `bridgeVersion` | `int bridgeVersion()` | sync |
+| `add(a, b)` | `Future<int> add(a, b)` | async (`Lazy`) |
+| `sleepTest` | `Future<String> sleepTest()` | normal (pool) |
+| `ticks(count, intervalMs)` | `Stream<int> ticks(...)` | stream |
+| `callDartHello(cb)` | `Future<String> callDartHello(cb)` | DartFn **async** (io `co_await`) |
+| `callDartHelloSync(cb)` | `Future<String> callDartHelloSync(cb)` | DartFn **sync** (blocks current thread) |
+
+---
+
+## Quick start
+
+### Requirements
+
+- CMake ≥ 3.20  
+- **C++20** compiler  
+- Git (FetchContent pulls Asio / async-simple)  
+- **Dart SDK ≥ 3.10** (`dart/pubspec.yaml`: `sdk: ^3.10.0`)  
+  - Build hooks / Native Assets: ≥ 3.10 (stable Flutter with Dart 3.12.x is fine today)  
+  - Link hooks + recorded-usage tree-shaking: ≥ 3.13 (raise the floor once stable is widespread)
+
+### Build C++
 
 ```bash
-# 1) 拉取 Dart API DL 头文件
+# 1) Fetch Dart API DL headers
 cmake -P cmake/fetch_dart_api.cmake
 
-# 2) 配置并编译
+# 2) Configure & build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 
-# 3) 原生 smoke（无 Dart isolate，用回调打印 post）
-./build/dcb_smoke          # Linux/macOS
-build/Release/dcb_smoke.exe  # Windows 多配置生成器
+# 3) Native smoke
+./build/dcb_smoke                 # Linux / macOS (path varies by generator)
+build/Release/dcb_smoke.exe       # Windows multi-config generators
 ```
 
-Windows 示例（PowerShell）：
+Windows (PowerShell):
 
 ```powershell
 cmake -P cmake/fetch_dart_api.cmake
@@ -70,7 +133,7 @@ cmake --build build --config Release
 .\build\Release\dcb_smoke.exe
 ```
 
-## Dart 侧
+### Dart side
 
 ```powershell
 cd dart
@@ -78,47 +141,131 @@ dart pub get
 ```
 
 ```dart
-final b = await DartCppBridge.init(
-  libraryPath: r'..\build\Release\dart_cpp_bridge.dll',
-);
-print(b.bridgeVersion());
-print(await b.add(40, 2));
-print(await b.sleepTest());
-b.shutdown();
+import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+
+Future<void> main() async {
+  final b = await DartCppBridge.init(
+    libraryPath: r'..\build\Release\dart_cpp_bridge.dll', // adjust per platform
+  );
+
+  print(b.bridgeVersion());
+  print(await b.add(40, 2));
+  print(await b.sleepTest());
+
+  // DartFn: C++ awaits on io; Dart runs the closure
+  print(await b.callDartHello((name) => 'Hello, $name!'));
+  print(await b.callDartHello((name) async {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return 'Hello async, $name!';
+  }));
+
+  await for (final n in b.ticks(count: 3, intervalMs: 0)) {
+    print('tick $n');
+  }
+
+  // Before process exit (main isolate only)
+  b.shutdown();
+}
 ```
 
-### 测试（sync / async FFI）
-
-先编译出动态库，再在 `dart/` 下：
+### Tests
 
 ```powershell
+# C++ smoke (no Dart VM; simulates post / DartFn reply)
+.\build\Release\dcb_smoke.exe
+
+# Full Dart FFI suite (build the dynamic library first)
 cd dart
 dart test
 ```
 
-覆盖：sync / async / normal / stream、关订阅、dispose / shutdown、错误路径、坏帧、大 payload、
-**多 Isolate 异步**（每 isolate 自己 `init` 开 session + reply port，runtime 进程共享）、纯 Dart codec。
-
-模型：**Runtime 进程唯一；Session 每 Isolate 一个**（后台 isolate 也可 async/stream）。
-
-生命周期（对齐 FRB 思路）：
-- isolate 使用前 `init`
-- **一般不必手动 `dispose`**：`NativeFinalizer` 在对象不可达 / isolate 结束时自动 `session_close`
-- 可选 `dispose` 立即释放；`shutdown` 仅主 isolate 退出时停整个 runtime
-
-默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
+By default tests load `build/Release/dart_cpp_bridge.dll` (or the platform so/dylib). Override with:
 
 ```powershell
 $env:DCB_LIBRARY_PATH = "D:\path\to\dart_cpp_bridge.dll"
 dart test
 ```
 
-## 设计要点（已锁定）
+---
 
-- 业务写 `Lazy<T>` / 普通同步函数 / `StreamSink`；**不**返回桥 Future 包装。
-- Codegen（后续）手动；Python + libclang **远端固定版**；hook 只编链接。
-- 依赖库形态：CMake FetchContent，PUBLIC 暴露 asio + async-simple（后续完善 export）。
+## Lifecycle (FRB-style)
 
-## 许可
+| Action | Who | Notes |
+|--------|-----|--------|
+| `DartCppBridge.init` | Every Isolate that uses the bridge | Opens this isolate’s Session + reply port |
+| `dispose` | Optional | Closes session immediately; **usually not required** |
+| `NativeFinalizer` | Automatic | `session_close` when unreachable / isolate shuts down |
+| `shutdown` | **Main isolate on process exit only** | Stops process-wide Runtime; workers must not call this |
 
-实验项目；依赖 asio / async-simple / Dart SDK 头文件遵循各自许可证。
+Model: **one Runtime per process; one Session per Isolate** — background isolates can use async/stream independently.
+
+---
+
+## Repository layout
+
+```text
+docs/
+  frb_and_cpp_bridge_design.md   # full design
+  progress.md                    # implementation progress
+  known_issues.md                # tech debt / resolved issues
+include/dart_cpp_bridge/         # public C++ headers
+src/                             # runtime · wire · ffi_entry
+third_party/dart_api/            # Dart API DL
+dart/                            # Dart package + tests
+examples/phase1_demo/            # C++ smoke
+cmake/                           # helper scripts
+codegen/                         # Phase 2 placeholder
+hook/                            # Native Assets placeholder
+```
+
+---
+
+## Documentation
+
+| Doc | Content |
+|-----|---------|
+| [docs/frb_and_cpp_bridge_design.md](docs/frb_and_cpp_bridge_design.md) | Design decisions, channel model, FRB comparison |
+| [docs/progress.md](docs/progress.md) | Progress and landed checklist |
+| [docs/known_issues.md](docs/known_issues.md) | Known / resolved issues (incl. DartFn oneshot) |
+
+Design and progress docs are currently written primarily in **Chinese**; English summaries live in this README and [README.zh-CN.md](README.zh-CN.md).
+
+---
+
+## Roadmap (summary)
+
+1. **Phase 1** (current): Hand-written skeleton — Runtime / Session / four channels / DartFn  
+2. **Phase 2**: Pinned remote Python + libclang codegen (annotations → wire + Dart)  
+3. **Phase 3**: Native Assets hooks, CMake export, polished examples  
+4. **Phase 4**: Real app integration (does not replace existing FRB bridges by default)
+
+---
+
+## Non-goals (for now)
+
+- No ABI / API stability guarantees  
+- No hidden magic that offloads `callSync` if you block the io thread  
+- No shipping C++ stdlib or business binaries inside the pub package (hooks will own compile/link later)  
+- Not a UI platform-channel replacement — **Dart ↔ native logic** only  
+
+---
+
+## Acknowledgments
+
+- [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — architecture and product shape  
+- [Asio](https://think-async.com/Asio/) — event loop and async I/O  
+- [async-simple](https://github.com/alibaba/async-simple) — C++20 coroutine runtime  
+- Dart / Flutter teams — FFI, Isolates, NativeFinalizer, and more  
+
+---
+
+## License
+
+Experimental. Asio, async-simple, Dart SDK headers, etc. follow their own licenses. Repository license will be added before a formal release.
+
+---
+
+## Contributing
+
+Please read `docs/` first for design and open issues. Issues and PRs welcome for Phase 1 behavior, tests, and docs:  
+<https://github.com/deretame/dart_cpp_bridge/issues>

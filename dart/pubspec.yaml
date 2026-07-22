@@ -2,9 +2,13 @@ name: dart_cpp_bridge
 description: Dart side of a FRB-like C++ bridge (Phase 1 hand-written bindings).
 version: 0.1.0
 publish_to: none
+homepage: https://github.com/deretame/dart_cpp_bridge
+repository: https://github.com/deretame/dart_cpp_bridge
+issue_tracker: https://github.com/deretame/dart_cpp_bridge/issues
 
 environment:
-  sdk: ^3.5.0
+  # Build hooks / Native Assets: Dart >= 3.10 (stable-friendly; link hooks need 3.13+)
+  sdk: ^3.10.0
 
 dependencies:
   ffi: ^2.1.3
