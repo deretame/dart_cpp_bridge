@@ -2,22 +2,23 @@
 
 类 [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/) 的 **Dart ↔ C++20** 桥（独立实验仓库）。
 
-设计说明见 Breeze 仓库：`docs/frb_and_cpp_bridge_design.md`（本仓库 Phase 1 按该文档落地）。
+文档：
+
+- 设计全文：[`docs/frb_and_cpp_bridge_design.md`](docs/frb_and_cpp_bridge_design.md)
+- **实现进度**：[`docs/progress.md`](docs/progress.md)
 
 ## 当前状态（Phase 1）
 
-手写骨架，**无 codegen**：
+手写骨架已基本完成，**无 codegen**。摘要：
 
 | 能力 | 状态 |
 |------|------|
-| `io_context` 单线程 + `asio::thread_pool` + `spawn_blocking` | ✅ |
-| 长期 reply port + `request_id` | ✅ |
-| sync / async / normal / stream 四通道 demo | ✅ |
-| wire 边界 catch、Dart 抛错 | ✅ |
-| 不做 CancelToken | ✅ |
-| StreamSink 多线程 add、Dart 关流后静默丢 | ✅ |
-| Python/libclang codegen | ⏳ 未做 |
-| Native Assets hook | ⏳ 未做 |
+| 单线程 asio + thread_pool | ✅ |
+| Session 每 Isolate + Runtime 进程共享 | ✅ |
+| sync / async / normal / stream | ✅ |
+| NativeFinalizer 自动关 session | ✅ |
+| Dart 测试（含多 isolate async） | ✅ |
+| Codegen / Native Assets hook | ⏳ |
 
 Demo API：
 
@@ -29,13 +30,14 @@ Demo API：
 ## 目录
 
 ```text
+docs/                      # 设计 + 进度
 include/dart_cpp_bridge/   # 公共头
-src/                       # runtime / wire / ffi
-third_party/dart_api/      # Dart API DL（脚本拉取）
-dart/                      # Dart 包
-examples/phase1_demo/      # C++ smoke（无 Dart）
-cmake/                     # Fetch 脚本等
-codegen/                   # 预留
+src/                       # runtime / session / wire / ffi
+third_party/dart_api/      # Dart API DL
+dart/                      # Dart 包 + test
+examples/phase1_demo/      # C++ smoke
+cmake/                     # 工具脚本
+codegen/                   # Phase 2 预留
 ```
 
 ## 构建（C++）
