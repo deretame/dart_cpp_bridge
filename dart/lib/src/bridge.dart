@@ -279,6 +279,7 @@ final class DartCppBridge implements Finalizable {
     }
   }
 
+  /// Sync demo: returns the native bridge protocol version (`i32`).
   int bridgeVersion() {
     final req = makeFrame(
       type: MsgType.request,
@@ -292,6 +293,7 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(resp.payload).i32();
   }
 
+  /// Async demo: `a + b` computed on the C++ side (`Lazy`).
   Future<int> add(int a, int b) async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -308,6 +310,7 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
+  /// Normal-channel demo: sleeps on a worker pool, then returns a done string.
   Future<String> sleepTest() async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -320,6 +323,7 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).str();
   }
 
+  /// Stream demo: emits `0 .. count-1` with optional delay between items.
   Stream<int> ticks({int count = 5, int intervalMs = 100}) {
     final id = _allocId();
     final controller = StreamController<int>(
@@ -341,6 +345,7 @@ final class DartCppBridge implements Finalizable {
     return controller.stream;
   }
 
+  /// Async demo: echoes [s] back from C++.
   Future<String> echo(String s) async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -355,6 +360,7 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).str();
   }
 
+  /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -369,6 +375,7 @@ final class DartCppBridge implements Finalizable {
     await c.future;
   }
 
+  /// Test helper: stream emits one value then errors with [message].
   Stream<int> failStream([String message = 'fail_stream']) {
     final id = _allocId();
     final controller = StreamController<int>(
@@ -388,6 +395,7 @@ final class DartCppBridge implements Finalizable {
     return controller.stream;
   }
 
+  /// Test helper: invoke an async-only method via the sync FFI entry.
   void invokeSyncNonSyncMethodForTest() {
     _invokeSyncRaw(makeFrame(
       type: MsgType.request,
@@ -396,6 +404,7 @@ final class DartCppBridge implements Finalizable {
     ));
   }
 
+  /// Test helper: call an unknown method id and expect an error Future.
   Future<void> invokeUnknownMethodForTest() async {
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -408,6 +417,7 @@ final class DartCppBridge implements Finalizable {
     await c.future;
   }
 
+  /// Test helper: send a truncated frame and expect an error Future.
   Future<void> invokeBadFrameForTest() async {
     final c = Completer<Uint8List>();
     _pending[0] = c;

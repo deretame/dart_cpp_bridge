@@ -4,7 +4,9 @@
 
 **Dart-facing package** for an experimental **Dart ↔ C++20** bridge (FRB-like).
 
-> **Dev / early preview.** Native library is **not** built by this package yet (no build hooks). You must compile the C++ dynamic library yourself from the monorepo.
+> **Dev / early preview** (`0.1.0-dev.2`). Native library is **not** built by this package yet (no build hooks). You must compile the C++ dynamic library yourself from the monorepo.
+
+See also [`example/example.dart`](example/example.dart).
 
 ## Full documentation
 

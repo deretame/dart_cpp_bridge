@@ -2,9 +2,10 @@ name: dart_cpp_bridge
 description: >
   Experimental Dart ↔ C++20 bridge (FRB-like). Dart FFI session layer;
   native library built from the monorepo (hooks not ready).
-version: 0.1.0-dev.1
+version: 0.1.0-dev.2
 homepage: https://github.com/deretame/dart_cpp_bridge
-repository: https://github.com/deretame/dart_cpp_bridge
+# Monorepo: point at the package directory so pub.dev can verify.
+repository: https://github.com/deretame/dart_cpp_bridge/tree/main/dart
 issue_tracker: https://github.com/deretame/dart_cpp_bridge/issues
 documentation: https://github.com/deretame/dart_cpp_bridge/blob/main/README.md
 
@@ -13,6 +14,14 @@ topics:
   - native
   - interop
   - cpp
+
+# Dart / Flutter package; native FFI — no web.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
 
 environment:
   # Build hooks / Native Assets: Dart >= 3.10 (stable-friendly; link hooks need 3.13+)

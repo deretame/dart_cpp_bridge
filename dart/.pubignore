@@ -1,4 +1,5 @@
 # Keep the published tarball small; tests are not required on pub.dev
+# (example/ is kept so pub.dev awards the example score)
 .dart_tool/
 test/
 pubspec.lock

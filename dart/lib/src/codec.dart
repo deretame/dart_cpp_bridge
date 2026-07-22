@@ -1,21 +1,40 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+/// Little-endian magic `'DCB1'`.
 const int kMagic = 0x31424344; // 'DCB1' LE
+
+/// Wire protocol version currently spoken by this package.
 const int kProtocolVersion = 1;
 
+/// Frame type on the binary wire.
 enum MsgType {
+  /// Dart → C++ method invocation.
   request(1),
+
+  /// Successful reply payload.
   responseOk(2),
+
+  /// Error reply (code + message).
   responseErr(3),
+
+  /// One stream item.
   streamData(4),
+
+  /// Stream completed.
   streamEnd(5),
+
+  /// Stream failed.
   streamErr(6),
+
+  /// C++ → DartFn reverse call.
   dartFnCall(7);
 
+  /// Numeric tag written on the wire.
   final int value;
   const MsgType(this.value);
 
+  /// Parse a wire tag or throw [StateError].
   static MsgType from(int v) {
     for (final e in MsgType.values) {
       if (e.value == v) return e;
@@ -24,63 +43,94 @@ enum MsgType {
   }
 }
 
+/// Demo / hand-written method ids (Phase 1; codegen will replace later).
 enum MethodId {
+  /// Sync: protocol version as `i32`.
   bridgeVersion(1),
+
+  /// Async: `i32 + i32 → i32`.
   add(2),
+
+  /// Normal (pool): returns a done string after sleep.
   sleepTest(3),
+
+  /// Stream of tick indices.
   ticks(4),
+
+  /// Async echo of a UTF-8 string.
   echo(5),
+
+  /// Async that always fails (tests).
   failAsync(6),
+
+  /// Stream that emits then errors (tests).
   failStream(7),
+
+  /// DartFn reverse call; C++ awaits on io.
   callDartHello(8),
+
+  /// DartFn reverse call; C++ blocks current native thread.
   callDartHelloSync(9);
 
+  /// Numeric method id on the wire.
   final int value;
   const MethodId(this.value);
 }
 
+/// Little-endian binary writer used for frames and payloads.
 class ByteWriter {
   final BytesBuilder _b = BytesBuilder(copy: false);
 
+  /// Append one unsigned byte.
   void u8(int v) => _b.addByte(v & 0xff);
 
+  /// Append little-endian `u16`.
   void u16(int v) {
     _b.addByte(v & 0xff);
     _b.addByte((v >> 8) & 0xff);
   }
 
+  /// Append little-endian `u32`.
   void u32(int v) {
     final bd = ByteData(4)..setUint32(0, v, Endian.little);
     _b.add(bd.buffer.asUint8List());
   }
 
+  /// Append little-endian `u64`.
   void u64(int v) {
     final bd = ByteData(8)..setUint64(0, v, Endian.little);
     _b.add(bd.buffer.asUint8List());
   }
 
-  // expose for composing payloads
+  /// Append raw bytes without a length prefix.
   void writeRaw(List<int> data) => _b.add(data);
 
+  /// Append little-endian `i32`.
   void i32(int v) {
     final bd = ByteData(4)..setInt32(0, v, Endian.little);
     _b.add(bd.buffer.asUint8List());
   }
 
+  /// Append `u32` length + UTF-8 bytes.
   void str(String s) {
     final bytes = utf8.encode(s);
     u32(bytes.length);
     _b.add(bytes);
   }
 
+  /// Append raw bytes (alias of [writeRaw]).
   void bytes(List<int> data) => _b.add(data);
 
+  /// Take ownership of the built buffer.
   Uint8List takeBytes() => _b.takeBytes();
 }
 
+/// Little-endian binary reader for frames and payloads.
 class ByteReader {
+  /// Create a reader over [data]; position starts at 0.
   ByteReader(this.data) : _bd = ByteData.sublistView(data);
 
+  /// Underlying buffer.
   final Uint8List data;
   final ByteData _bd;
   int _pos = 0;
@@ -91,11 +141,13 @@ class ByteReader {
     }
   }
 
+  /// Read one unsigned byte.
   int u8() {
     _need(1);
     return data[_pos++];
   }
 
+  /// Read little-endian `u16`.
   int u16() {
     _need(2);
     final v = _bd.getUint16(_pos, Endian.little);
@@ -103,6 +155,7 @@ class ByteReader {
     return v;
   }
 
+  /// Read little-endian `u32`.
   int u32() {
     _need(4);
     final v = _bd.getUint32(_pos, Endian.little);
@@ -110,6 +163,7 @@ class ByteReader {
     return v;
   }
 
+  /// Read little-endian `u64`.
   int u64() {
     _need(8);
     final v = _bd.getUint64(_pos, Endian.little);
@@ -117,6 +171,7 @@ class ByteReader {
     return v;
   }
 
+  /// Read little-endian `i32`.
   int i32() {
     _need(4);
     final v = _bd.getInt32(_pos, Endian.little);
@@ -124,6 +179,7 @@ class ByteReader {
     return v;
   }
 
+  /// Read `u32` length + UTF-8 string.
   String str() {
     final n = u32();
     _need(n);
@@ -132,9 +188,11 @@ class ByteReader {
     return s;
   }
 
+  /// Remaining unread bytes.
   Uint8List takeRest() => data.sublist(_pos);
 }
 
+/// Encode one protocol frame.
 Uint8List makeFrame({
   required MsgType type,
   required int requestId,
@@ -154,7 +212,9 @@ Uint8List makeFrame({
   return w.takeBytes();
 }
 
+/// Parsed protocol frame.
 class Frame {
+  /// Create a decoded frame.
   Frame({
     required this.type,
     required this.flags,
@@ -163,13 +223,23 @@ class Frame {
     required this.payload,
   });
 
+  /// Message kind.
   final MsgType type;
+
+  /// Reserved flags byte.
   final int flags;
+
+  /// Multiplexing id (request / stream / DartFn reply).
   final int requestId;
+
+  /// [MethodId] value (or 0 when not applicable).
   final int methodId;
+
+  /// Payload bytes after the fixed header.
   final Uint8List payload;
 }
 
+/// Decode one frame or throw [StateError] on bad magic/version/truncation.
 Frame parseFrame(Uint8List data) {
   final r = ByteReader(data);
   if (r.u32() != kMagic) throw StateError('bad magic');
