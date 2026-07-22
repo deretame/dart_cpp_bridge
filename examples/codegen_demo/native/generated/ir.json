@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
+  "headers": [
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+  ],
+  "clang_args": [
+    "-std=c++20",
+    "-x",
+    "c++",
+    "-DBRIDGE_CODEGEN",
+    "-DDART_CPP_BRIDGE_CODEGEN",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\include",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+  ],
+  "functions": [
+    {
+      "name": "add",
+      "qualified": "demo::api::add",
+      "kind": "async",
+      "method_id": 513277594,
+      "args": [
+        {
+          "name": "a",
+          "type": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "bridge_version",
+      "qualified": "demo::api::bridge_version",
+      "kind": "sync",
+      "method_id": 513280939,
+      "args": [],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "sleep_greeting",
+      "qualified": "demo::api::sleep_greeting",
+      "kind": "normal",
+      "method_id": 1347623235,
+      "args": [
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::normal"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    }
+  ],
+  "diagnostics": []
+}

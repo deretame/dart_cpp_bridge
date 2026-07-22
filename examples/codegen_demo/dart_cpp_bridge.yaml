@@ -1,0 +1,19 @@
+# Codegen config for examples/codegen_demo
+cpp_root: native/
+
+scan:
+  - native/api/
+
+include_paths:
+  - native
+  - native/api
+  - ../../include
+  - ../../codegen/stubs
+
+dart_output: lib/src/native_gen/
+cpp_wire_output: native/generated/
+
+std: c++20
+defines:
+  - BRIDGE_CODEGEN
+  - DART_CPP_BRIDGE_CODEGEN

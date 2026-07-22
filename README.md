@@ -6,7 +6,7 @@ A **C++20** interoperability bridge for **Dart / Flutter**: connect existing C/C
 
 Repository: <https://github.com/deretame/dart_cpp_bridge>
 
-> **Status**: Experimental standalone repo. Phase 1 hand-written skeleton is largely done. **Codegen / Native Assets are not ready** — do not treat this as a drop-in production replacement for FRB yet.
+> **Status**: Experimental standalone repo. Phase 1 hand-written runtime is largely done. Phase 2 codegen can generate **SYNC/ASYNC/NORMAL** for a fixture (`examples/codegen_demo`). **Native Assets / rich types / production template** are not ready — not a drop-in FRB replacement yet.
 
 ---
 
@@ -82,7 +82,7 @@ Runtime (simplified):
 | NativeFinalizer auto session close | ✅ |
 | Dart tests (incl. multi-Isolate) | ✅ |
 | C++ smoke (oneshot / DartFn e2e) | ✅ |
-| Codegen (annotations → wire / Dart) | ⏳ not started |
+| Codegen (scan + markers → wire / Dart) | ⏳ SYNC/ASYNC/NORMAL + Dart 3-layer API; see `examples/codegen_demo` |
 | Native Assets hook productization | ⏳ not started |
 
 ### Demo API (hand-written)
@@ -214,7 +214,8 @@ third_party/dart_api/            # Dart API DL
 dart/                            # Dart package + tests
 examples/phase1_demo/            # C++ smoke
 cmake/                           # helper scripts
-codegen/                         # Phase 2 placeholder
+codegen/                         # pinned toolchain + parse/generate
+examples/codegen_demo/           # codegen fixture (yaml + generated + tests)
 hook/                            # Native Assets placeholder
 ```
 
@@ -235,7 +236,8 @@ Design and progress docs are currently written primarily in **Chinese**; English
 ## Roadmap (summary)
 
 1. **Phase 1** (current): Hand-written skeleton — Runtime / Session / four channels / DartFn  
-2. **Phase 2**: Pinned remote Python + libclang codegen (annotations → wire + Dart)  
+2. **Phase 2**: Codegen MVP done for primitive SYNC/ASYNC/NORMAL → extend structs/Stream/DartFn + templates  
+   Docs: [`codegen/README.md`](codegen/README.md), [`examples/codegen_demo`](examples/codegen_demo/)
 3. **Phase 3**: Native Assets hooks, CMake export, polished examples  
 4. **Phase 4**: Real app integration (does not replace existing FRB bridges by default)
 

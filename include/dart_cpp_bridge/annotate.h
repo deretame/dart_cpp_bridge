@@ -1,12 +1,15 @@
 #pragma once
 
-// Codegen sees [[bridge::*]]; normal compile expands to empty (no unknown-attribute warnings).
+// Codegen (libclang) uses clang annotate attributes so markers survive in the AST.
+// Unknown [[bridge::*]] is dropped by clang ("unknown attribute ignored") and is
+// invisible to clang.cindex — do not rely on it for filtering.
+// Normal compile: macros empty (zero warnings / MSVC-friendly).
 // Design doc may say BRIDGE_*; this header is the library spelling (DCB_*).
 #if defined(DART_CPP_BRIDGE_CODEGEN) || defined(BRIDGE_CODEGEN)
-#  define DCB_SYNC [[bridge::sync]]
-#  define DCB_ASYNC [[bridge::async]]
-#  define DCB_NORMAL [[bridge::normal]]
-#  define DCB_EXPORT [[bridge::export]]
+#  define DCB_SYNC __attribute__((annotate("bridge::sync")))
+#  define DCB_ASYNC __attribute__((annotate("bridge::async")))
+#  define DCB_NORMAL __attribute__((annotate("bridge::normal")))
+#  define DCB_EXPORT __attribute__((annotate("bridge::export")))
 #else
 #  define DCB_SYNC
 #  define DCB_ASYNC

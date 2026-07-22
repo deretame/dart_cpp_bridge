@@ -21,7 +21,7 @@
 | Blocking 池 | 独立 **`asio::thread_pool`**；任务用 **`asio::post(pool, ...)`**；**禁止**把长时间阻塞丢进单线程调度器 |
 | `spawn_blocking` | 运行时**对外提供**类似 tokio `spawn_blocking` 的 API，并用 async-simple 包成可 `co_await` 的 `Lazy`（实现简单）；wire 的 normal 路径与业务手动卸载阻塞都走它 |
 | 同步→Dart Future | 仅当业务写**普通同步函数**且需要 Dart `Future` 时，由 wire 调 `spawn_blocking`（类 FRB `wrap_normal`）；业务**不写** `Lazy` |
-| 注解属性 | 使用 `[[bridge::*]]`；对外头文件用宏（`BRIDGE_SYNC` 等），**非 codegen 编译时宏为空**，避免 unknown-attribute 告警 / `-Werror` |
+| 注解属性 | 对外宏 `BRIDGE_SYNC` / `DCB_*` 等；**非 codegen 编译时宏为空**。Codegen（libclang）路径展开为 `__attribute__((annotate("bridge::*")))`（未知 `[[bridge::*]]` 会被 clang 丢掉、AST 不可见） |
 | 错误（C++） | wire 边界统一 `catch (const std::exception&)` 再 `catch (...)`，编成错误帧；**异常永不穿出 FFI** |
 | 错误（Dart） | 公用库对齐主流用法：**直接抛异常**（`Future` / `Stream` error），不做 `Result` 双模式 |
 | 取消 | **不做**任何 CancelToken / 通用 async 取消；Dart 普通 `Future` 本身也不可取消 |
@@ -653,10 +653,11 @@ payload:     bytes
 #pragma once
 
 #if defined(BRIDGE_CODEGEN)
-#  define BRIDGE_SYNC   [[bridge::sync]]
-#  define BRIDGE_ASYNC  [[bridge::async]]
-#  define BRIDGE_NORMAL [[bridge::normal]]
-#  define BRIDGE_EXPORT [[bridge::export]]
+// libclang 可见：annotate 会保留在 AST（ANNOTATE_ATTR）
+#  define BRIDGE_SYNC   __attribute__((annotate("bridge::sync")))
+#  define BRIDGE_ASYNC  __attribute__((annotate("bridge::async")))
+#  define BRIDGE_NORMAL __attribute__((annotate("bridge::normal")))
+#  define BRIDGE_EXPORT __attribute__((annotate("bridge::export")))
 #else
 #  define BRIDGE_SYNC
 #  define BRIDGE_ASYNC
@@ -665,8 +666,8 @@ payload:     bytes
 #endif
 ```
 
-- **业务编译 / 用户集成：** 不定义 `BRIDGE_CODEGEN`，宏展开为空。
-- **codegen：** 以 `-DBRIDGE_CODEGEN` 喂给 libclang，AST 中可见 `[[bridge::sync]]` 等。
+- **业务编译 / 用户集成：** 不定义 `BRIDGE_CODEGEN`，宏展开为空（MSVC/GCC 均无告警）。
+- **codegen：** 以 `-DBRIDGE_CODEGEN` 喂给 libclang；**不要**用未知的 `[[bridge::*]]` 作为过滤依据（会被忽略且不进 AST）。
 
 **何谓「有生成标记」（函数进入 IR 的充要条件，满足任一即可）：**
 
@@ -719,8 +720,41 @@ defines:
 | 头内标记 | **唯一**决定「目录里哪些声明真正导出」 |
 | `dart_output` / `cpp_wire_output` | 生成物落点（是否提交 Git 由用户自定） |
 | `include_paths` / `std` / `defines` | 拼 libclang parse args，须与真编译足够一致 |
+| `dart_impl_file` / `dart_api_file` / `dart_fn_file` | 可选；默认 `api.g.dart` / `api.dart` / `api_fn.dart` |
+| `dart_impl_class` / `dart_api_class` | 可选；默认 `BridgeApiImpl` / `BridgeApi` |
 
 **与「单文件 bridge_api.h」的关系：** 模板工程仍可只放一个 `native/api/bridge_api.h`，配置 `scan: [native/api/]` 即可；多文件拆分时同一 `scan` 目录下多个带头文件标记的头都会被收齐，无需改工具入口。
+
+#### 6.1.3 Dart 生成分层（对齐 FRB 使用习惯）
+
+Codegen 对每个用户工程生成 **三层** Dart（均可再生成覆盖，勿手改）：
+
+```text
+api_fn.dart          顶层函数（call site 首选）
+    ↓
+api.dart             BridgeApi.instance 单例（init / dispose / 转发）
+    ↓
+api.g.dart           BridgeApiImpl（method_id + codec + invoke*）
+    ↓
+package:dart_cpp_bridge  DartCppBridge FFI 会话
+```
+
+| 层 | 默认文件 | 职责 |
+|----|----------|------|
+| 顶层函数 | `api_fn.dart` | `initBridge()`、`add()`… 直接调用，无 receiver |
+| 单例 facade | `api.dart` | `BridgeApi.instance`；持有 session 生命周期 |
+| 底层 impl | `api.g.dart` | 稳定 method id、payload 编解码；一般不直接 import |
+
+业务推荐：
+
+```dart
+await initBridge(libraryPath: '...');
+final v = bridgeVersion();
+await add(1, 2);
+// shutdownBridge(); // 仅进程退出
+```
+
+C++ 侧另生成 `wire_dispatch.cpp`（dispatch + 调度），与用户 `api_impl` 链接；`ffi_entry` 仍调用 `dcb::demo::dispatch_*`。
 
 ### 6.2 API 面示例（对齐 FRB）
 
@@ -880,7 +914,7 @@ abstract final class NativeBridge {
 
 | 维度 | FRB 2.x 默认 | C++ 草案 |
 |------|----------------|----------|
-| API 标记 | `#[frb]` 等 | `BRIDGE_*` / `StreamSink` → codegen 时 `[[bridge::*]]`；**按目录扫头 + 仅标记导出** |
+| API 标记 | `#[frb]` 等 | `BRIDGE_*` / `StreamSink` → codegen 时 `annotate("bridge::*")`；**按目录扫头 + 仅标记导出** |
 | 工程配置 | `flutter_rust_bridge.yaml` | 用户工程 `dart_cpp_bridge.yaml`（`scan` / 输出路径） |
 | 解析 / 生成 | FRB codegen | **手动**；**远端固定版 Python + 远端固定版 libclang**（均不用本机） |
 | 构建集成 | 视项目 | **Native Assets hook** 只编链接，不 codegen；C++ 编译器用本机/CI |

@@ -6,7 +6,7 @@
 
 仓库：<https://github.com/deretame/dart_cpp_bridge>
 
-> **状态**：独立实验仓库，Phase 1 手写骨架已基本完成；**Codegen / Native Assets 尚未就绪**，尚不适合作为生产依赖直接替换 FRB。
+> **状态**：独立实验仓库。Phase 1 手写运行时已基本完成；Phase 2 codegen 已能对 fixture 生成 **SYNC/ASYNC/NORMAL**（见 `examples/codegen_demo`）。**Native Assets / 富类型 / 产品化模板**尚未就绪，尚不适合作为生产依赖直接替换 FRB。
 
 ---
 
@@ -82,7 +82,7 @@
 | NativeFinalizer 自动关 session | ✅ |
 | Dart 测试（含多 Isolate） | ✅ |
 | C++ smoke（oneshot / DartFn e2e） | ✅ |
-| Codegen（注解 → wire / Dart） | ⏳ 未开始 |
+| Codegen（扫头 + 标记 → wire / Dart） | ⏳ SYNC/ASYNC/NORMAL + Dart 三层 API；见 `examples/codegen_demo` |
 | Native Assets hook 产品化 | ⏳ 未开始 |
 
 ### Demo API（手写）
@@ -214,7 +214,8 @@ third_party/dart_api/            # Dart API DL
 dart/                            # Dart 包 + test
 examples/phase1_demo/            # C++ smoke
 cmake/                           # 工具脚本
-codegen/                         # Phase 2 预留
+codegen/                         # 固定工具链 + parse/generate
+examples/codegen_demo/           # codegen fixture（yaml + 生成物 + 测试）
 hook/                            # Native Assets 预留
 ```
 
@@ -235,7 +236,8 @@ hook/                            # Native Assets 预留
 ## 路线图（摘要）
 
 1. **Phase 1**（当前）：手写骨架验证 Runtime / Session / 四通道 / DartFn  
-2. **Phase 2**：远端固定版 Python + libclang codegen（注解 → wire + Dart）  
+2. **Phase 2**：基础 SYNC/ASYNC/NORMAL 已通 → 扩展 struct/Stream/DartFn 与模板  
+   文档：[`codegen/README.md`](codegen/README.md)、[`examples/codegen_demo`](examples/codegen_demo/)
 3. **Phase 3**：Native Assets hook、CMake export、示例工程产品化  
 4. **Phase 4**：业务接入（不默认替换任何已有 FRB 生产桥）
 

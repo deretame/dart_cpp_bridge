@@ -12,6 +12,9 @@ out/
 *.exe
 *.pdb
 *.ilk
+*.exp
+*.iobj
+*.ipdb
 
 # IDE
 .idea/
@@ -20,6 +23,7 @@ out/
 *.suo
 .vs/
 CMakeSettings.json
+CMakeUserPresets.json
 
 # Dart / Flutter
 .dart_tool/
@@ -30,7 +34,16 @@ CMakeSettings.json
 .flutter-plugins
 .flutter-plugins-dependencies
 **/generated_plugin_registrant.dart
-.packages
+.flutter-plugins-dependencies
+*.dart_tool/
+
+# Python (codegen scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
 
 # Codegen: legacy in-repo cache (toolchain is user-level now)
 codegen/.cache/
@@ -39,6 +52,13 @@ codegen/toolchain/
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# FetchContent
+# FetchContent / CMake deps
 _deps/
+**/_deps/
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov

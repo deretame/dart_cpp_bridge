@@ -279,35 +279,57 @@ final class DartCppBridge implements Finalizable {
     }
   }
 
-  /// Sync demo: returns the native bridge protocol version (`i32`).
-  int bridgeVersion() {
+  /// Low-level sync invoke for codegen / custom method ids.
+  ///
+  /// Returns the response **payload** (not the full frame). Throws [StateError]
+  /// on wire error frames.
+  Uint8List invokeSyncMethod(int methodId, [Uint8List? payload]) {
     final req = makeFrame(
       type: MsgType.request,
       requestId: 0,
-      methodId: MethodId.bridgeVersion.value,
+      methodId: methodId,
+      payload: payload ?? Uint8List(0),
     );
     final resp = parseFrame(_invokeSyncRaw(req));
-    if (resp.type != MsgType.responseOk) {
-      throw StateError('unexpected sync response');
+    if (resp.type == MsgType.responseErr) {
+      final r = ByteReader(resp.payload);
+      r.i32();
+      throw StateError(r.str());
     }
-    return ByteReader(resp.payload).i32();
+    if (resp.type != MsgType.responseOk) {
+      throw StateError('unexpected sync response ${resp.type}');
+    }
+    return resp.payload;
+  }
+
+  /// Low-level async invoke for codegen / custom method ids.
+  ///
+  /// Completes with the response **payload** on ok, or errors with [StateError].
+  Future<Uint8List> invokeAsyncMethod(int methodId, [Uint8List? payload]) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: methodId,
+      payload: payload ?? Uint8List(0),
+    ));
+    return c.future;
+  }
+
+  /// Sync demo: returns the native bridge protocol version (`i32`).
+  int bridgeVersion() {
+    return ByteReader(invokeSyncMethod(MethodId.bridgeVersion.value)).i32();
   }
 
   /// Async demo: `a + b` computed on the C++ side (`Lazy`).
   Future<int> add(int a, int b) async {
-    final id = _allocId();
-    final c = Completer<Uint8List>();
-    _pending[id] = c;
     final payload = ByteWriter()
       ..i32(a)
       ..i32(b);
-    _invokeAsyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: id,
-      methodId: MethodId.add.value,
-      payload: payload.takeBytes(),
-    ));
-    return ByteReader(await c.future).i32();
+    return ByteReader(await invokeAsyncMethod(MethodId.add.value, payload.takeBytes()))
+        .i32();
   }
 
   /// Normal-channel demo: sleeps on a worker pool, then returns a done string.
