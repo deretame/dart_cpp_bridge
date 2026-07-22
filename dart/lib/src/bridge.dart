@@ -457,6 +457,23 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
+  /// Async demo: greets a person from a Dart class on the C++ side.
+  Future<String> greet(Person person) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()
+      ..str(person.name)
+      ..i32(person.age);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.greet.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).str();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
@@ -562,6 +579,25 @@ final class DartCppBridge implements Finalizable {
       _unregisterDartFn(fnId);
     }
   }
+} 
+
+/// Demo struct for hand-written codegen test (Person).
+class Person {
+  final String name;
+  final int age;
+
+  const Person({required this.name, required this.age});
+
+  @override
+  int get hashCode => name.hashCode ^ age.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Person &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          age == other.age;
 }
 
 /// Demo enum for hand-written codegen test (StatusCode).

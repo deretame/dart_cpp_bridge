@@ -51,6 +51,8 @@ enum class MethodId : std::uint32_t {
   kNextStatus = 13,
   // payload: 4 × i32 — async fixed array test
   kSumFixedFour = 14,
+  // payload: string + i32 — async struct test
+  kGreet = 15,
 };
 
 class ByteWriter {

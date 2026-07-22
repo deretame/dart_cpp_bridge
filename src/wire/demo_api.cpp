@@ -90,6 +90,16 @@ async_simple::coro::Lazy<std::int32_t> sum_fixed_four(
   co_return sum;
 }
 
+struct Person {
+  std::string name;
+  std::int32_t age;
+};
+
+async_simple::coro::Lazy<std::string> greet(Person person) {
+  co_return std::string("Hello, ") + person.name + "! You are " +
+            std::to_string(person.age);
+}
+
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
   co_return 0;
@@ -318,6 +328,28 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await sum_fixed_four(values);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kGreet: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        Person person;
+        person.name = r.str();
+        person.age = r.i32();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, person = std::move(person)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await greet(person);
+                ByteWriter w;
+                w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

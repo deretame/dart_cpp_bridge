@@ -85,7 +85,10 @@ enum MethodId {
   nextStatus(13),
 
   /// Async fixed array (4 × i32) -> i32 sum test.
-  sumFixedFour(14);
+  sumFixedFour(14),
+
+  /// Async struct Person -> string greet test.
+  greet(15);
 
   /// Numeric method id on the wire.
   final int value;

@@ -226,6 +226,13 @@ void main() {
     });
   });
 
+  group('struct ↔ Dart class', () {
+    test('greet returns message from struct fields', () async {
+      final out = await bridge.greet(Person(name: 'Alice', age: 30));
+      expect(out, 'Hello, Alice! You are 30');
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');
