@@ -1,4 +1,5 @@
 #include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 
 namespace dcb {
 
@@ -41,11 +42,6 @@ void Runtime::stop() {
   }
 }
 
-Session& global_session() {
-  static Session s;
-  return s;
-}
-
 void Session::set_stream_open(std::uint64_t stream_id, bool open) {
   std::lock_guard lock(streams_mu_);
   if (open) {
@@ -59,6 +55,57 @@ bool Session::stream_open(std::uint64_t stream_id) const {
   std::lock_guard lock(streams_mu_);
   auto it = streams_open_.find(stream_id);
   return it != streams_open_.end() && it->second;
+}
+
+SessionRegistry& SessionRegistry::instance() {
+  static SessionRegistry reg;
+  return reg;
+}
+
+std::uint64_t SessionRegistry::open(std::int64_t reply_port) {
+  const auto id = next_id_.fetch_add(1, std::memory_order_relaxed);
+  auto session = std::make_shared<Session>(reply_port);
+  std::lock_guard lock(mu_);
+  sessions_.emplace(id, std::move(session));
+  return id;
+}
+
+std::shared_ptr<Session> SessionRegistry::get(std::uint64_t id) const {
+  std::lock_guard lock(mu_);
+  auto it = sessions_.find(id);
+  if (it == sessions_.end()) {
+    return nullptr;
+  }
+  return it->second;
+}
+
+void SessionRegistry::close(std::uint64_t id) {
+  std::shared_ptr<Session> s;
+  {
+    std::lock_guard lock(mu_);
+    auto it = sessions_.find(id);
+    if (it == sessions_.end()) {
+      return;
+    }
+    s = std::move(it->second);
+    sessions_.erase(it);
+  }
+  if (s) {
+    s->dispose();
+  }
+}
+
+void SessionRegistry::close_all() {
+  std::unordered_map<std::uint64_t, std::shared_ptr<Session>> tmp;
+  {
+    std::lock_guard lock(mu_);
+    tmp.swap(sessions_);
+  }
+  for (auto& kv : tmp) {
+    if (kv.second) {
+      kv.second->dispose();
+    }
+  }
 }
 
 }  // namespace dcb

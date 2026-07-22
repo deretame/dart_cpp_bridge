@@ -17,28 +17,25 @@
 extern "C" {
 #endif
 
-// Initialize Dart API DL (pass NativeApi.initializeApiDLData).
-// Owning isolate must call this before async replies can be posted.
+// Per-isolate: pass NativeApi.initializeApiDLData.
 DCB_API intptr_t dcb_init_dart_api(void* initialize_api_dl_data);
 
-// Start runtime + bind the single process-wide session reply port.
-// Only the owning isolate should call this (async replies go here).
-DCB_API void dcb_init(int64_t reply_native_port);
+// Open a session for this isolate's reply port. Starts shared runtime if needed.
+// Returns session_id (>0), or 0 on failure.
+DCB_API uint64_t dcb_session_open(int64_t reply_native_port);
 
-// Dispose session (generation++); runtime keeps running.
-DCB_API void dcb_dispose(void);
+// Close one session (does not stop runtime).
+DCB_API void dcb_session_close(uint64_t session_id);
 
-// Dispose session + stop runtime threads.
+// Close all sessions + stop runtime.
 DCB_API void dcb_shutdown(void);
 
-// Sync RPC (any isolate in-process may call after runtime is up).
-DCB_API uint8_t* dcb_invoke_sync(const uint8_t* req, size_t req_len, size_t* out_len,
-                                 char** error_out);
+DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t req_len,
+                                 size_t* out_len, char** error_out);
 
-// Async / stream: replies on the single session reply port (owning isolate).
-DCB_API void dcb_invoke_async(const uint8_t* req, size_t req_len);
+DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t req_len);
 
-DCB_API void dcb_stream_close(uint64_t stream_id);
+DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id);
 
 DCB_API void dcb_free(void* p);
 

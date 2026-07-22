@@ -8,41 +8,57 @@ import 'package:ffi/ffi.dart';
 import 'bindings.dart';
 import 'codec.dart';
 
-/// Phase-1 hand-written bridge facade.
+/// Dart ↔ C++ bridge.
 ///
-/// **Single process-wide session:** one reply port owned by the isolate that
-/// called [init]. Other isolates may call **sync** FFI against the same runtime
-/// (see [invokeBridgeVersionSync]) but must not call [init] (would rebind port).
+/// - **Runtime**: process-wide (shared asio loop / thread pool).
+/// - **Session**: per-isolate (own [ReceivePort] so async works on workers).
 final class DartCppBridge {
-  DartCppBridge._(this._b);
+  DartCppBridge._({
+    required NativeBindings bindings,
+    required int sessionId,
+    required ReceivePort receivePort,
+  })  : _b = bindings,
+        _sessionId = sessionId,
+        _rp = receivePort {
+    _sub = _rp.listen(_onMessage);
+  }
 
   final NativeBindings _b;
-  final ReceivePort _rp = ReceivePort();
+  final int _sessionId;
+  final ReceivePort _rp;
   final Map<int, Completer<Uint8List>> _pending = {};
   final Map<int, StreamController<int>> _streams = {};
   int _nextId = 1;
   StreamSubscription<dynamic>? _sub;
   bool _alive = true;
 
+  /// Isolate-local singleton.
   static DartCppBridge? _instance;
 
-  /// Owning isolate: binds the single session reply port.
+  /// Open a session on this isolate (safe to call from any isolate).
   static Future<DartCppBridge> init({String? libraryPath}) async {
     if (_instance != null) return _instance!;
+
     final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
     final rc = b.initDartApi(NativeApi.initializeApiDLData);
     if (rc != 0) {
       throw StateError('Dart_InitializeApiDL failed: $rc');
     }
-    final bridge = DartCppBridge._(b);
-    bridge._start();
+
+    final rp = ReceivePort();
+    final sessionId = b.sessionOpen(rp.sendPort.nativePort);
+    if (sessionId == 0) {
+      rp.close();
+      throw StateError('dcb_session_open failed');
+    }
+
+    final bridge = DartCppBridge._(
+      bindings: b,
+      sessionId: sessionId,
+      receivePort: rp,
+    );
     _instance = bridge;
     return bridge;
-  }
-
-  void _start() {
-    _sub = _rp.listen(_onMessage);
-    _b.init(_rp.sendPort.nativePort);
   }
 
   void _ensureAlive() {
@@ -51,6 +67,7 @@ final class DartCppBridge {
     }
   }
 
+  /// Close this isolate's session. Does not stop the process runtime.
   void dispose() {
     if (!_alive) return;
     _alive = false;
@@ -64,12 +81,13 @@ final class DartCppBridge {
       if (!s.isClosed) s.close();
     }
     _streams.clear();
-    _b.dispose();
+    _b.sessionClose(_sessionId);
     _sub?.cancel();
     _rp.close();
     _instance = null;
   }
 
+  /// Close all sessions and stop the shared runtime (process-wide).
   void shutdown() {
     dispose();
     _b.shutdown();
@@ -78,7 +96,7 @@ final class DartCppBridge {
   int _allocId() => _nextId++;
 
   void _onMessage(dynamic msg) {
-    Uint8List bytes;
+    late final Uint8List bytes;
     if (msg is Uint8List) {
       bytes = msg;
     } else if (msg is TransferableTypedData) {
@@ -92,29 +110,25 @@ final class DartCppBridge {
     final frame = parseFrame(bytes);
     switch (frame.type) {
       case MsgType.responseOk:
-        final c = _pending.remove(frame.requestId);
-        c?.complete(frame.payload);
+        _pending.remove(frame.requestId)?.complete(frame.payload);
       case MsgType.responseErr:
         final c = _pending.remove(frame.requestId);
         final r = ByteReader(frame.payload);
         r.i32();
-        final m = r.str();
-        c?.completeError(StateError(m));
+        c?.completeError(StateError(r.str()));
       case MsgType.streamData:
         final s = _streams[frame.requestId];
         if (s != null && !s.isClosed) {
           s.add(ByteReader(frame.payload).i32());
         }
       case MsgType.streamEnd:
-        final s = _streams.remove(frame.requestId);
-        s?.close();
+        _streams.remove(frame.requestId)?.close();
       case MsgType.streamErr:
         final s = _streams.remove(frame.requestId);
         if (s != null) {
           final r = ByteReader(frame.payload);
           r.i32();
-          final m = r.str();
-          s.addError(StateError(m));
+          s.addError(StateError(r.str()));
           s.close();
         }
       case MsgType.request:
@@ -130,7 +144,7 @@ final class DartCppBridge {
     final errPtr = malloc<Pointer<Utf8>>();
     errPtr.value = nullptr;
     try {
-      final out = _b.invokeSync(ptr, req.length, outLen, errPtr);
+      final out = _b.invokeSync(_sessionId, ptr, req.length, outLen, errPtr);
       if (out == nullptr) {
         final err = errPtr.value;
         final msg = err == nullptr ? 'sync failed' : err.toDartString();
@@ -153,7 +167,7 @@ final class DartCppBridge {
     final ptr = malloc<Uint8>(req.length);
     ptr.asTypedList(req.length).setAll(0, req);
     try {
-      _b.invokeAsync(ptr, req.length);
+      _b.invokeAsync(_sessionId, ptr, req.length);
     } finally {
       malloc.free(ptr);
     }
@@ -179,51 +193,45 @@ final class DartCppBridge {
     final payload = ByteWriter()
       ..i32(a)
       ..i32(b);
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.add.value,
       payload: payload.takeBytes(),
-    );
-    _invokeAsyncRaw(req);
-    final body = await c.future;
-    return ByteReader(body).i32();
+    ));
+    return ByteReader(await c.future).i32();
   }
 
   Future<String> sleepTest() async {
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.sleepTest.value,
-    );
-    _invokeAsyncRaw(req);
-    final body = await c.future;
-    return ByteReader(body).str();
+    ));
+    return ByteReader(await c.future).str();
   }
 
   Stream<int> ticks({int count = 5, int intervalMs = 100}) {
     final id = _allocId();
     final controller = StreamController<int>(
       onCancel: () {
-        _b.streamClose(id);
+        _b.streamClose(_sessionId, id);
         _streams.remove(id);
       },
     );
     _streams[id] = controller;
-
     final payload = ByteWriter()
       ..i32(count)
       ..i32(intervalMs);
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.ticks.value,
       payload: payload.takeBytes(),
-    );
-    _invokeAsyncRaw(req);
+    ));
     return controller.stream;
   }
 
@@ -232,15 +240,13 @@ final class DartCppBridge {
     final c = Completer<Uint8List>();
     _pending[id] = c;
     final payload = ByteWriter()..str(s);
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.echo.value,
       payload: payload.takeBytes(),
-    );
-    _invokeAsyncRaw(req);
-    final body = await c.future;
-    return ByteReader(body).str();
+    ));
+    return ByteReader(await c.future).str();
   }
 
   Future<void> failAsync([String message = 'fail_async']) async {
@@ -248,13 +254,12 @@ final class DartCppBridge {
     final c = Completer<Uint8List>();
     _pending[id] = c;
     final payload = ByteWriter()..str(message);
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.failAsync.value,
       payload: payload.takeBytes(),
-    );
-    _invokeAsyncRaw(req);
+    ));
     await c.future;
   }
 
@@ -262,45 +267,41 @@ final class DartCppBridge {
     final id = _allocId();
     final controller = StreamController<int>(
       onCancel: () {
-        _b.streamClose(id);
+        _b.streamClose(_sessionId, id);
         _streams.remove(id);
       },
     );
     _streams[id] = controller;
     final payload = ByteWriter()..str(message);
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: MethodId.failStream.value,
       payload: payload.takeBytes(),
-    );
-    _invokeAsyncRaw(req);
+    ));
     return controller.stream;
   }
 
   void invokeSyncNonSyncMethodForTest() {
-    final req = makeFrame(
+    _invokeSyncRaw(makeFrame(
       type: MsgType.request,
       requestId: 0,
       methodId: MethodId.add.value,
-    );
-    _invokeSyncRaw(req);
+    ));
   }
 
   Future<void> invokeUnknownMethodForTest() async {
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;
-    final req = makeFrame(
+    _invokeAsyncRaw(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: 0x7ffffffe,
-    );
-    _invokeAsyncRaw(req);
+    ));
     await c.future;
   }
 
-  /// Sends garbage bytes; native posts error on request_id 0.
   Future<void> invokeBadFrameForTest() async {
     final c = Completer<Uint8List>();
     _pending[0] = c;

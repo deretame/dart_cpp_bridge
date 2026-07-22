@@ -1,11 +1,13 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <async_simple/coro/Lazy.h>
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <thread>
 #include <utility>
@@ -55,13 +57,13 @@ void fail_stream(I32Sink sink, std::string message) {
 
 namespace {
 
-void post_ok(Session* s, std::uint64_t gen, std::uint64_t req, std::uint32_t method,
-             const std::vector<std::uint8_t>& payload) {
+void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
+             std::uint32_t method, const std::vector<std::uint8_t>& payload) {
   s->try_post(gen, make_frame(MsgType::kResponseOk, req, method, payload));
 }
 
-void post_err(Session* s, std::uint64_t gen, std::uint64_t req, std::uint32_t method,
-              const std::string& msg) {
+void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
+              std::uint32_t method, const std::string& msg) {
   ByteWriter w;
   w.i32(1);
   w.str(msg);
@@ -70,7 +72,8 @@ void post_err(Session* s, std::uint64_t gen, std::uint64_t req, std::uint32_t me
 
 }  // namespace
 
-void dispatch_request(Session* session, const std::uint8_t* data, std::size_t len) {
+void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data,
+                      std::size_t len) {
   const auto gen = session->generation();
 
   FrameHeader frame;
@@ -141,7 +144,7 @@ void dispatch_request(Session* session, const std::uint8_t* data, std::size_t le
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto count = r.i32();
         const auto interval_ms = r.i32();
-        auto sink = make_i32_sink(session, req, gen, method);
+        auto sink = make_i32_sink(session.get(), req, gen, method);
         ticks(std::move(sink), count, interval_ms);
         break;
       }
@@ -184,7 +187,7 @@ void dispatch_request(Session* session, const std::uint8_t* data, std::size_t le
       case MethodId::kFailStream: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto msg = r.str();
-        auto sink = make_i32_sink(session, req, gen, method);
+        auto sink = make_i32_sink(session.get(), req, gen, method);
         fail_stream(std::move(sink), std::move(msg));
         break;
       }

@@ -91,9 +91,9 @@ dart test
 ```
 
 覆盖：sync / async / normal / stream、关订阅、dispose / shutdown、错误路径、坏帧、大 payload、
-**多 Isolate 共用单一 session 的 sync**（后台 isolate 不得 `init` 抢 port）、纯 Dart codec。
+**多 Isolate 异步**（每 isolate 自己 `init` 开 session + reply port，runtime 进程共享）、纯 Dart codec。
 
-单 session 约定：进程内一个 reply port（owning isolate）；其它 isolate 仅可 sync 调同一 runtime。
+模型：**Runtime 进程唯一；Session 每 Isolate 一个**（后台 isolate 也可 async/stream）。
 
 默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
 

@@ -2,6 +2,7 @@
 
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 
 #include "dart_api_dl.h"
 
@@ -9,12 +10,13 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace dcb {
 namespace demo {
-void dispatch_request(Session* session, const std::uint8_t* data, std::size_t len);
+void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data, std::size_t len);
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
 }  // namespace demo
 }  // namespace dcb
@@ -56,6 +58,8 @@ uint8_t* dup_bytes(const std::vector<std::uint8_t>& v, size_t* out_len) {
   return p;
 }
 
+void ensure_post_hook() { dcb::Runtime::instance().set_dart_post(&dart_post_impl, nullptr); }
+
 }  // namespace
 
 extern "C" {
@@ -64,28 +68,37 @@ DCB_API intptr_t dcb_init_dart_api(void* initialize_api_dl_data) {
   return Dart_InitializeApiDL(initialize_api_dl_data);
 }
 
-DCB_API void dcb_init(int64_t reply_native_port) {
-  auto& rt = dcb::Runtime::instance();
-  rt.start();
-  rt.set_dart_post(&dart_post_impl, nullptr);
-  dcb::global_session().bind_reply_port(reply_native_port);
+DCB_API uint64_t dcb_session_open(int64_t reply_native_port) {
+  try {
+    auto& rt = dcb::Runtime::instance();
+    rt.start();
+    ensure_post_hook();
+    return dcb::SessionRegistry::instance().open(reply_native_port);
+  } catch (...) {
+    return 0;
+  }
 }
 
-DCB_API void dcb_dispose(void) { dcb::global_session().dispose(); }
+DCB_API void dcb_session_close(uint64_t session_id) {
+  dcb::SessionRegistry::instance().close(session_id);
+}
 
 DCB_API void dcb_shutdown(void) {
-  dcb::global_session().dispose();
+  dcb::SessionRegistry::instance().close_all();
   dcb::Runtime::instance().set_dart_post(nullptr, nullptr);
   dcb::Runtime::instance().stop();
 }
 
-DCB_API uint8_t* dcb_invoke_sync(const uint8_t* req, size_t req_len, size_t* out_len,
-                                 char** error_out) {
+DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t req_len,
+                                 size_t* out_len, char** error_out) {
   if (error_out) {
     *error_out = nullptr;
   }
   try {
     dcb::Runtime::instance().ensure_running();
+    if (!dcb::SessionRegistry::instance().get(session_id)) {
+      throw std::runtime_error("invalid session");
+    }
     auto out = dcb::demo::dispatch_sync(req, req_len);
     return dup_bytes(out, out_len);
   } catch (const std::exception& e) {
@@ -101,19 +114,24 @@ DCB_API uint8_t* dcb_invoke_sync(const uint8_t* req, size_t req_len, size_t* out
   }
 }
 
-DCB_API void dcb_invoke_async(const uint8_t* req, size_t req_len) {
-  if (!dcb::Runtime::instance().running()) {
+DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t req_len) {
+  auto session = dcb::SessionRegistry::instance().get(session_id);
+  if (!session || !dcb::Runtime::instance().running()) {
     return;
   }
   std::vector<std::uint8_t> copy(req, req + req_len);
-  dcb::Runtime::instance().spawn_on_asio([copy = std::move(copy)]() -> async_simple::coro::Lazy<> {
-    dcb::demo::dispatch_request(&dcb::global_session(), copy.data(), copy.size());
-    co_return;
-  });
+  dcb::Runtime::instance().spawn_on_asio(
+      [session = std::move(session), copy = std::move(copy)]() -> async_simple::coro::Lazy<> {
+        dcb::demo::dispatch_request(session, copy.data(), copy.size());
+        co_return;
+      });
 }
 
-DCB_API void dcb_stream_close(uint64_t stream_id) {
-  dcb::global_session().set_stream_open(stream_id, false);
+DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {
+  auto session = dcb::SessionRegistry::instance().get(session_id);
+  if (session) {
+    session->set_stream_open(stream_id, false);
+  }
 }
 
 DCB_API void dcb_free(void* p) { std::free(p); }

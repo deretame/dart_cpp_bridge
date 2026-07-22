@@ -1,10 +1,9 @@
 #pragma once
 
 #include "dart_cpp_bridge/codec.hpp"
-#include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>

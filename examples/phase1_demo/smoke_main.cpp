@@ -1,6 +1,6 @@
-// Native-only smoke: runtime + codec + sync/async dispatch (no Dart isolate).
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -10,7 +10,7 @@
 
 namespace dcb::demo {
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
-void dispatch_request(Session* session, const std::uint8_t* data, std::size_t len);
+void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data, std::size_t len);
 }  // namespace dcb::demo
 
 int main() {
@@ -27,7 +27,9 @@ int main() {
         }
       },
       nullptr);
-  global_session().bind_reply_port(1);
+
+  auto sid = SessionRegistry::instance().open(/*reply_port=*/1);
+  auto session = SessionRegistry::instance().get(sid);
 
   {
     auto req =
@@ -44,16 +46,11 @@ int main() {
     payload.i32(2);
     auto req =
         make_frame(MsgType::kRequest, 2, static_cast<std::uint32_t>(MethodId::kAdd), payload.raw());
-    demo::dispatch_request(&global_session(), req.data(), req.size());
+    demo::dispatch_request(session, req.data(), req.size());
   }
 
-  {
-    auto req =
-        make_frame(MsgType::kRequest, 3, static_cast<std::uint32_t>(MethodId::kSleepTest), {});
-    demo::dispatch_request(&global_session(), req.data(), req.size());
-  }
-
-  std::this_thread::sleep_for(std::chrono::seconds(2));
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  SessionRegistry::instance().close_all();
   Runtime::instance().stop();
   std::printf("smoke ok\n");
   return 0;

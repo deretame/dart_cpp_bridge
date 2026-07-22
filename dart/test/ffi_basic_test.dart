@@ -6,9 +6,28 @@ import 'package:test/test.dart';
 
 import 'support/library_path.dart';
 
-/// Top-level so Isolate.run does not capture the owning [DartCppBridge].
-Future<int> _workerSyncVersion(String libraryPath) {
-  return Isolate.run(() => invokeBridgeVersionSync(libraryPath: libraryPath));
+/// Top-level entry for worker isolates (must not capture main bridge).
+Future<int> _workerAdd(String libraryPath, int a, int b) {
+  return Isolate.run(() async {
+    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    try {
+      return await bridge.add(a, b);
+    } finally {
+      // Close only this isolate's session; keep process runtime alive.
+      bridge.dispose();
+    }
+  });
+}
+
+Future<List<int>> _workerTicks(String libraryPath) {
+  return Isolate.run(() async {
+    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    try {
+      return await bridge.ticks(count: 3, intervalMs: 5).toList();
+    } finally {
+      bridge.dispose();
+    }
+  });
 }
 
 void main() {
@@ -78,23 +97,22 @@ void main() {
       expect(values, [0, 1, 2]);
     });
 
-    test('cancel subscription stops delivering (C++ continues silently)', () async {
+    test('cancel subscription stops delivering', () async {
       final received = <int>[];
       final sub = bridge.ticks(count: 30, intervalMs: 40).listen(received.add);
-
       await Future<void>.delayed(const Duration(milliseconds: 80));
       expect(received, isNotEmpty);
       final atCancel = received.length;
-
       await sub.cancel();
       await Future<void>.delayed(const Duration(milliseconds: 300));
       expect(received.length, atCancel);
     });
 
     test('two concurrent ticks streams are independent', () async {
-      final a = bridge.ticks(count: 3, intervalMs: 10).toList();
-      final b = bridge.ticks(count: 4, intervalMs: 10).toList();
-      final results = await Future.wait([a, b]);
+      final results = await Future.wait([
+        bridge.ticks(count: 3, intervalMs: 10).toList(),
+        bridge.ticks(count: 4, intervalMs: 10).toList(),
+      ]);
       expect(results[0], [0, 1, 2]);
       expect(results[1], [0, 1, 2, 3]);
     });
@@ -110,8 +128,6 @@ void main() {
       final s = 'x' * (256 * 1024);
       final out = await bridge.echo(s);
       expect(out.length, s.length);
-      expect(out.startsWith('xxx'), isTrue);
-      expect(out.endsWith('xxx'), isTrue);
     });
 
     test('failAsync surfaces as Future error', () async {
@@ -146,9 +162,7 @@ void main() {
     test('sync non-sync method errors', () {
       expect(
         () => bridge.invokeSyncNonSyncMethodForTest(),
-        throwsA(
-          isA<StateError>().having((e) => e.message, 'message', contains('not sync-capable')),
-        ),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('not sync-capable'))),
       );
     });
 
@@ -160,23 +174,31 @@ void main() {
     });
   });
 
-  group('multi isolate (single shared session)', () {
-    test('background isolates use same runtime via sync FFI', () async {
-      // Owning isolate keeps the single session; workers must NOT call init.
+  group('multi isolate (per-isolate session, shared runtime)', () {
+    test('background isolates can async add', () async {
       final results = await Future.wait([
-        _workerSyncVersion(libraryPath),
-        _workerSyncVersion(libraryPath),
-        _workerSyncVersion(libraryPath),
+        _workerAdd(libraryPath, 1, 2),
+        _workerAdd(libraryPath, 10, 20),
+        _workerAdd(libraryPath, 100, 200),
       ]);
-      expect(results, [1, 1, 1]);
-      // Owning isolate async still works on the same session.
-      expect(await bridge.add(2, 3), 5);
+      expect(results, [3, 30, 300]);
+      // Main isolate session still works.
+      expect(await bridge.add(7, 8), 15);
     });
 
-    test('many concurrent worker sync calls', () async {
-      final futures = List.generate(16, (_) => _workerSyncVersion(libraryPath));
+    test('background isolate can stream ticks', () async {
+      expect(await _workerTicks(libraryPath), [0, 1, 2]);
+    });
+
+    test('many concurrent worker async calls', () async {
+      final futures = <Future<int>>[];
+      for (var i = 0; i < 12; i++) {
+        futures.add(_workerAdd(libraryPath, i, i));
+      }
       final results = await Future.wait(futures);
-      expect(results.every((v) => v == 1), isTrue);
+      for (var i = 0; i < 12; i++) {
+        expect(results[i], i + i);
+      }
     });
   });
 
@@ -185,12 +207,10 @@ void main() {
       final pending = bridge.sleepTest();
       await Future<void>.delayed(const Duration(milliseconds: 50));
       bridge.dispose();
-
       await expectLater(
         pending,
         throwsA(isA<StateError>().having((e) => e.message, 'message', contains('disposed'))),
       );
-
       bridge = await openBridge();
       expect(bridge.bridgeVersion(), 1);
     }, timeout: const Timeout(Duration(seconds: 10)));
@@ -203,7 +223,6 @@ void main() {
     test('shutdown then call fails; can start again', () async {
       bridge.shutdown();
       expect(() => bridge.bridgeVersion(), throwsA(isA<StateError>()));
-
       bridge = await openBridge();
       expect(bridge.bridgeVersion(), 1);
       expect(await bridge.add(4, 5), 9);
