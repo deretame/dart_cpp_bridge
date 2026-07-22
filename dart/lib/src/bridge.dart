@@ -504,8 +504,8 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
-  /// Async demo: returns the next signed 128-bit integer from C++.
-  Future<BigInt> nextI128(BigInt value) async {
+  /// Async demo: echoes a signed 128-bit integer back as BigInt.
+  Future<BigInt> echoI128(BigInt value) async {
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;

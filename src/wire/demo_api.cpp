@@ -119,17 +119,8 @@ async_simple::coro::Lazy<std::int32_t> set_sum(std::unordered_set<std::int32_t> 
   co_return sum;
 }
 
-async_simple::coro::Lazy<Int128> next_i128(Int128 v) {
-  UInt128 raw;
-  raw.low = v.low;
-  raw.high = static_cast<std::uint64_t>(v.high);
-  // raw + 1
-  raw.low += 1;
-  if (raw.low == 0) raw.high += 1;
-  Int128 result;
-  result.low = raw.low;
-  result.high = static_cast<std::int64_t>(raw.high);
-  co_return result;
+async_simple::coro::Lazy<Int128> echo_i128(Int128 v) {
+  co_return v;
 }
 
 async_simple::coro::Lazy<std::int32_t> total_ages(std::vector<Person> people) {
@@ -447,7 +438,7 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
         Runtime::instance().spawn_on_asio(
             [session, gen, req, method, input]() -> async_simple::coro::Lazy<> {
               try {
-                auto out = co_await next_i128(input);
+                auto out = co_await echo_i128(input);
                 ByteWriter w;
                 w.i128(out);
                 post_ok(session, gen, req, method, w.raw());

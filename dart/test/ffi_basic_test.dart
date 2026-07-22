@@ -255,17 +255,17 @@ void main() {
   });
 
   group('__int128 ↔ BigInt', () {
-    test('nextI128 increments a large positive value', () async {
-      final input = (BigInt.one << 127) - BigInt.two;
-      expect(await bridge.nextI128(input), (BigInt.one << 127) - BigInt.one);
+    test('echoI128 roundtrips a large positive value', () async {
+      final value = (BigInt.one << 127) - BigInt.two;
+      expect(await bridge.echoI128(value), value);
     });
 
-    test('nextI128 handles zero', () async {
-      expect(await bridge.nextI128(BigInt.zero), BigInt.one);
+    test('echoI128 roundtrips zero', () async {
+      expect(await bridge.echoI128(BigInt.zero), BigInt.zero);
     });
 
-    test('nextI128 handles negative values', () async {
-      expect(await bridge.nextI128(BigInt.from(-5)), BigInt.from(-4));
+    test('echoI128 roundtrips a negative value', () async {
+      expect(await bridge.echoI128(BigInt.from(-5)), BigInt.from(-5));
     });
   });
 
