@@ -415,15 +415,29 @@ final class DartCppBridge implements Finalizable {
     await c.future;
   }
 
-  /// FRB-style reverse call: pass a Dart callback into C++.
+  /// FRB-style reverse call (C++ **async** wait on io via co_await).
   ///
   /// ```dart
   /// final s = await bridge.callDartHello((name) => 'Hello, $name!');
-  /// // s == 'Hello, Tom!'
   /// ```
   ///
-  /// [dartCallback] may be sync or `async` (`FutureOr<String>`).
-  Future<String> callDartHello(FutureOr<String> Function(String name) dartCallback) async {
+  /// [dartCallback] may be sync or `async` on the Dart side.
+  Future<String> callDartHello(FutureOr<String> Function(String name) dartCallback) {
+    return _callDartHelloImpl(dartCallback, MethodId.callDartHello);
+  }
+
+  /// FRB-style reverse call (C++ **sync** block on current native thread).
+  ///
+  /// Library does **not** move this off the io thread. If C++ calls sync on io,
+  /// the scheduler stalls until Dart replies — caller's responsibility.
+  Future<String> callDartHelloSync(FutureOr<String> Function(String name) dartCallback) {
+    return _callDartHelloImpl(dartCallback, MethodId.callDartHelloSync);
+  }
+
+  Future<String> _callDartHelloImpl(
+    FutureOr<String> Function(String name) dartCallback,
+    MethodId method,
+  ) async {
     final fnId = _registerDartFn(dartCallback);
     final id = _allocId();
     final c = Completer<Uint8List>();
@@ -433,7 +447,7 @@ final class DartCppBridge implements Finalizable {
       _invokeAsyncRaw(makeFrame(
         type: MsgType.request,
         requestId: id,
-        methodId: MethodId.callDartHello.value,
+        methodId: method.value,
         payload: payload.takeBytes(),
       ));
       return ByteReader(await c.future).str();

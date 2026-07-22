@@ -3,10 +3,9 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 
-#include <async_simple/coro/Lazy.h>
-
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -23,7 +22,6 @@ struct DartFnReply {
   std::string error;
 };
 
-// One session per Dart isolate (own reply port). Runtime is process-wide.
 class Session {
  public:
   explicit Session(std::int64_t reply_port) : reply_port_(reply_port) {}
@@ -47,14 +45,17 @@ class Session {
   void set_stream_open(std::uint64_t stream_id, bool open);
   bool stream_open(std::uint64_t stream_id) const;
 
-  // Blocks a pool thread until Dart replies via dcb_dart_fn_reply (does not block io_context).
-  std::vector<std::uint8_t> invoke_dart_fn_blocking(std::uint64_t generation, std::uint64_t fn_id,
-                                                    std::vector<std::uint8_t> args_payload);
+  // Blocks **current** thread until Dart replies. No automatic offload.
+  // If you call this on the io thread, you stall the scheduler — your problem.
+  std::vector<std::uint8_t> invoke_dart_fn_sync(std::uint64_t generation, std::uint64_t fn_id,
+                                                std::vector<std::uint8_t> args_payload);
 
   void complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
                         std::string error);
 
  private:
+  using CompleteFn = std::function<void(DartFnReply)>;
+
   std::int64_t reply_port_{0};
   std::atomic<std::uint64_t> generation_{1};
   mutable std::mutex streams_mu_;
@@ -62,7 +63,7 @@ class Session {
 
   std::mutex dart_fn_mu_;
   std::atomic<std::uint64_t> next_dart_fn_reply_{1};
-  std::unordered_map<std::uint64_t, std::shared_ptr<std::promise<DartFnReply>>> dart_fn_pending_;
+  std::unordered_map<std::uint64_t, CompleteFn> dart_fn_pending_;
 };
 
 class SessionRegistry {

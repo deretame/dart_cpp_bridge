@@ -27,7 +27,8 @@ Demo API：
 - `add(a,b)` async (`Lazy`) → `Future<int>`
 - `sleepTest()` normal（`spawn_blocking`）→ `Future<String>`
 - `ticks(count, intervalMs)` stream → `Stream<int>`
-- `callDartHello((name) => 'Hello, $name!')` DartFn 反向 → `Future<String>`
+- `callDartHello(cb)` DartFn 异步入口（C++ 在 pool 上等，不堵 io）
+- `callDartHelloSync(cb)` DartFn 同步入口（阻塞当前原生线程；堵 io 自负）
 
 ## 目录
 

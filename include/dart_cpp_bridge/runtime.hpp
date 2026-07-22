@@ -4,8 +4,6 @@
 #include <asio/post.hpp>
 #include <asio/thread_pool.hpp>
 
-#include <async_simple/Promise.h>
-#include <async_simple/coro/FutureAwaiter.h>
 #include <async_simple/coro/Lazy.h>
 
 #include <atomic>
@@ -49,38 +47,6 @@ class Runtime {
       auto lazy = factory();
       std::move(lazy).start([](auto&&) {});
     });
-  }
-
-  template <class F>
-  auto spawn_blocking(F func)
-      -> async_simple::coro::Lazy<std::invoke_result_t<std::decay_t<F>>> {
-    using R = std::invoke_result_t<std::decay_t<F>>;
-    ensure_running();
-    auto promise = std::make_shared<async_simple::Promise<R>>();
-    auto future = promise->getFuture();
-    auto* io = &io_;
-    asio::post(*pool_, [promise, func = std::move(func), io]() mutable {
-      try {
-        if constexpr (std::is_void_v<R>) {
-          func();
-          asio::post(*io, [promise]() { promise->setValue(); });
-        } else {
-          R value = func();
-          asio::post(*io, [promise, value = std::move(value)]() mutable {
-            promise->setValue(std::move(value));
-          });
-        }
-      } catch (...) {
-        auto ep = std::current_exception();
-        asio::post(*io, [promise, ep]() { promise->setException(ep); });
-      }
-    });
-    if constexpr (std::is_void_v<R>) {
-      co_await std::move(future);
-      co_return;
-    } else {
-      co_return co_await std::move(future);
-    }
   }
 
   void set_dart_post(DartPostFn fn, void* userdata) {

@@ -167,17 +167,30 @@ void main() {
   });
 
   group('DartFn reverse call (FRB-style)', () {
-    test('sync dart callback String->String', () async {
+    test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');
       expect(out, 'Hello, Tom!');
     });
 
-    test('async dart callback', () async {
+    test('C++ async wait + Dart async callback', () async {
       final out = await bridge.callDartHello((name) async {
         await Future<void>.delayed(const Duration(milliseconds: 20));
         return 'Hi, $name';
       });
       expect(out, 'Hi, Tom');
+    });
+
+    test('C++ sync wait + Dart sync callback', () async {
+      final out = await bridge.callDartHelloSync((name) => 'Sync, $name!');
+      expect(out, 'Sync, Tom!');
+    });
+
+    test('C++ sync wait + Dart async callback', () async {
+      final out = await bridge.callDartHelloSync((name) async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        return 'SyncAsync, $name';
+      });
+      expect(out, 'SyncAsync, Tom');
     });
 
     test('dart callback throw surfaces to C++ then Dart', () async {

@@ -37,7 +37,16 @@ Dart 测试：`cd dart && dart test`（约 **36** 例，含 DartFn）。
 | Stream 关订阅后 add 静默丢 | ✅ | `dcb_stream_close` |
 | NativeFinalizer 自动关 session | ✅ | 对齐 FRB：日常可不手动 dispose |
 | 可选 `dispose` / 进程 `shutdown` | ✅ | worker 勿调 shutdown |
-| **DartFn 反向调用（参数式）** | ✅ | `callDartHello(cb)`；C++ `co_await cb("Tom")`；sync/async 回调 |
+| **DartFn 反向调用（参数式）** | ✅ | 见下表 |
+
+#### DartFn 两种等待模式（不替用户兜底）
+
+| C++ API | 行为 | 谁承担风险 |
+|---------|------|------------|
+| `callSync` / `callDartHelloSync` | **当前线程**阻塞直到 Dart reply | 若在 **io 线程**调用，会卡住调度器——用户自负 |
+| `callDartHello`（async 入口） | 在 **thread_pool** 上阻塞等，**不堵 io** | 占用 pool 线程；与 normal 任务共享池 |
+
+Dart 侧回调无论 sync/async 都在 **Isolate 事件循环**执行，不在 C++ 线程池里跑。
 
 ### 2.2 通道与错误
 

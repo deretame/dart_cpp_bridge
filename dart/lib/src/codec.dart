@@ -32,7 +32,8 @@ enum MethodId {
   echo(5),
   failAsync(6),
   failStream(7),
-  callDartHello(8);
+  callDartHello(8),
+  callDartHelloSync(9);
 
   final int value;
   const MethodId(this.value);

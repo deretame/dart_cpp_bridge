@@ -35,8 +35,10 @@ enum class MethodId : std::uint32_t {
   kEcho = 5,
   kFailAsync = 6,
   kFailStream = 7,
-  // payload: fn_id u64 — DartFn(String)->String (sync or async on Dart side)
+  // payload: fn_id u64 — DartFn async wait on io (co_await)
   kCallDartHello = 8,
+  // payload: fn_id u64 — DartFn sync block current thread (no offload babysitting)
+  kCallDartHelloSync = 9,
 };
 
 class ByteWriter {

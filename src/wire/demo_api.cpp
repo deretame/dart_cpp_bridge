@@ -56,11 +56,6 @@ void fail_stream(I32Sink sink, std::string message) {
              });
 }
 
-// FRB-style: callback passed in. Blocks caller thread (use on thread_pool only).
-std::string call_dart_hello(const DartFnStringToString& dart_callback) {
-  return dart_callback.call("Tom");
-}
-
 namespace {
 
 void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
@@ -74,6 +69,20 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
   w.i32(1);
   w.str(msg);
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
+}
+
+void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint64_t gen,
+                             std::uint64_t req, std::uint32_t method, DartFnStringToString cb) {
+  try {
+    auto out = cb.callSync("Tom");
+    ByteWriter w;
+    w.str(out);
+    post_ok(session, gen, req, method, w.raw());
+  } catch (const std::exception& e) {
+    post_err(session, gen, req, method, e.what());
+  } catch (...) {
+    post_err(session, gen, req, method, "unknown");
+  }
 }
 
 }  // namespace
@@ -198,30 +207,24 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
         break;
       }
       case MethodId::kCallDartHello: {
+        // "Async" path: do NOT block io — wait on thread_pool, then post_ok.
+        // (Pool occupation during wait is explicit; not a hidden babysit of callSync.)
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
         DartFnStringToString cb(session, gen, fn_id);
-        // Run on thread_pool: DartFn.call blocks until Dart replies.
-        auto* io = &Runtime::instance().io();
         asio::post(Runtime::instance().pool(),
-                   [session, gen, req, method, cb = std::move(cb), io]() {
-                     try {
-                       auto out = call_dart_hello(cb);
-                       asio::post(*io, [session, gen, req, method, out = std::move(out)]() {
-                         ByteWriter w;
-                         w.str(out);
-                         post_ok(session, gen, req, method, w.raw());
-                       });
-                     } catch (const std::exception& e) {
-                       asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
-                         post_err(session, gen, req, method, msg);
-                       });
-                     } catch (...) {
-                       asio::post(*io, [session, gen, req, method]() {
-                         post_err(session, gen, req, method, "unknown");
-                       });
-                     }
+                   [session, gen, req, method, cb = std::move(cb)]() mutable {
+                     run_dart_hello_blocking(session, gen, req, method, std::move(cb));
                    });
+        break;
+      }
+      case MethodId::kCallDartHelloSync: {
+        // Sync path: block **this** thread (often io when dispatched from invoke_async).
+        // Library does not move you off io. Stalling io is caller's problem.
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto fn_id = r.u64();
+        DartFnStringToString cb(session, gen, fn_id);
+        run_dart_hello_blocking(session, gen, req, method, std::move(cb));
         break;
       }
       default:

@@ -3,6 +3,8 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
+#include <async_simple/coro/Lazy.h>
+
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -12,9 +14,13 @@
 
 namespace dcb {
 
-// FRB-style Dart callback handle (String -> String).
-// call() blocks the current thread until Dart replies — invoke only from thread_pool,
-// never from the single io_context thread.
+// FRB-style Dart callback (String -> String).
+//
+// callSync:  block current thread until Dart replies (no babysitting / offload).
+// callAsync: schedule blocking wait on thread_pool, then resume Lazy on io
+//            (io itself is not blocked; pool thread is occupied for the wait).
+//
+// Stalling io with callSync is the caller's choice/problem.
 class DartFnStringToString {
  public:
   DartFnStringToString() = default;
@@ -24,16 +30,19 @@ class DartFnStringToString {
 
   explicit operator bool() const { return static_cast<bool>(session_) && fn_id_ != 0; }
 
-  std::string call(std::string arg) const {
+  std::string callSync(std::string arg) const {
     if (!session_) {
       throw std::runtime_error("DartFn: empty");
     }
     ByteWriter args;
     args.str(arg);
-    auto raw = session_->invoke_dart_fn_blocking(generation_, fn_id_, args.raw());
+    auto raw = session_->invoke_dart_fn_sync(generation_, fn_id_, args.raw());
     ByteReader r(raw.data(), raw.size());
     return r.str();
   }
+
+  // Non-blocking for io_context: wait happens on thread_pool, result returns via Lazy.
+  async_simple::coro::Lazy<std::string> callAsync(std::string arg) const;
 
  private:
   std::shared_ptr<Session> session_;

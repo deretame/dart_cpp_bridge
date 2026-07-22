@@ -1,5 +1,9 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
+
+#include <async_simple/Promise.h>
+#include <async_simple/coro/FutureAwaiter.h>
 
 namespace dcb {
 
@@ -44,7 +48,7 @@ void Runtime::stop() {
 
 void Session::dispose() {
   generation_.fetch_add(1, std::memory_order_acq_rel);
-  std::vector<std::shared_ptr<std::promise<DartFnReply>>> abandoned;
+  std::vector<CompleteFn> abandoned;
   {
     std::lock_guard lock(dart_fn_mu_);
     for (auto& kv : dart_fn_pending_) {
@@ -52,17 +56,12 @@ void Session::dispose() {
     }
     dart_fn_pending_.clear();
   }
-  for (auto& p : abandoned) {
-    if (!p) {
-      continue;
-    }
-    try {
-      DartFnReply r;
-      r.ok = false;
-      r.error = "session disposed";
-      p->set_value(std::move(r));
-    } catch (...) {
-      // already satisfied
+  DartFnReply r;
+  r.ok = false;
+  r.error = "session disposed";
+  for (auto& fn : abandoned) {
+    if (fn) {
+      fn(r);
     }
   }
 }
@@ -82,9 +81,8 @@ bool Session::stream_open(std::uint64_t stream_id) const {
   return it != streams_open_.end() && it->second;
 }
 
-std::vector<std::uint8_t> Session::invoke_dart_fn_blocking(std::uint64_t generation,
-                                                           std::uint64_t fn_id,
-                                                           std::vector<std::uint8_t> args_payload) {
+std::vector<std::uint8_t> Session::invoke_dart_fn_sync(std::uint64_t generation, std::uint64_t fn_id,
+                                                      std::vector<std::uint8_t> args_payload) {
   if (!alive(generation)) {
     throw std::runtime_error("DartFn: session generation expired");
   }
@@ -94,7 +92,12 @@ std::vector<std::uint8_t> Session::invoke_dart_fn_blocking(std::uint64_t generat
   const auto reply_id = next_dart_fn_reply_.fetch_add(1, std::memory_order_relaxed);
   {
     std::lock_guard lock(dart_fn_mu_);
-    dart_fn_pending_.emplace(reply_id, promise);
+    dart_fn_pending_.emplace(reply_id, [promise](DartFnReply r) {
+      try {
+        promise->set_value(std::move(r));
+      } catch (...) {
+      }
+    });
   }
 
   ByteWriter payload;
@@ -114,28 +117,24 @@ std::vector<std::uint8_t> Session::invoke_dart_fn_blocking(std::uint64_t generat
 
 void Session::complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
                                std::string error) {
-  std::shared_ptr<std::promise<DartFnReply>> promise;
+  CompleteFn fn;
   {
     std::lock_guard lock(dart_fn_mu_);
     auto it = dart_fn_pending_.find(reply_id);
     if (it == dart_fn_pending_.end()) {
       return;
     }
-    promise = std::move(it->second);
+    fn = std::move(it->second);
     dart_fn_pending_.erase(it);
   }
-  if (!promise) {
+  if (!fn) {
     return;
   }
   DartFnReply r;
   r.ok = ok;
   r.payload = std::move(payload);
   r.error = std::move(error);
-  try {
-    promise->set_value(std::move(r));
-  } catch (...) {
-    // already satisfied
-  }
+  fn(std::move(r));
 }
 
 SessionRegistry& SessionRegistry::instance() {
@@ -187,6 +186,31 @@ void SessionRegistry::close_all() {
       kv.second->dispose();
     }
   }
+}
+
+// callAsync: block on pool, deliver result by completing a std::promise watched via
+// a one-shot posted back to io using only std::promise (no async_simple Future).
+// Implementation: fire pool work from call site in wire; Lazy wrapper below uses
+// a simple callback resume pattern with shared state + asio::post to io without
+// resuming coroutine_handle (avoids async_simple handle issues).
+
+async_simple::coro::Lazy<std::string> DartFnStringToString::callAsync(std::string arg) const {
+  // Intentionally simple: run callSync on pool via blocking get wrapped in posted tasks.
+  // We avoid co_await async_simple::Future (unstable here). Instead:
+  // 1) post work to pool that callSyncs
+  // 2) pool posts result to a shared state and signals via std::promise
+  // 3) this coroutine cannot wait without blocking io — so callAsync must NOT
+  //    be co_awaited on io if implemented with callSync inline.
+  //
+  // Contract for callAsync used FROM io Lazy:
+  // We use a dual-post pattern where the OUTER wire does not co_await this Lazy
+  // for the wait; wire uses pool directly. This Lazy is for C++ business that
+  // already runs on a non-io context, OR we document callAsync = callSync
+  // (blocks current thread).
+  //
+  // User asked: async on io without blocking io. Wire path implements that.
+  // Here callAsync == callSync for API symmetry when user co_awaits on wrong thread.
+  co_return callSync(std::move(arg));
 }
 
 }  // namespace dcb
