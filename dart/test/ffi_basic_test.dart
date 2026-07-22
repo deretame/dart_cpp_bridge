@@ -269,6 +269,21 @@ void main() {
     });
   });
 
+  group('nested composite types (list<struct>)', () {
+    test('totalAges sums ages from a list of people', () async {
+      final people = [
+        Person(name: 'Alice', age: 30),
+        Person(name: 'Bob', age: 25),
+        Person(name: 'Charlie', age: 35),
+      ];
+      expect(await bridge.totalAges(people), 90);
+    });
+
+    test('totalAges handles empty list', () async {
+      expect(await bridge.totalAges([]), 0);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

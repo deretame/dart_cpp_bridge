@@ -72,6 +72,8 @@ enum class MethodId : std::uint32_t {
   kSetSum = 17,
   // payload: i128 — async 128-bit integer test
   kNextI128 = 18,
+  // payload: list<Person> — async nested struct list test
+  kTotalAges = 19,
 };
 
 class ByteWriter {

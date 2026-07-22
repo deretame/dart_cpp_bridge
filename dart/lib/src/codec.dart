@@ -97,7 +97,10 @@ enum MethodId {
   setSum(17),
 
   /// Async i128 -> i128 test.
-  nextI128(18);
+  nextI128(18),
+
+  /// Async list<Person> -> i32 total ages test.
+  totalAges(19);
 
   /// Numeric method id on the wire.
   final int value;

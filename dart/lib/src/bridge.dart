@@ -519,6 +519,25 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).readI128();
   }
 
+  /// Async demo: sums the ages of a list of people on the C++ side.
+  Future<int> totalAges(List<Person> people) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..u32(people.length);
+    for (final p in people) {
+      payload.str(p.name);
+      payload.i32(p.age);
+    }
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.totalAges.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).i32();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();

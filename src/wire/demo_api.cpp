@@ -132,6 +132,14 @@ async_simple::coro::Lazy<Int128> next_i128(Int128 v) {
   co_return result;
 }
 
+async_simple::coro::Lazy<std::int32_t> total_ages(std::vector<Person> people) {
+  std::int32_t sum = 0;
+  for (const auto& p : people) {
+    sum += p.age;
+  }
+  co_return sum;
+}
+
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
   co_return 0;
@@ -442,6 +450,31 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await next_i128(input);
                 ByteWriter w;
                 w.i128(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kTotalAges: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto people = r.vec<Person>([&r]() {
+          Person p;
+          p.name = r.str();
+          p.age = r.i32();
+          return p;
+        });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, people = std::move(people)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await total_ages(people);
+                ByteWriter w;
+                w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());
