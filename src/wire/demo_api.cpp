@@ -119,6 +119,19 @@ async_simple::coro::Lazy<std::int32_t> set_sum(std::unordered_set<std::int32_t> 
   co_return sum;
 }
 
+async_simple::coro::Lazy<Int128> next_i128(Int128 v) {
+  UInt128 raw;
+  raw.low = v.low;
+  raw.high = static_cast<std::uint64_t>(v.high);
+  // raw + 1
+  raw.low += 1;
+  if (raw.low == 0) raw.high += 1;
+  Int128 result;
+  result.low = raw.low;
+  result.high = static_cast<std::int64_t>(raw.high);
+  co_return result;
+}
+
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
   co_return 0;
@@ -410,6 +423,25 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await set_sum(values);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kNextI128: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto input = r.i128();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await next_i128(input);
+                ByteWriter w;
+                w.i128(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

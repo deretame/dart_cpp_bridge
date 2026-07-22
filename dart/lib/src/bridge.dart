@@ -504,6 +504,21 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
+  /// Async demo: returns the next signed 128-bit integer from C++.
+  Future<BigInt> nextI128(BigInt value) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..writeI128(value);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.nextI128.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).readI128();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();

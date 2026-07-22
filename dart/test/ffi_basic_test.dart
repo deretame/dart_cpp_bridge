@@ -254,6 +254,21 @@ void main() {
     });
   });
 
+  group('__int128 ↔ BigInt', () {
+    test('nextI128 increments a large positive value', () async {
+      final input = (BigInt.one << 127) - BigInt.two;
+      expect(await bridge.nextI128(input), (BigInt.one << 127) - BigInt.one);
+    });
+
+    test('nextI128 handles zero', () async {
+      expect(await bridge.nextI128(BigInt.zero), BigInt.one);
+    });
+
+    test('nextI128 handles negative values', () async {
+      expect(await bridge.nextI128(BigInt.from(-5)), BigInt.from(-4));
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

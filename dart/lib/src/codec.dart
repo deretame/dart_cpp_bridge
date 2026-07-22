@@ -94,7 +94,10 @@ enum MethodId {
   scoreTotal(16),
 
   /// Async set<i32> -> i32 sum test.
-  setSum(17);
+  setSum(17),
+
+  /// Async i128 -> i128 test.
+  nextI128(18);
 
   /// Numeric method id on the wire.
   final int value;
@@ -183,6 +186,30 @@ class ByteWriter {
     u32(s.length);
     for (final x in s) {
       i32(x);
+    }
+  }
+
+  /// Append a signed 128-bit integer as 16 little-endian two's-complement bytes.
+  void writeI128(BigInt v) {
+    final min = -(BigInt.one << 127);
+    final max = (BigInt.one << 127) - BigInt.one;
+    if (v < min || v > max) {
+      throw ArgumentError('i128 out of range: $v');
+    }
+    final two128 = BigInt.one << 128;
+    final mod = v.isNegative ? v + two128 : v;
+    for (var i = 0; i < 16; i++) {
+      u8(((mod >> (8 * i)) & BigInt.from(0xff)).toInt());
+    }
+  }
+
+  /// Append an unsigned 128-bit integer as 16 little-endian bytes.
+  void writeU128(BigInt v) {
+    if (v.isNegative || v >= (BigInt.one << 128)) {
+      throw ArgumentError('u128 out of range: $v');
+    }
+    for (var i = 0; i < 16; i++) {
+      u8(((v >> (8 * i)) & BigInt.from(0xff)).toInt());
     }
   }
 
@@ -306,6 +333,31 @@ class ByteReader {
       result.add(i32());
     }
     return result;
+  }
+
+  /// Read a signed 128-bit integer from 16 little-endian two's-complement bytes.
+  BigInt readI128() {
+    _need(16);
+    var v = BigInt.zero;
+    for (var i = 0; i < 16; i++) {
+      v |= BigInt.from(data[_pos + i]) << (8 * i);
+    }
+    _pos += 16;
+    if (v >= (BigInt.one << 127)) {
+      return v - (BigInt.one << 128);
+    }
+    return v;
+  }
+
+  /// Read an unsigned 128-bit integer from 16 little-endian bytes.
+  BigInt readU128() {
+    _need(16);
+    var v = BigInt.zero;
+    for (var i = 0; i < 16; i++) {
+      v |= BigInt.from(data[_pos + i]) << (8 * i);
+    }
+    _pos += 16;
+    return v;
   }
 
   /// Read `u32` length + UTF-8 string.

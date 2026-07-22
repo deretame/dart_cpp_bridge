@@ -19,6 +19,17 @@ namespace dcb {
 inline constexpr std::uint32_t kMagic = 0x31424344;  // 'DCB1' LE
 inline constexpr std::uint16_t kProtocolVersion = 1;
 
+// Portable 128-bit integer types. MSVC does not expose __int128, so we use
+// a pair of 64-bit halves (low first, high second) on the wire.
+struct UInt128 {
+  std::uint64_t low{};
+  std::uint64_t high{};
+};
+struct Int128 {
+  std::uint64_t low{};
+  std::int64_t high{};
+};
+
 enum class MsgType : std::uint8_t {
   kRequest = 1,
   kResponseOk = 2,
@@ -59,6 +70,8 @@ enum class MethodId : std::uint32_t {
   kScoreTotal = 16,
   // payload: set<i32> — async set test
   kSetSum = 17,
+  // payload: i128 — async 128-bit integer test
+  kNextI128 = 18,
 };
 
 class ByteWriter {
@@ -80,6 +93,16 @@ class ByteWriter {
   }
   void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
   void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
+
+  // 128-bit integers are sent as 16 little-endian bytes (low 64 bits first).
+  void u128(UInt128 v) {
+    u64(v.low);
+    u64(v.high);
+  }
+  void i128(Int128 v) {
+    u64(v.low);
+    u64(static_cast<std::uint64_t>(v.high));
+  }
 
   template <typename T, typename WriteValue>
   void opt(const std::optional<T>& v, WriteValue write_value) {
@@ -184,6 +207,19 @@ class ByteReader {
   }
   std::int32_t i32() { return static_cast<std::int32_t>(u32()); }
   std::int64_t i64() { return static_cast<std::int64_t>(u64()); }
+
+  UInt128 u128() {
+    UInt128 v;
+    v.low = u64();
+    v.high = u64();
+    return v;
+  }
+  Int128 i128() {
+    Int128 v;
+    v.low = u64();
+    v.high = static_cast<std::int64_t>(u64());
+    return v;
+  }
 
   template <typename T, typename ReadValue>
   std::optional<T> opt(ReadValue read_value) {
