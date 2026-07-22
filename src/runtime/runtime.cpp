@@ -1,9 +1,10 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/channel.hpp"
 
-#include <async_simple/Promise.h>
-#include <async_simple/coro/FutureAwaiter.h>
+#include <future>
+#include <utility>
 
 namespace dcb {
 
@@ -21,6 +22,7 @@ void Runtime::start() {
     return;
   }
   io_.restart();
+  executor_ = std::make_unique<AsioExecutor>(io_);
   pool_ = std::make_unique<asio::thread_pool>(4);
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
@@ -44,6 +46,7 @@ void Runtime::stop() {
     pool_->join();
     pool_.reset();
   }
+  executor_.reset();
 }
 
 void Session::dispose() {
@@ -113,6 +116,42 @@ std::vector<std::uint8_t> Session::invoke_dart_fn_sync(std::uint64_t generation,
     throw std::runtime_error(reply.error.empty() ? "DartFn failed" : reply.error);
   }
   return std::move(reply.payload);
+}
+
+async_simple::coro::Lazy<std::vector<std::uint8_t>> Session::invoke_dart_fn_async(
+    std::uint64_t generation, std::uint64_t fn_id, std::vector<std::uint8_t> args_payload) {
+  if (!alive(generation)) {
+    throw std::runtime_error("DartFn: session generation expired");
+  }
+
+  auto [tx, rx] = co::oneshot::channel<DartFnReply>();
+  // shared_ptr: std::function requires copyable target; Sender is move-only.
+  auto tx_holder = std::make_shared<co::oneshot::Sender<DartFnReply>>(std::move(tx));
+  const auto reply_id = next_dart_fn_reply_.fetch_add(1, std::memory_order_relaxed);
+  {
+    std::lock_guard lock(dart_fn_mu_);
+    dart_fn_pending_.emplace(reply_id, [tx_holder](DartFnReply r) {
+      // Any thread (typically Dart FFI). oneshot schedules resume onto waiter_ex.
+      (void)tx_holder->send(std::move(r));
+    });
+  }
+
+  ByteWriter payload;
+  payload.u64(fn_id);
+  if (!args_payload.empty()) {
+    payload.bytes(args_payload.data(), args_payload.size());
+  }
+  auto frame = make_frame(MsgType::kDartFnCall, reply_id, /*method_id=*/0, payload.raw());
+  try_post(generation, frame);
+
+  auto reply_opt = co_await rx.recv();
+  if (!reply_opt) {
+    throw std::runtime_error("DartFn: channel closed");
+  }
+  if (!reply_opt->ok) {
+    throw std::runtime_error(reply_opt->error.empty() ? "DartFn failed" : reply_opt->error);
+  }
+  co_return std::move(reply_opt->payload);
 }
 
 void Session::complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
@@ -188,29 +227,14 @@ void SessionRegistry::close_all() {
   }
 }
 
-// callAsync: block on pool, deliver result by completing a std::promise watched via
-// a one-shot posted back to io using only std::promise (no async_simple Future).
-// Implementation: fire pool work from call site in wire; Lazy wrapper below uses
-// a simple callback resume pattern with shared state + asio::post to io without
-// resuming coroutine_handle (avoids async_simple handle issues).
-
-async_simple::coro::Lazy<std::string> DartFnStringToString::callAsync(std::string arg) const {
-  // Intentionally simple: run callSync on pool via blocking get wrapped in posted tasks.
-  // We avoid co_await async_simple::Future (unstable here). Instead:
-  // 1) post work to pool that callSyncs
-  // 2) pool posts result to a shared state and signals via std::promise
-  // 3) this coroutine cannot wait without blocking io — so callAsync must NOT
-  //    be co_awaited on io if implemented with callSync inline.
-  //
-  // Contract for callAsync used FROM io Lazy:
-  // We use a dual-post pattern where the OUTER wire does not co_await this Lazy
-  // for the wait; wire uses pool directly. This Lazy is for C++ business that
-  // already runs on a non-io context, OR we document callAsync = callSync
-  // (blocks current thread).
-  //
-  // User asked: async on io without blocking io. Wire path implements that.
-  // Here callAsync == callSync for API symmetry when user co_awaits on wrong thread.
-  co_return callSync(std::move(arg));
+async_simple::coro::Lazy<std::string> DartFnStringToString::invoke_async(
+    std::shared_ptr<Session> session, std::uint64_t generation, std::uint64_t fn_id,
+    std::string arg) {
+  ByteWriter args;
+  args.str(arg);
+  auto raw = co_await session->invoke_dart_fn_async(generation, fn_id, args.raw());
+  ByteReader r(raw.data(), raw.size());
+  co_return r.str();
 }
 
 }  // namespace dcb

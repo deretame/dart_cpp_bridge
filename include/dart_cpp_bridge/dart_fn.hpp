@@ -17,10 +17,10 @@ namespace dcb {
 // FRB-style Dart callback (String -> String).
 //
 // callSync:  block current thread until Dart replies (no babysitting / offload).
-// callAsync: schedule blocking wait on thread_pool, then resume Lazy on io
-//            (io itself is not blocked; pool thread is occupied for the wait).
+// callAsync: co_await on io via oneshot channel; io thread is NOT blocked.
 //
 // Stalling io with callSync is the caller's choice/problem.
+// callAsync requires the calling Lazy to be bound to AsioExecutor (.via).
 class DartFnStringToString {
  public:
   DartFnStringToString() = default;
@@ -41,10 +41,20 @@ class DartFnStringToString {
     return r.str();
   }
 
-  // Non-blocking for io_context: wait happens on thread_pool, result returns via Lazy.
-  async_simple::coro::Lazy<std::string> callAsync(std::string arg) const;
+  // Suspends current Lazy until Dart replies (oneshot + Executor::schedule).
+  // Implemented as free-standing Lazy args (not member coro) to avoid `this` lifetime issues.
+  async_simple::coro::Lazy<std::string> callAsync(std::string arg) const {
+    if (!session_) {
+      throw std::runtime_error("DartFn: empty");
+    }
+    return invoke_async(session_, generation_, fn_id_, std::move(arg));
+  }
 
  private:
+  static async_simple::coro::Lazy<std::string> invoke_async(std::shared_ptr<Session> session,
+                                                            std::uint64_t generation,
+                                                            std::uint64_t fn_id, std::string arg);
+
   std::shared_ptr<Session> session_;
   std::uint64_t generation_{0};
   std::uint64_t fn_id_{0};

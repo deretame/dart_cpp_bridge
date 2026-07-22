@@ -3,10 +3,11 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 
+#include <async_simple/coro/Lazy.h>
+
 #include <atomic>
 #include <cstdint>
 #include <functional>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -49,6 +50,11 @@ class Session {
   // If you call this on the io thread, you stall the scheduler — your problem.
   std::vector<std::uint8_t> invoke_dart_fn_sync(std::uint64_t generation, std::uint64_t fn_id,
                                                 std::vector<std::uint8_t> args_payload);
+
+  // True async: co_await on io (requires Lazy .via(AsioExecutor)).
+  // Suspends the coroutine; does not block the io thread.
+  async_simple::coro::Lazy<std::vector<std::uint8_t>> invoke_dart_fn_async(
+      std::uint64_t generation, std::uint64_t fn_id, std::vector<std::uint8_t> args_payload);
 
   void complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
                         std::string error);

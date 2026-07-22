@@ -207,15 +207,25 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
         break;
       }
       case MethodId::kCallDartHello: {
-        // "Async" path: do NOT block io — wait on thread_pool, then post_ok.
-        // (Pool occupation during wait is explicit; not a hidden babysit of callSync.)
+        // True async on io: co_await oneshot; io thread free while Dart runs.
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
         DartFnStringToString cb(session, gen, fn_id);
-        asio::post(Runtime::instance().pool(),
-                   [session, gen, req, method, cb = std::move(cb)]() mutable {
-                     run_dart_hello_blocking(session, gen, req, method, std::move(cb));
-                   });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, cb = std::move(cb)]() mutable
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await cb.callAsync("Tom");
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
         break;
       }
       case MethodId::kCallDartHelloSync: {
