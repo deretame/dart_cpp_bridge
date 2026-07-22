@@ -52,6 +52,14 @@ async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
   co_return std::nullopt;
 }
 
+async_simple::coro::Lazy<std::int32_t> sum_vec(std::vector<std::int32_t> values) {
+  std::int32_t sum = 0;
+  for (const auto v : values) {
+    sum += v;
+  }
+  co_return sum;
+}
+
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
   co_return 0;
@@ -201,6 +209,26 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await maybe_double(input);
                 ByteWriter w;
                 w.opt<std::int32_t>(out, [&w](std::int32_t v) { w.i32(v); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kSumVec: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto values = r.vec<std::int32_t>([&r]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, values = std::move(values)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await sum_vec(values);
+                ByteWriter w;
+                w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

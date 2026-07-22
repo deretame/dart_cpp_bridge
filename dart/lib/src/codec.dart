@@ -73,7 +73,10 @@ enum MethodId {
   callDartHelloSync(9),
 
   /// Async optional i32 -> optional i32 test.
-  maybeDouble(10);
+  maybeDouble(10),
+
+  /// Async list i32 -> i32 sum test.
+  sumVec(11);
 
   /// Numeric method id on the wire.
   final int value;
@@ -121,6 +124,14 @@ class ByteWriter {
     } else {
       u8(1);
       i32(v);
+    }
+  }
+
+  /// Append a length-prefixed list of `i32`.
+  void writeListI32(List<int> v) {
+    u32(v.length);
+    for (final x in v) {
+      i32(x);
     }
   }
 
@@ -197,6 +208,16 @@ class ByteReader {
     final hasValue = u8() != 0;
     if (!hasValue) return null;
     return i32();
+  }
+
+  /// Read a length-prefixed list of `i32`.
+  List<int> readListI32() {
+    final n = u32();
+    final result = <int>[];
+    for (var i = 0; i < n; i++) {
+      result.add(i32());
+    }
+    return result;
   }
 
   /// Read `u32` length + UTF-8 string.

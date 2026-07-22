@@ -180,6 +180,20 @@ void main() {
     });
   });
 
+  group('vector<T> ↔ List<T>', () {
+    test('sumList computes sum of non-empty list', () async {
+      expect(await bridge.sumList([1, 2, 3, 4]), 10);
+    });
+
+    test('sumList handles empty list', () async {
+      expect(await bridge.sumList([]), 0);
+    });
+
+    test('sumList handles negatives', () async {
+      expect(await bridge.sumList([10, -3, -5]), 2);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

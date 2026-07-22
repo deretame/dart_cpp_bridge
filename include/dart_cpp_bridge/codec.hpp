@@ -42,6 +42,8 @@ enum class MethodId : std::uint32_t {
   kCallDartHelloSync = 9,
   // payload: opt_i32 — async optional test
   kMaybeDouble = 10,
+  // payload: list_i32 — async vector test
+  kSumVec = 11,
 };
 
 class ByteWriter {
@@ -71,6 +73,14 @@ class ByteWriter {
       write_value(v.value());
     } else {
       u8(0);
+    }
+  }
+
+  template <typename T, typename WriteValue>
+  void vec(const std::vector<T>& v, WriteValue write_value) {
+    u32(static_cast<std::uint32_t>(v.size()));
+    for (const auto& item : v) {
+      write_value(item);
     }
   }
 
@@ -131,6 +141,17 @@ class ByteReader {
     const bool has_value = u8() != 0;
     if (!has_value) return std::nullopt;
     return read_value();
+  }
+
+  template <typename T, typename ReadValue>
+  std::vector<T> vec(ReadValue read_value) {
+    auto n = u32();
+    std::vector<T> result;
+    result.reserve(n);
+    for (std::uint32_t i = 0; i < n; ++i) {
+      result.push_back(read_value());
+    }
+    return result;
   }
 
   std::string str() {
