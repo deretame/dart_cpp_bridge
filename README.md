@@ -1,0 +1,95 @@
+# dart_cpp_bridge
+
+类 [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/) 的 **Dart ↔ C++20** 桥（独立实验仓库）。
+
+设计说明见 Breeze 仓库：`docs/frb_and_cpp_bridge_design.md`（本仓库 Phase 1 按该文档落地）。
+
+## 当前状态（Phase 1）
+
+手写骨架，**无 codegen**：
+
+| 能力 | 状态 |
+|------|------|
+| `io_context` 单线程 + `asio::thread_pool` + `spawn_blocking` | ✅ |
+| 长期 reply port + `request_id` | ✅ |
+| sync / async / normal / stream 四通道 demo | ✅ |
+| wire 边界 catch、Dart 抛错 | ✅ |
+| 不做 CancelToken | ✅ |
+| StreamSink 多线程 add、Dart 关流后静默丢 | ✅ |
+| Python/libclang codegen | ⏳ 未做 |
+| Native Assets hook | ⏳ 未做 |
+
+Demo API：
+
+- `bridgeVersion()` sync → `int`
+- `add(a,b)` async (`Lazy`) → `Future<int>`
+- `sleepTest()` normal（`spawn_blocking`）→ `Future<String>`
+- `ticks(count, intervalMs)` stream → `Stream<int>`
+
+## 目录
+
+```text
+include/dart_cpp_bridge/   # 公共头
+src/                       # runtime / wire / ffi
+third_party/dart_api/      # Dart API DL（脚本拉取）
+dart/                      # Dart 包
+examples/phase1_demo/      # C++ smoke（无 Dart）
+cmake/                     # Fetch 脚本等
+codegen/                   # 预留
+```
+
+## 构建（C++）
+
+依赖：CMake ≥ 3.20、C++20 编译器、Git（FetchContent 拉 asio / async-simple）。
+
+```bash
+# 1) 拉取 Dart API DL 头文件
+cmake -P cmake/fetch_dart_api.cmake
+
+# 2) 配置并编译
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+
+# 3) 原生 smoke（无 Dart isolate，用回调打印 post）
+./build/dcb_smoke          # Linux/macOS
+build/Release/dcb_smoke.exe  # Windows 多配置生成器
+```
+
+Windows 示例（PowerShell）：
+
+```powershell
+cmake -P cmake/fetch_dart_api.cmake
+cmake -S . -B build
+cmake --build build --config Release
+.\build\Release\dcb_smoke.exe
+```
+
+## Dart 侧（需自备动态库路径）
+
+```powershell
+cd dart
+dart pub get
+# 将 build 产出的 dart_cpp_bridge.dll / .so / .dylib 放到可加载路径，或：
+# DartCppBridge.init(libraryPath: r'..\build\Release\dart_cpp_bridge.dll');
+```
+
+```dart
+final b = await DartCppBridge.init(libraryPath: '...');
+print(b.bridgeVersion());
+print(await b.add(40, 2));
+print(await b.sleepTest());
+await for (final t in b.ticks(count: 3, intervalMs: 50)) {
+  print(t);
+}
+b.dispose();
+```
+
+## 设计要点（已锁定）
+
+- 业务写 `Lazy<T>` / 普通同步函数 / `StreamSink`；**不**返回桥 Future 包装。
+- Codegen（后续）手动；Python + libclang **远端固定版**；hook 只编链接。
+- 依赖库形态：CMake FetchContent，PUBLIC 暴露 asio + async-simple（后续完善 export）。
+
+## 许可
+
+实验项目；依赖 asio / async-simple / Dart SDK 头文件遵循各自许可证。

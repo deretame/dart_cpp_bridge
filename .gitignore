@@ -1,0 +1,44 @@
+# Build
+build/
+cmake-build-*/
+out/
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.pdb
+*.ilk
+
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
+.vs/
+CMakeSettings.json
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+**/doc/api/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/generated_plugin_registrant.dart
+.packages
+
+# Codegen toolchain cache
+codegen/.cache/
+codegen/toolchain/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# FetchContent
+_deps/
