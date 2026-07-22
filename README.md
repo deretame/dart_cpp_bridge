@@ -261,7 +261,9 @@ Design and progress docs are currently written primarily in **Chinese**; English
 
 ## License
 
-Experimental. Asio, async-simple, Dart SDK headers, etc. follow their own licenses. Repository license will be added before a formal release.
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE).
+
+Asio, async-simple, Dart SDK headers, and other third-party components remain under their own licenses.
 
 ---
 

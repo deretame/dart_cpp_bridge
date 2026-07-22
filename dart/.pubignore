@@ -1,0 +1,4 @@
+# Keep the published tarball small; tests are not required on pub.dev
+.dart_tool/
+test/
+pubspec.lock

@@ -261,7 +261,9 @@ hook/                            # Native Assets 预留
 
 ## 许可
 
-实验项目。Asio、async-simple、Dart SDK 头文件等遵循各自许可证；本仓库许可证待正式发布前补全。
+本项目采用 **MIT License** — 见 [LICENSE](LICENSE)。
+
+Asio、async-simple、Dart SDK 头文件等第三方组件仍遵循各自许可证。
 
 ---
 
