@@ -393,33 +393,60 @@ C++ 侧（运行时层）需要新增：
 4. **析构函数**：`dcb_drop_object(std::uint64_t handle)`，从注册表删除并释放对象。
 5. **方法 dispatch**：成员函数 wire 方法的 payload 包含 `handle` + 其他参数，C++ 侧根据 handle 找到对象，调用方法。
 
-Dart 侧生成形态：
+Dart 侧生成形态（对齐 FRB 的 `RustOpaqueInterface`）：
 
 ```dart
-class Counter implements Finalizable {
-  final int _handle;
-  final NativeFinalizer _finalizer;
+// 统一由 codegen 生成的 opaque 基类。
+abstract class CppOpaqueInterface implements Finalizable {
+  DartCppBridge get _bridge;
+  int get _handle;
 
-  Counter({required int initialValue})
-      : _handle = bridge.createCounter(initialValue),
-        _finalizer = NativeFinalizer(bridge.dropObjectPtr) {
-    _finalizer.attach(this, _handle, externalSize: 64);
-  }
+  NativeFinalizer get _finalizer => NativeFinalizer(_bridge._b.dropObject);
 
-  void increment(int delta) {
-    bridge.counterIncrement(_handle, delta);
-  }
-
-  int get value {
-    return bridge.counterGetValue(_handle);
+  void _attachFinalizer() {
+    _finalizer.attach(
+      this,
+      Pointer.fromAddress(_handle).cast<Void>(),
+      externalSize: 64,
+    );
   }
 
   void dispose() {
     _finalizer.detach(this);
-    bridge.dropObject(_handle);
+    _bridge._b.dropObject
+        .asFunction<void Function(Pointer<Void>)>()(
+          Pointer.fromAddress(_handle).cast<Void>(),
+        );
   }
 }
+
+class Counter implements CppOpaqueInterface {
+  Counter._(this._bridge, this._handle) {
+    _attachFinalizer();
+  }
+
+  factory Counter({required int initialValue}) {
+    return DartCppBridge.instance.createCounter(initialValue: initialValue);
+  }
+
+  @override
+  final DartCppBridge _bridge;
+
+  @override
+  final int _handle;
+
+  Future<void> increment(int delta) =>
+      _bridge.counterIncrement(_handle, delta);
+
+  Future<int> value() => _bridge.counterGetValue(_handle);
+}
 ```
+
+要点：
+
+- Dart 侧 opaque 类 **实现** `CppOpaqueInterface`（不是继承），因为 Dart 单继承有限制，用接口更灵活。
+- `dispose()` 和 `NativeFinalizer` 的 attach/detach 逻辑在基类中统一实现，避免每个生成类重复。
+- 构造函数在 Dart 侧生成 factory，内部调用 C++ 构造函数 wire 方法获得 handle。
 
 #### 5.9.4 标记规则
 
@@ -430,12 +457,30 @@ class Counter implements Finalizable {
 
 #### 5.9.5 限制
 
-- 当前阶段（P3）尚未实现，手写测试阶段也不包含。
+- 当前阶段（P3）尚未实现，手写测试阶段只做了一个最小 Counter fixture。
 - 导出为 Dart 类的 `class` / `struct` **必须定义在 API 头文件**（codegen 扫描的用户头文件，如 `native/api/*.h`）中，否则 codegen 不会进入 IR。
 - **不支持虚函数、纯虚函数、重载运算符**作为导出方法。
 - **Opaque 对象（带导出成员函数的类）不支持跨 Isolate 共享**：因为对象句柄注册表是 per-Session 的，不同 Isolate 的 Session 看不到彼此的对象。
 - 但**普通数据类 / 数据结构体**（只有 public 字段、没有导出方法）仍然可以跨 Isolate 使用，因为它们按值编码传递，不依赖句柄生命周期。
 - 暂不支持对象的方法在 Dart 侧被多线程并发调用时的默认加锁（由业务代码自己保证线程安全）。
+
+#### 5.9.6 待完善清单
+
+| 序号 | 完善项 | 说明 |
+|------|--------|------|
+| 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 统一 `dispose()`、`NativeFinalizer` attach/detach，让生成类实现接口。 |
+| 2 | **构造函数多种形态** | 默认构造、带参构造、拷贝/移动构造限制、工厂构造函数（静态方法）。 |
+| 3 | **析构函数生命周期** | 明确 `dispose()` 手动释放 + `NativeFinalizer` 自动释放的语义。 |
+| 4 | **Sync / Async / Normal / Stream 成员方法** | 不同方法调用模式都支持，不是只有 async。 |
+| 5 | **Static 方法** | 不绑定对象实例，但属于类命名空间。 |
+| 6 | **方法重载** | 同名不同参数的方法需要生成不同 method_id。 |
+| 7 | **默认参数** | C++ 默认参数在 Dart 侧生成显式可选参数。 |
+| 8 | **const 方法** | 标记为只读，不影响 wire，但可用于文档/代码提示。 |
+| 9 | **丰富参数/返回值类型** | 支持基本类型、容器、option、枚举、其他 opaque 对象作为参数或返回值。 |
+| 10 | **对象注册表改为 per-Session** | 当前手写测试是进程级，正式实现应绑定到 Session，禁止跨 Isolate。 |
+| 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
+| 12 | **无效句柄错误信息** | handle 不存在或已 drop 时返回清晰错误。 |
+| 13 | **更多手写测试** | sync 方法、static 方法、DartFn 回调方法、多实例独立、GC 自动释放。 |
 
 
 ## 6. 当前白名单（实现优先级）
