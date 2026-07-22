@@ -82,7 +82,10 @@ enum MethodId {
   reverseBytes(12),
 
   /// Async enum -> enum next test.
-  nextStatus(13);
+  nextStatus(13),
+
+  /// Async fixed array (4 × i32) -> i32 sum test.
+  sumFixedFour(14);
 
   /// Numeric method id on the wire.
   final int value;
@@ -149,6 +152,13 @@ class ByteWriter {
 
   /// Append an enum value as `i32` (underlying value / index).
   void writeEnum(int v) => i32(v);
+
+  /// Append a fixed-length array of `i32` (without length prefix).
+  void writeFixedArrayI32(List<int> v) {
+    for (final x in v) {
+      i32(x);
+    }
+  }
 
   /// Append `u32` length + UTF-8 bytes.
   void str(String s) {
@@ -246,6 +256,11 @@ class ByteReader {
 
   /// Read an enum value as `i32` (underlying value / index).
   int readEnum() => i32();
+
+  /// Read a fixed-length array of `i32` (without length prefix).
+  List<int> readFixedArrayI32(int n) {
+    return List.generate(n, (_) => i32());
+  }
 
   /// Read `u32` length + UTF-8 string.
   String str() {

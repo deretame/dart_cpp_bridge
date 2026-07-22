@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace dcb {
 
@@ -48,6 +49,8 @@ enum class MethodId : std::uint32_t {
   kReverseBytes = 12,
   // payload: i32 enum — async enum test
   kNextStatus = 13,
+  // payload: 4 × i32 — async fixed array test
+  kSumFixedFour = 14,
 };
 
 class ByteWriter {
@@ -83,6 +86,13 @@ class ByteWriter {
   template <typename E>
   void enume(E v) {
     i32(static_cast<std::int32_t>(v));
+  }
+
+  template <typename T, std::size_t N, typename WriteValue>
+  void arr(const std::array<T, N>& v, WriteValue write_value) {
+    for (const auto& item : v) {
+      write_value(item);
+    }
   }
 
   template <typename T, typename WriteValue>
@@ -160,6 +170,15 @@ class ByteReader {
   template <typename E>
   E enume() {
     return static_cast<E>(i32());
+  }
+
+  template <typename T, std::size_t N, typename ReadValue>
+  std::array<T, N> arr(ReadValue read_value) {
+    std::array<T, N> result{};
+    for (std::size_t i = 0; i < N; ++i) {
+      result[i] = read_value();
+    }
+    return result;
   }
 
   template <typename T, typename ReadValue>

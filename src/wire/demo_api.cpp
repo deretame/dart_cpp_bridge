@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <array>
 
 namespace dcb {
 namespace demo {
@@ -78,6 +79,15 @@ async_simple::coro::Lazy<StatusCode> next_status(StatusCode current) {
     default:
       co_return StatusCode::kOk;
   }
+}
+
+async_simple::coro::Lazy<std::int32_t> sum_fixed_four(
+    std::array<std::int32_t, 4> values) {
+  std::int32_t sum = 0;
+  for (const auto v : values) {
+    sum += v;
+  }
+  co_return sum;
 }
 
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
@@ -288,6 +298,26 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await next_status(current);
                 ByteWriter w;
                 w.enume(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kSumFixedFour: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto values = r.arr<std::int32_t, 4>([&r]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, values = std::move(values)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await sum_fixed_four(values);
+                ByteWriter w;
+                w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

@@ -216,6 +216,16 @@ void main() {
     });
   });
 
+  group('array<T, N> ↔ List<T>', () {
+    test('sumFixedFour sums fixed array', () async {
+      expect(await bridge.sumFixedFour([1, 2, 3, 4]), 10);
+    });
+
+    test('sumFixedFour handles negatives', () async {
+      expect(await bridge.sumFixedFour([10, -3, -5, -2]), 0);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');
