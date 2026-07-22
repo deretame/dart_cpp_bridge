@@ -166,6 +166,20 @@ void main() {
     });
   });
 
+  group('optional<T> ↔ T?', () {
+    test('maybeDouble doubles non-null input', () async {
+      expect(await bridge.maybeDouble(21), 42);
+    });
+
+    test('maybeDouble returns null for null input', () async {
+      expect(await bridge.maybeDouble(null), isNull);
+    });
+
+    test('maybeDouble roundtrips negative value', () async {
+      expect(await bridge.maybeDouble(-10), -20);
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

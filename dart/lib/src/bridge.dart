@@ -382,6 +382,21 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).str();
   }
 
+  /// Async demo: doubles [input] if non-null, returns null otherwise.
+  Future<int?> maybeDouble(int? input) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..writeOptI32(input);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.maybeDouble.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).readOptI32();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();

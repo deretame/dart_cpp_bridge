@@ -119,6 +119,7 @@ Codegen：宏在 libclang 路径用 `annotate("bridge::*")`（非 `[[bridge.*]]`
 
 ```text
 docs/
+  codegen_type_mapping.md       # 类型映射白名单
   frb_and_cpp_bridge_design.md   # 设计全文
   progress.md                    # 本进度
   known_issues.md                # 技术债与已解问题
@@ -153,7 +154,7 @@ dart test
 
 ## 5. 下一步建议
 
-1. **Phase 2 续**：struct / Stream / DartFn 生成；错误与类型表；用户模板产品化。  
+1. **Phase 2 续**：struct / Stream / DartFn 生成；错误与类型表；用户模板产品化。类型映射白名单见 [codegen_type_mapping.md](./codegen_type_mapping.md)，后续实现按该文档落地。  
 2. **Phase 3**：Native Assets hook；CMake export。  
 3. 可选：`spawn_blocking` 复用 oneshot；跨平台 CI。
 

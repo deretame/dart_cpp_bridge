@@ -70,7 +70,10 @@ enum MethodId {
   callDartHello(8),
 
   /// DartFn reverse call; C++ blocks current native thread.
-  callDartHelloSync(9);
+  callDartHelloSync(9),
+
+  /// Async optional i32 -> optional i32 test.
+  maybeDouble(10);
 
   /// Numeric method id on the wire.
   final int value;
@@ -109,6 +112,16 @@ class ByteWriter {
   void i32(int v) {
     final bd = ByteData(4)..setInt32(0, v, Endian.little);
     _b.add(bd.buffer.asUint8List());
+  }
+
+  /// Append a nullable `i32` (1-byte presence tag + value if non-null).
+  void writeOptI32(int? v) {
+    if (v == null) {
+      u8(0);
+    } else {
+      u8(1);
+      i32(v);
+    }
   }
 
   /// Append `u32` length + UTF-8 bytes.
@@ -177,6 +190,13 @@ class ByteReader {
     final v = _bd.getInt32(_pos, Endian.little);
     _pos += 4;
     return v;
+  }
+
+  /// Read a nullable `i32` (1-byte presence tag + value if non-null).
+  int? readOptI32() {
+    final hasValue = u8() != 0;
+    if (!hasValue) return null;
+    return i32();
   }
 
   /// Read `u32` length + UTF-8 string.

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -42,6 +43,14 @@ void ticks(I32Sink sink, std::int32_t count, std::int32_t interval_ms) {
 }
 
 async_simple::coro::Lazy<std::string> echo(std::string s) { co_return s; }
+
+async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
+    std::optional<std::int32_t> input) {
+  if (input.has_value()) {
+    co_return input.value() * 2;
+  }
+  co_return std::nullopt;
+}
 
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
   throw std::runtime_error(message.empty() ? "fail_async" : message);
@@ -172,6 +181,26 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await echo(std::move(s));
                 ByteWriter w;
                 w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kMaybeDouble: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto input = r.opt<std::int32_t>([&r]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input = std::move(input)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await maybe_double(input);
+                ByteWriter w;
+                w.opt<std::int32_t>(out, [&w](std::int32_t v) { w.i32(v); });
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

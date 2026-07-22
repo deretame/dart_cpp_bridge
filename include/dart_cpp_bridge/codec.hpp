@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -39,6 +40,8 @@ enum class MethodId : std::uint32_t {
   kCallDartHello = 8,
   // payload: fn_id u64 — DartFn sync block current thread (no offload babysitting)
   kCallDartHelloSync = 9,
+  // payload: opt_i32 — async optional test
+  kMaybeDouble = 10,
 };
 
 class ByteWriter {
@@ -60,6 +63,17 @@ class ByteWriter {
   }
   void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
   void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
+
+  template <typename T, typename WriteValue>
+  void opt(const std::optional<T>& v, WriteValue write_value) {
+    if (v.has_value()) {
+      u8(1);
+      write_value(v.value());
+    } else {
+      u8(0);
+    }
+  }
+
   void bytes(const std::uint8_t* data, std::size_t n) {
     buf_.insert(buf_.end(), data, data + n);
   }
@@ -111,6 +125,13 @@ class ByteReader {
   }
   std::int32_t i32() { return static_cast<std::int32_t>(u32()); }
   std::int64_t i64() { return static_cast<std::int64_t>(u64()); }
+
+  template <typename T, typename ReadValue>
+  std::optional<T> opt(ReadValue read_value) {
+    const bool has_value = u8() != 0;
+    if (!has_value) return std::nullopt;
+    return read_value();
+  }
 
   std::string str() {
     auto n = u32();

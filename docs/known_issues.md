@@ -76,6 +76,62 @@ io:       Executor::schedule(resume) → 继续业务
 
 ---
 
-## 5. 一句话
+## 5. 【环境依赖】Windows 上需要较新的 MSVC 运行时（MSVCP140.dll / VCRUNTIME140.dll）
+
+### 5.1 现象
+
+在 Windows 上运行 `dart test` 时，进程可能在 `NativeBindings` 初始化阶段崩溃：
+
+```text
+===== CRASH =====
+ExceptionCode=-1073741819
+...
+pc 0x00007ffa... C:\Windows\SYSTEM32\MSVCP140.dll+0x18c34
+...
+[Optimized] new NativeBindings..#ffiClosure1+0x6d
+[Unoptimized] DartCppBridge.init+...
+```
+
+C++ 的 `dcb_smoke.exe` 单独运行通常正常，因为 smoke 测试的 `.exe` 与 `MSVCP140.dll` 同目录。
+
+### 5.2 原因
+
+`dart_cpp_bridge` 默认使用 `/MD` 动态链接 MSVC 运行时。当前项目使用 Visual Studio 2026 / MSVC 14.51 编译，需要 **VC145** 版本的运行时 DLL（`MSVCP140.dll` 14.40+）。
+
+如果系统中已安装的通用 `MSVCP140.dll` 是旧版本（例如 14.00.24215.1，对应 VS 2015），而 Dart 进程在启动时加载的是系统目录中的旧 DLL，则 C++ 侧构建出的 DLL 与该旧版本 ABI 不兼容，会在调用 C++ 标准库代码时崩溃。
+
+### 5.3 临时解决
+
+将 VS Redist 目录中的新版运行时 DLL 复制到 `dart.exe` 所在的目录（最高优先级），例如：
+
+```powershell
+# 以实际 VS 安装路径和版本为准
+$src = "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Redist\MSVC\14.51.36231\x64\Microsoft.VC145.CRT"
+$dst = "$env:USERPROFILE\.puro\envs\default\flutter\bin\cache\dart-sdk\bin"
+copy "$src\MSVCP140.dll" $dst
+copy "$src\VCRUNTIME140.dll" $dst
+copy "$src\VCRUNTIME140_1.dll" $dst
+```
+
+也可以将上述 DLL 复制到 `dart/` 目录（`dart test` 的当前目录），但优先级低于 `dart.exe` 所在目录。
+
+### 5.4 彻底解决
+
+安装最新版本的 **Visual C++ Redistributable**（14.40+，即 VC145 运行时），确保系统 `MSVCP140.dll` 版本不低于构建时使用的版本。
+
+### 5.5 相关检查
+
+- 查看系统 DLL 版本：
+  ```powershell
+  (Get-ItemProperty C:\Windows\System32\MSVCP140.dll).VersionInfo.FileVersion
+  ```
+- 查看构建依赖的 DLL 版本：
+  ```powershell
+  dumpbin /DEPENDENTS build\Release\dart_cpp_bridge.dll
+  ```
+
+---
+
+## 6. 一句话
 
 **DartFn 反向调用：协议 + oneshot + AsioExecutor 已通；async 路径为 io 上真挂起，sync 路径仍阻塞当前线程。**
