@@ -44,6 +44,21 @@ void ticks(I32Sink sink, std::int32_t count, std::int32_t interval_ms) {
              });
 }
 
+async_simple::coro::Lazy<std::string> echo(std::string s) { co_return s; }
+
+async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
+  throw std::runtime_error(message.empty() ? "fail_async" : message);
+  co_return 0;
+}
+
+void fail_stream(I32Sink sink, std::string message) {
+  asio::post(Runtime::instance().pool(),
+             [sink = std::move(sink), message = std::move(message)]() mutable {
+               sink.add(1);
+               sink.error(message.empty() ? "fail_stream" : message);
+             });
+}
+
 // ---- wire ----
 
 namespace {
@@ -139,6 +154,51 @@ void dispatch_request(const std::uint8_t* data, std::size_t len) {
         const auto interval_ms = r.i32();
         auto sink = make_i32_sink(&session, req, gen, method);
         ticks(std::move(sink), count, interval_ms);
+        break;
+      }
+      case MethodId::kEcho: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto s = r.str();
+        Runtime::instance().spawn_on_asio(
+            [gen, req, method, s = std::move(s)]() -> async_simple::coro::Lazy<> {
+              auto& session = global_session();
+              try {
+                auto out = co_await echo(std::move(s));
+                ByteWriter w;
+                w.str(out);
+                post_ok(&session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(&session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(&session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kFailAsync: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto msg = r.str();
+        Runtime::instance().spawn_on_asio(
+            [gen, req, method, msg = std::move(msg)]() -> async_simple::coro::Lazy<> {
+              auto& session = global_session();
+              try {
+                co_await fail_async(std::move(msg));
+                post_ok(&session, gen, req, method, {});
+              } catch (const std::exception& e) {
+                post_err(&session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(&session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kFailStream: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto msg = r.str();
+        auto sink = make_i32_sink(&session, req, gen, method);
+        fail_stream(std::move(sink), std::move(msg));
         break;
       }
       default:

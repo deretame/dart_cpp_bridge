@@ -27,7 +27,10 @@ enum MethodId {
   bridgeVersion(1),
   add(2),
   sleepTest(3),
-  ticks(4);
+  ticks(4),
+  echo(5),
+  failAsync(6),
+  failStream(7);
 
   final int value;
   const MethodId(this.value);

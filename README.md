@@ -90,7 +90,7 @@ cd dart
 dart test
 ```
 
-覆盖：sync、async、normal（线程池）、stream、关订阅、dispose 后再 init。
+覆盖：sync / async / normal / stream、关订阅、dispose 再 init、错误路径、UTF-8 echo、纯 Dart codec。
 
 默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
 

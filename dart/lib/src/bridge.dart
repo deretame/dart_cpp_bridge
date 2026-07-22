@@ -212,4 +212,79 @@ final class DartCppBridge {
     _invokeAsyncRaw(req);
     return controller.stream;
   }
+
+  Future<String> echo(String s) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..str(s);
+    final req = makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.echo.value,
+      payload: payload.takeBytes(),
+    );
+    _invokeAsyncRaw(req);
+    final body = await c.future;
+    return ByteReader(body).str();
+  }
+
+  Future<void> failAsync([String message = 'fail_async']) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..str(message);
+    final req = makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.failAsync.value,
+      payload: payload.takeBytes(),
+    );
+    _invokeAsyncRaw(req);
+    await c.future;
+  }
+
+  Stream<int> failStream([String message = 'fail_stream']) {
+    final id = _allocId();
+    final controller = StreamController<int>(
+      onCancel: () {
+        _b.streamClose(id);
+        _streams.remove(id);
+      },
+    );
+    _streams[id] = controller;
+    final payload = ByteWriter()..str(message);
+    final req = makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.failStream.value,
+      payload: payload.takeBytes(),
+    );
+    _invokeAsyncRaw(req);
+    return controller.stream;
+  }
+
+  /// Calls sync FFI with a non-sync method id (for tests).
+  void invokeSyncNonSyncMethodForTest() {
+    final req = makeFrame(
+      type: MsgType.request,
+      requestId: 0,
+      methodId: MethodId.add.value,
+    );
+    _invokeSyncRaw(req);
+  }
+
+  /// Calls async FFI with an unknown method id (for tests).
+  Future<void> invokeUnknownMethodForTest() async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final req = makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: 0x7ffffffe,
+    );
+    _invokeAsyncRaw(req);
+    await c.future;
+  }
 }

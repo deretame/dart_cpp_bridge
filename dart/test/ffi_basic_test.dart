@@ -98,6 +98,55 @@ void main() {
     });
   });
 
+  group('errors & payload', () {
+    test('echo roundtrips utf-8 string', () async {
+      const s = '你好 dart_cpp_bridge ✓';
+      expect(await bridge.echo(s), s);
+    });
+
+    test('failAsync surfaces as Future error', () async {
+      await expectLater(
+        bridge.failAsync('boom-async'),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('boom-async'))),
+      );
+    });
+
+    test('failStream emits data then error', () async {
+      final values = <int>[];
+      Object? err;
+      try {
+        await for (final v in bridge.failStream('boom-stream')) {
+          values.add(v);
+        }
+      } catch (e) {
+        err = e;
+      }
+      expect(values, [1]);
+      expect(err, isA<StateError>());
+      expect((err! as StateError).message, contains('boom-stream'));
+    });
+
+    test('unknown async method errors', () async {
+      await expectLater(
+        bridge.invokeUnknownMethodForTest(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('unknown method'))),
+      );
+    });
+
+    test('sync non-sync method errors', () {
+      expect(
+        () => bridge.invokeSyncNonSyncMethodForTest(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('not sync-capable'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('lifecycle', () {
     test('dispose completes pending Future with error', () async {
       final pending = bridge.sleepTest();

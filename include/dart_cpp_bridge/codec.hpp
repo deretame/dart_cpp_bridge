@@ -29,6 +29,9 @@ enum class MethodId : std::uint32_t {
   kAdd = 2,
   kSleepTest = 3,
   kTicks = 4,
+  kEcho = 5,
+  kFailAsync = 6,
+  kFailStream = 7,
 };
 
 class ByteWriter {
