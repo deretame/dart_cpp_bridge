@@ -113,19 +113,25 @@ void dispatch_request(const std::uint8_t* data, std::size_t len) {
         break;
       }
       case MethodId::kSleepTest: {
-        Runtime::instance().spawn_on_asio([gen, req, method]() -> async_simple::coro::Lazy<> {
-          auto& session = global_session();
+        // normal path: blocking pool → post result on io_context (no Lazy await on Future).
+        auto* io = &Runtime::instance().io();
+        asio::post(Runtime::instance().pool(), [gen, req, method, io]() {
           try {
-            auto out = co_await Runtime::instance().spawn_blocking([] { return sleep_test(); });
-            ByteWriter w;
-            w.str(out);
-            post_ok(&session, gen, req, method, w.raw());
+            auto out = sleep_test();
+            asio::post(*io, [gen, req, method, out = std::move(out)]() {
+              ByteWriter w;
+              w.str(out);
+              post_ok(&global_session(), gen, req, method, w.raw());
+            });
           } catch (const std::exception& e) {
-            post_err(&session, gen, req, method, e.what());
+            asio::post(*io, [gen, req, method, msg = std::string(e.what())]() {
+              post_err(&global_session(), gen, req, method, msg);
+            });
           } catch (...) {
-            post_err(&session, gen, req, method, "unknown");
+            asio::post(*io, [gen, req, method]() {
+              post_err(&global_session(), gen, req, method, "unknown");
+            });
           }
-          co_return;
         });
         break;
       }

@@ -64,24 +64,37 @@ cmake --build build --config Release
 .\build\Release\dcb_smoke.exe
 ```
 
-## Dart 侧（需自备动态库路径）
+## Dart 侧
 
 ```powershell
 cd dart
 dart pub get
-# 将 build 产出的 dart_cpp_bridge.dll / .so / .dylib 放到可加载路径，或：
-# DartCppBridge.init(libraryPath: r'..\build\Release\dart_cpp_bridge.dll');
 ```
 
 ```dart
-final b = await DartCppBridge.init(libraryPath: '...');
+final b = await DartCppBridge.init(
+  libraryPath: r'..\build\Release\dart_cpp_bridge.dll',
+);
 print(b.bridgeVersion());
 print(await b.add(40, 2));
 print(await b.sleepTest());
-await for (final t in b.ticks(count: 3, intervalMs: 50)) {
-  print(t);
-}
-b.dispose();
+b.shutdown();
+```
+
+### 测试（sync / async FFI）
+
+先编译出动态库，再在 `dart/` 下：
+
+```powershell
+cd dart
+dart test test/ffi_sync_async_test.dart
+```
+
+默认从仓库 `build/Release/dart_cpp_bridge.dll` 加载；也可：
+
+```powershell
+$env:DCB_LIBRARY_PATH = "D:\path\to\dart_cpp_bridge.dll"
+dart test test/ffi_sync_async_test.dart
 ```
 
 ## 设计要点（已锁定）
