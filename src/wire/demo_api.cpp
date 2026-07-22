@@ -14,6 +14,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 namespace dcb {
 namespace demo {
@@ -58,6 +59,12 @@ async_simple::coro::Lazy<std::int32_t> sum_vec(std::vector<std::int32_t> values)
     sum += v;
   }
   co_return sum;
+}
+
+async_simple::coro::Lazy<std::vector<std::uint8_t>> reverse_bytes(
+    std::vector<std::uint8_t> input) {
+  std::reverse(input.begin(), input.end());
+  co_return input;
 }
 
 async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
@@ -229,6 +236,26 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
                 auto out = co_await sum_vec(values);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kReverseBytes: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto input = r.u8vec();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input = std::move(input)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await reverse_bytes(input);
+                ByteWriter w;
+                w.u8vec(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

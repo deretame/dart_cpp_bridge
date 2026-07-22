@@ -76,7 +76,10 @@ enum MethodId {
   maybeDouble(10),
 
   /// Async list i32 -> i32 sum test.
-  sumVec(11);
+  sumVec(11),
+
+  /// Async Uint8List -> Uint8List reverse test.
+  reverseBytes(12);
 
   /// Numeric method id on the wire.
   final int value;
@@ -133,6 +136,12 @@ class ByteWriter {
     for (final x in v) {
       i32(x);
     }
+  }
+
+  /// Append a length-prefixed raw byte buffer as `Uint8List`.
+  void writeUint8List(Uint8List v) {
+    u32(v.length);
+    bytes(v);
   }
 
   /// Append `u32` length + UTF-8 bytes.
@@ -217,6 +226,15 @@ class ByteReader {
     for (var i = 0; i < n; i++) {
       result.add(i32());
     }
+    return result;
+  }
+
+  /// Read a length-prefixed raw byte buffer as `Uint8List`.
+  Uint8List readUint8List() {
+    final n = u32();
+    _need(n);
+    final result = Uint8List.fromList(data.sublist(_pos, _pos + n));
+    _pos += n;
     return result;
   }
 

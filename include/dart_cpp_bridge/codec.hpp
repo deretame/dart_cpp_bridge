@@ -44,6 +44,8 @@ enum class MethodId : std::uint32_t {
   kMaybeDouble = 10,
   // payload: list_i32 — async vector test
   kSumVec = 11,
+  // payload: u8vec — async typed list test
+  kReverseBytes = 12,
 };
 
 class ByteWriter {
@@ -82,6 +84,11 @@ class ByteWriter {
     for (const auto& item : v) {
       write_value(item);
     }
+  }
+
+  void u8vec(const std::vector<std::uint8_t>& v) {
+    u32(static_cast<std::uint32_t>(v.size()));
+    bytes(v.data(), v.size());
   }
 
   void bytes(const std::uint8_t* data, std::size_t n) {
@@ -151,6 +158,14 @@ class ByteReader {
     for (std::uint32_t i = 0; i < n; ++i) {
       result.push_back(read_value());
     }
+    return result;
+  }
+
+  std::vector<std::uint8_t> u8vec() {
+    auto n = u32();
+    need(n);
+    std::vector<std::uint8_t> result(data_ + pos_, data_ + pos_ + n);
+    pos_ += n;
     return result;
   }
 

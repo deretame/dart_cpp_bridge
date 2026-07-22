@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 import 'package:test/test.dart';
@@ -191,6 +192,19 @@ void main() {
 
     test('sumList handles negatives', () async {
       expect(await bridge.sumList([10, -3, -5]), 2);
+    });
+  });
+
+  group('vector<uint8_t> ↔ Uint8List', () {
+    test('reverseBytes reverses non-empty bytes', () async {
+      final input = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final out = await bridge.reverseBytes(input);
+      expect(out, Uint8List.fromList([5, 4, 3, 2, 1]));
+    });
+
+    test('reverseBytes handles empty bytes', () async {
+      final out = await bridge.reverseBytes(Uint8List(0));
+      expect(out, isEmpty);
     });
   });
 
