@@ -343,16 +343,17 @@ FRB 的类编解码也是按字段顺序生成：
 
 | 优先级 | 类型类别 | 状态 |
 |--------|----------|------|
-| P0 | 基础类型（bool、整型、浮点、string） | 待实现 |
-| P0 | `std::vector<T>` / `std::array<T, N>` | 待实现 |
-| P0 | `std::optional<T>` | 待实现 |
-| P1 | 枚举（enum / enum class） | 待实现 |
-| P1 | `std::unordered_map<K, V>` | 待实现 |
-| P1 | `std::unordered_set<T>` | 待实现 |
-| P1 | 类/结构体（public 字段、自动导出、友元不导出） | 待实现 |
-| P2 | 大整数 `__int128` / `unsigned __int128` → `BigInt` | 待实现 |
-| P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 待实现 |
+| P0 | 基础类型（bool、整型、浮点、string） | 已手写测试（Phase 1） |
+| P0 | `std::vector<T>` / `std::array<T, N>` | 已手写测试（含 typed list 优化） |
+| P0 | `std::optional<T>` | 已手写测试 |
+| P1 | 枚举（enum / enum class） | 已手写测试 |
+| P1 | `std::unordered_map<K, V>` | 已手写测试 |
+| P1 | `std::unordered_set<T>` | 已手写测试 |
+| P1 | 类/结构体（public 字段、自动导出、友元不导出） | 已手写测试 |
+| P2 | 大整数 `__int128` / `unsigned __int128` → `BigInt` | 已手写测试（MSVC 使用 Int128/UInt128 结构体） |
+| P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
 | P3 | 类/结构体上的方法导出（需标记） | 待设计/待实现 |
+| P3 | 嵌套复合类型（`list<struct>` 等） | 已手写测试 |
 
 ---
 

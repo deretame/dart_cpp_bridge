@@ -135,3 +135,41 @@ copy "$src\VCRUNTIME140_1.dll" $dst
 ## 6. 一句话
 
 **DartFn 反向调用：协议 + oneshot + AsioExecutor 已通；async 路径为 io 上真挂起，sync 路径仍阻塞当前线程。**
+
+---
+
+## 7. 【环境依赖】Windows 上 Visual Studio 未将 CMake 加入 PATH
+
+### 7.1 现象
+
+在 Windows 上执行项目文档中的 `cmake` 命令时，PowerShell / CMD 可能提示找不到 `cmake`：
+
+```powershell
+cmake : 无法将“cmake”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。
+```
+
+但 Visual Studio 安装目录下其实自带 CMake，例如：
+
+```text
+C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+```
+
+### 7.2 原因
+
+Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单独安装的 CMake（例如从 cmake.org 下载）或某些工作负载才会注册到 PATH。
+
+### 7.3 临时解决
+
+使用 VS 自带的 CMake 绝对路径，或切换到 Developer PowerShell / Developer Command Prompt for VS：
+
+```powershell
+# 使用 VS 自带 CMake 的绝对路径
+& "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build --config Release
+```
+
+或在 VS 的 **Developer PowerShell for VS 2026** 中执行，该环境已配置好 CMake 路径。
+
+### 7.4 彻底解决
+
+单独安装 CMake（>= 3.20）并确保安装程序勾选“Add CMake to the system PATH for all users / current user”。
+
