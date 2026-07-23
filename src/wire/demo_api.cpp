@@ -198,6 +198,12 @@ std::int32_t counter_static_sum(std::int32_t a, std::int32_t b) {
   return a + b;
 }
 
+async_simple::coro::Lazy<std::string> counter_call_dart_fn(
+    std::shared_ptr<Counter> obj, DartFnStringToString cb) {
+  // DartFn callback method: pass the current value as a string to Dart.
+  co_return co_await cb.callAsync(std::to_string(obj->value()));
+}
+
 namespace {
 
 void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
@@ -225,6 +231,53 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
   } catch (...) {
     post_err(session, gen, req, method, "unknown");
   }
+}
+
+void counter_sleep_and_get(std::shared_ptr<Counter> obj, std::int32_t sleep_ms,
+                           const std::shared_ptr<Session>& session, std::uint64_t gen,
+                           std::uint64_t req, std::uint32_t method) {
+  // Normal member method: run blocking work on the thread pool, then post the result back to io.
+  auto* io = &Runtime::instance().io();
+  asio::post(Runtime::instance().pool(), [obj, sleep_ms, session, gen, req, method, io]() {
+    try {
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+      const auto value = obj->value();
+      asio::post(*io, [session, gen, req, method, value]() {
+        ByteWriter w;
+        w.i32(value);
+        post_ok(session, gen, req, method, w.raw());
+      });
+    } catch (const std::exception& e) {
+      asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
+        post_err(session, gen, req, method, msg);
+      });
+    } catch (...) {
+      asio::post(*io, [session, gen, req, method]() {
+        post_err(session, gen, req, method, "unknown");
+      });
+    }
+  });
+}
+
+void counter_increment_stream(std::shared_ptr<Counter> obj, std::int32_t count,
+                              std::int32_t interval_ms, I32Sink sink) {
+  // Stream member method: increment the counter on the thread pool and emit each new value.
+  asio::post(Runtime::instance().pool(), [obj, count, interval_ms, sink = std::move(sink)]() mutable {
+    try {
+      for (std::int32_t i = 0; i < count; ++i) {
+        obj->increment(1);
+        sink.add(obj->value());
+        if (interval_ms > 0) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+        }
+      }
+      sink.end();
+    } catch (const std::exception& e) {
+      sink.error(e.what());
+    } catch (...) {
+      sink.error("unknown");
+    }
+  });
 }
 
 }  // namespace
@@ -596,6 +649,60 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         } catch (...) {
           post_err(session, gen, req, method, "unknown");
         }
+        break;
+      }
+      case MethodId::kCounterCallDartFn: {
+        // True async on io: co_await oneshot; io thread free while Dart runs.
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto fn_id = r.u64();
+        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        if (!obj) {
+          post_err(session, gen, req, method, "Counter handle not found");
+          break;
+        }
+        DartFnStringToString cb(session, gen, fn_id);
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, obj = std::move(obj), cb = std::move(cb)]() mutable
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await counter_call_dart_fn(obj, cb);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterSleepAndGet: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto sleep_ms = r.i32();
+        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        if (!obj) {
+          post_err(session, gen, req, method, "Counter handle not found");
+          break;
+        }
+        counter_sleep_and_get(obj, sleep_ms, session, gen, req, method);
+        break;
+      }
+      case MethodId::kCounterIncrementStream: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto count = r.i32();
+        const auto interval_ms = r.i32();
+        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        if (!obj) {
+          post_err(session, gen, req, method, "Counter handle not found");
+          break;
+        }
+        auto sink = make_i32_sink(session.get(), req, gen, method);
+        counter_increment_stream(obj, count, interval_ms, std::move(sink));
         break;
       }
       case MethodId::kFailAsync: {

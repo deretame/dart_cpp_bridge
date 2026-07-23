@@ -102,6 +102,12 @@ enum class MethodId : std::uint32_t {
   kCounterValueSync = 24,
   // payload: a i32 + b i32 — sync static method return a + b
   kCounterStaticSum = 25,
+  // payload: handle u64 + fn_id u64 — call Dart callback with current value string
+  kCounterCallDartFn = 26,
+  // payload: handle u64 + sleep_ms i32 — Normal method, returns current value after sleep
+  kCounterSleepAndGet = 27,
+  // payload: handle u64 + count i32 + interval_ms i32 — Stream method, emits values
+  kCounterIncrementStream = 28,
 };
 
 class ByteWriter {

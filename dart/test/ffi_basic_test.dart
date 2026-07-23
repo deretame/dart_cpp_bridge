@@ -331,6 +331,34 @@ void main() {
       expect(Counter.sum(12, 34), 46);
       expect(Counter.sum(-5, 5), 0);
     });
+
+    test('Counter.callCallback invokes Dart with current value', () async {
+      final counter = await bridge.createCounter(initialValue: 10);
+      final out = await counter.callCallback((value) => 'got $value');
+      expect(out, 'got 10');
+      await counter.increment(5);
+      final out2 = await counter.callCallback((value) => 'value=$value');
+      expect(out2, 'value=15');
+      counter.dispose();
+    });
+
+    test('Counter.sleepAndGet runs on thread pool and returns value', () async {
+      final counter = await bridge.createCounter(initialValue: 42);
+      final sw = Stopwatch()..start();
+      final value = await counter.sleepAndGet(300);
+      sw.stop();
+      expect(value, 42);
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(250));
+      counter.dispose();
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('Counter.incrementStream emits incremented values', () async {
+      final counter = await bridge.createCounter(initialValue: 0);
+      final values = await counter.incrementStream(count: 4, intervalMs: 10).toList();
+      expect(values, [1, 2, 3, 4]);
+      expect(await counter.value(), 4);
+      counter.dispose();
+    });
   });
 
   group('DartFn reverse call (FRB-style)', () {

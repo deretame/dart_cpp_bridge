@@ -582,6 +582,42 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(invokeSyncMethod(MethodId.counterStaticSum.value, payload.takeBytes())).i32();
   }
 
+  Future<String> _counterCallDartFn(
+    int handle,
+    FutureOr<String> Function(String value) callback,
+  ) {
+    return _invokeStringToStringDartFn(MethodId.counterCallDartFn, handle, callback);
+  }
+
+  Future<int> _counterSleepAndGet(int handle, int sleepMs) async {
+    final payload = ByteWriter()
+      ..u64(handle)
+      ..i32(sleepMs);
+    return ByteReader(await invokeAsyncMethod(MethodId.counterSleepAndGet.value, payload.takeBytes())).i32();
+  }
+
+  Stream<int> _counterIncrementStream(int handle, int count, int intervalMs) {
+    final id = _allocId();
+    final controller = StreamController<int>(
+      onCancel: () {
+        _b.streamClose(_sessionId, id);
+        _streams.remove(id);
+      },
+    );
+    _streams[id] = controller;
+    final payload = ByteWriter()
+      ..u64(handle)
+      ..i32(count)
+      ..i32(intervalMs);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.counterIncrementStream.value,
+      payload: payload.takeBytes(),
+    ));
+    return controller.stream;
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
@@ -652,7 +688,7 @@ final class DartCppBridge implements Finalizable {
   ///
   /// [dartCallback] may be sync or `async` on the Dart side.
   Future<String> callDartHello(FutureOr<String> Function(String name) dartCallback) {
-    return _callDartHelloImpl(dartCallback, MethodId.callDartHello);
+    return _invokeStringToStringDartFn(MethodId.callDartHello, null, dartCallback);
   }
 
   /// FRB-style reverse call (C++ **sync** block on current native thread).
@@ -660,18 +696,26 @@ final class DartCppBridge implements Finalizable {
   /// Library does **not** move this off the io thread. If C++ calls sync on io,
   /// the scheduler stalls until Dart replies — caller's responsibility.
   Future<String> callDartHelloSync(FutureOr<String> Function(String name) dartCallback) {
-    return _callDartHelloImpl(dartCallback, MethodId.callDartHelloSync);
+    return _invokeStringToStringDartFn(MethodId.callDartHelloSync, null, dartCallback);
   }
 
-  Future<String> _callDartHelloImpl(
-    FutureOr<String> Function(String name) dartCallback,
+  /// Internal helper for string-to-string DartFn reverse calls.
+  ///
+  /// If [handle] is non-null it is written before the fn_id, used by opaque
+  /// object methods like `Counter.callCallback`. For top-level DartFn methods
+  /// [handle] should be null.
+  Future<String> _invokeStringToStringDartFn(
     MethodId method,
+    int? handle,
+    FutureOr<String> Function(String) dartCallback,
   ) async {
     final fnId = _registerDartFn(dartCallback);
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;
-    final payload = ByteWriter()..u64(fnId);
+    final payload = ByteWriter();
+    if (handle != null) payload.u64(handle);
+    payload.u64(fnId);
     try {
       _invokeAsyncRaw(makeFrame(
         type: MsgType.request,
@@ -757,6 +801,26 @@ final class Counter extends CppOpaqueInterface {
   /// Static method: sum two integers on the C++ side.
   static int sum(int a, int b) {
     return DartCppBridge.instance._counterStaticSum(a, b);
+  }
+
+  /// Call a Dart callback with the current value (as a string) and return the
+  /// result from Dart.
+  Future<String> callCallback(FutureOr<String> Function(String value) callback) {
+    _ensureAlive();
+    return _bridge._counterCallDartFn(_handle, callback);
+  }
+
+  /// Normal member method: sleep on the C++ thread pool, then return the current value.
+  Future<int> sleepAndGet(int sleepMs) async {
+    _ensureAlive();
+    return _bridge._counterSleepAndGet(_handle, sleepMs);
+  }
+
+  /// Stream member method: increment [count] times with [intervalMs] delay and
+  /// emit each new value.
+  Stream<int> incrementStream({int count = 5, int intervalMs = 20}) {
+    _ensureAlive();
+    return _bridge._counterIncrementStream(_handle, count, intervalMs);
   }
 }
 
