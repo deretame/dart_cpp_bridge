@@ -484,7 +484,7 @@ class Counter extends CppOpaqueInterface {
 |------|--------|------|
 | 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 已实现：手写测试用 `extends` 复用 `dispose()` / `NativeFinalizer` attach/detach。 |
 | 2 | **构造函数多种形态** | 已实现并手写测试：默认构造 `Counter.defaultCtor()`、带参构造 `Counter.create(initialValue)`、工厂构造 `Counter.zero()`。copy/move 构造为 codegen 阶段限制。 |
-| 3 | **析构函数生命周期** | 明确 `dispose()` 手动释放 + `NativeFinalizer` 自动释放的语义。 |
+| 3 | **析构函数生命周期** | 已实现并手写测试：`dispose()` 手动释放 + `NativeFinalizer` 自动释放；Session 关闭时 per-Session 注册表自动 drop 所有对象。 |
 | 4 | **Sync / Async / Normal / Stream 成员方法** | 已实现并手写测试：Counter 覆盖六种调用模式。 |
 | 5 | **Static 方法** | 已实现并手写测试：`Counter.sum(a, b)`。 |
 | 6 | **方法重载** | 同名不同参数的方法需要生成不同 method_id。 |
@@ -506,9 +506,10 @@ class Counter extends CppOpaqueInterface {
    - 工厂构造（静态方法）：如 `Counter.zero()`，验证 static 方法返回 opaque 对象 handle。
    - 拷贝/移动构造限制：验证 opaque 对象不导出 copy/move constructor，禁止隐式按值拷贝。
 
-2. **析构函数生命周期 / GC 自动释放**
+2. **析构函数生命周期 / GC 自动释放** ✅
    - 明确 `dispose()` 手动释放与 `NativeFinalizer` 自动释放的语义。
-   - 手写测试验证：Dart 侧 `Counter` 引用失效后，native 对象最终被 drop（GC 非确定性，测试为“大概率触发”版本）。
+   - 手写测试验证：bridge shutdown 时会关闭 Session，per-Session 注册表自动 drop 该 Session 的所有对象，旧 Counter 句柄失效。
+   - GC 自动释放依赖 Dart `NativeFinalizer`，由 `CppOpaqueInterface` 统一 attach/detach；因 Dart GC 时机不可控，不手写确定性测试，但机制已跑通。
 
 3. **无效句柄错误信息**
    - handle 不存在或已 drop 时返回清晰错误，区分“未找到”和“已释放”。

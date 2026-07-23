@@ -377,6 +377,15 @@ void main() {
       expect(await counter.value(), 4);
       counter.dispose();
     });
+
+    test('Counter is unusable after bridge shutdown drops session objects', () async {
+      final counter = await bridge.createCounter(initialValue: 123);
+      expect(await counter.value(), 123);
+      bridge.shutdown(); // closes session and drops all objects in per-Session registry
+      expect(() => counter.value(), throwsA(isA<StateError>()));
+      // Re-init for remaining tests.
+      bridge = await openBridge();
+    });
   });
 
   group('DartFn reverse call (FRB-style)', () {
