@@ -5,6 +5,7 @@
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/stream_sink.hpp"
 
 #include "api/bridge_api.h"
 
@@ -332,6 +333,19 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               }
               co_return;
             });
+        break;
+      }
+
+      case 1673543649: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto count = r.i32();
+        const auto interval_ms = r.i32();
+        auto sink = dcb::StreamSink<std::int32_t>(session.get(), req, gen, method, [](std::int32_t v) {
+          ByteWriter w;
+          w.i32(v);
+          return w.raw();
+        });
+        ::demo::api::tick_stream(std::move(sink), count, interval_ms);
         break;
       }
 

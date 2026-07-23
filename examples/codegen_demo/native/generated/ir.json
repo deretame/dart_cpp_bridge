@@ -407,6 +407,40 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "tick_stream",
+      "qualified": "demo::api::tick_stream",
+      "kind": "stream",
+      "method_id": 1673543649,
+      "args": [
+        {
+          "name": "sink",
+          "type": {
+            "kind": "stream_sink",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        },
+        {
+          "name": "count",
+          "type": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ],
+      "return": {
+        "kind": "void"
+      },
+      "attrs": [],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "greet_dart_fn",
       "qualified": "demo::api::greet_dart_fn",
       "kind": "async",

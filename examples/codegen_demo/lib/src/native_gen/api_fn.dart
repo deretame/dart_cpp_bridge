@@ -57,6 +57,9 @@ Future<BigInt> echoU128(BigInt value) =>
 Future<int> incrementU32(int value) =>
     BridgeApi.instance.incrementU32(value);
 
+Stream<int> tickStream(int count, int intervalMs) =>
+    BridgeApi.instance.tickStream(count, intervalMs);
+
 Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) =>
     BridgeApi.instance.greetDartFn(callback, name);
 

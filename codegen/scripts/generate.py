@@ -644,6 +644,37 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
         break;
       }}"""
             cases.append(body)
+
+        elif kind == "stream":
+            non_sink_args = [a for a in fn["args"] if a["type"].get("kind") != "stream_sink"]
+            reads = "\n        ".join(_cpp_read_arg(a) for a in non_sink_args)
+            sink_arg = next(a for a in fn["args"] if a["type"].get("kind") == "stream_sink")
+            sink_inner = sink_arg["type"]["inner"]
+            sink_encode = _cpp_write_item(sink_inner, "v")
+            call_arg_exprs = []
+            for a in fn["args"]:
+                if a["type"].get("kind") == "stream_sink":
+                    call_arg_exprs.append("std::move(sink)")
+                else:
+                    call_arg_exprs.append(a["name"])
+            q = fn["qualified"]
+            if not q.startswith("::"):
+                q = "::" + q
+            call = f"{q}({', '.join(call_arg_exprs)})"
+            body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {reads}
+        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session.get(), req, gen, method, []({_cpp_type(sink_inner)} v) {{
+          ByteWriter w;
+          {sink_encode}
+          return w.raw();
+        }});
+        {call};
+        break;
+      }}"""
+            cases.append(body)
+
         else:
             raise ValueError(f"kind not supported yet: {kind}")
 
@@ -657,6 +688,7 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/stream_sink.hpp"
 
 {inc_lines}
 
@@ -761,8 +793,18 @@ def _iter_dart_methods(ir: dict[str, Any]):
             params.append(f"{_dart_type(a['type'])} {a['dart_name']}")
             call_args.append(a["dart_name"])
         ret_t = _dart_type(fn["return"])
-        is_async = fn["kind"] != "sync"
-        if is_async:
+        is_stream = fn["kind"] == "stream"
+        is_async = not is_stream and fn["kind"] != "sync"
+        stream_decode_expr = None
+        if is_stream:
+            sink_args = [a for a in args if a["type"].get("kind") == "stream_sink"]
+            if not sink_args:
+                raise ValueError(f"stream method without StreamSink arg: {fn['qualified']}")
+            item_t = sink_args[0]["type"]["inner"]
+            ret_t = _dart_type(item_t)
+            sig_ret = f"Stream<{ret_t}>"
+            stream_decode_expr = _dart_read_item(item_t, "_r")
+        elif is_async:
             sig_ret = "Future<void>" if ret_t == "void" else f"Future<{ret_t}>"
         else:
             sig_ret = ret_t
@@ -775,9 +817,11 @@ def _iter_dart_methods(ir: dict[str, Any]):
             "ret_t": ret_t,
             "sig_ret": sig_ret,
             "is_async": is_async,
+            "is_stream": is_stream,
             "payload_lines": _dart_payload_lines(args),
             "dart_fn_args": dart_fn_args,
             "read_ret": _dart_read_ret(fn["return"], "_bytes"),
+            "stream_decode_expr": stream_decode_expr,
         }
 
 
@@ -828,30 +872,44 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
         # Build payload body. DartFn callbacks must be registered before the
         # payload is sent and unregistered after the C++ call returns.
         body_lines: list[str] = []
-        if dart_fn_args:
+        dart_fn_try = bool(dart_fn_args)
+        if dart_fn_try:
+            if m["is_stream"]:
+                raise ValueError(
+                    f"DartFn callbacks inside stream methods are not supported: {fn['qualified']}"
+                )
             for a in dart_fn_args:
                 body_lines.extend(_dart_fn_wrapper_lines(a))
             body_lines.append("try {")
+            indent = "  "
+        else:
+            indent = ""
+
+        if m["is_stream"]:
             for line in payload_lines:
-                body_lines.append(f"  {line}")
+                body_lines.append(f"{indent}{line}")
+            body_lines.append(
+                f"{indent}return bridge.openStream<{ret_t}>({dart_name}Id, _payload.takeBytes(), "
+                f"(final _r) => {m['stream_decode_expr']});"
+            )
         else:
-            body_lines.extend(payload_lines)
-
-        body_lines.append("final _payloadBytes = _payload.takeBytes();")
-        if not m["is_async"]:
-            if ret_t == "void":
-                body_lines.append(f"bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
+            for line in payload_lines:
+                body_lines.append(f"{indent}{line}")
+            body_lines.append(f"{indent}final _payloadBytes = _payload.takeBytes();")
+            if not m["is_async"]:
+                if ret_t == "void":
+                    body_lines.append(f"{indent}bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
+                else:
+                    body_lines.append(f"{indent}final _bytes = bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
+                    body_lines.append(f"{indent}return {read_ret};")
             else:
-                body_lines.append(f"final _bytes = bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
-                body_lines.append(f"return {read_ret};")
-        else:
-            if ret_t == "void":
-                body_lines.append(f"await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
-            else:
-                body_lines.append(f"final _bytes = await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
-                body_lines.append(f"return {read_ret};")
+                if ret_t == "void":
+                    body_lines.append(f"{indent}await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
+                else:
+                    body_lines.append(f"{indent}final _bytes = await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
+                    body_lines.append(f"{indent}return {read_ret};")
 
-        if dart_fn_args:
+        if dart_fn_try:
             body_lines.append("} finally {")
             for a in dart_fn_args:
                 body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")

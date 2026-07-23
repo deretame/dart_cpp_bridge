@@ -33,6 +33,7 @@ final class BridgeApiImpl {
   static const int sleepGreetingId = 1347623235;
   static const int echoU128Id = 1349826830;
   static const int incrementU32Id = 1597460230;
+  static const int tickStreamId = 1673543649;
   static const int greetDartFnId = 1789823149;
   static const int sumSetId = 1869545367;
   static const int echoI128Id = 2053397325;
@@ -168,6 +169,13 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).u32();
   }
 
+  Stream<int> tickStream(int count, int intervalMs) {
+    final _payload = ByteWriter();
+    _payload.i32(count);
+    _payload.i32(intervalMs);
+    return bridge.openStream<int>(tickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
+  }
+
   Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
@@ -182,9 +190,9 @@ final class BridgeApiImpl {
       final _payload = ByteWriter();
       _payload.u64(_callbackId);
       _payload.str(name);
-    final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(greetDartFnId, _payloadBytes);
-    return ByteReader(_bytes).str();
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(greetDartFnId, _payloadBytes);
+      return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
     }

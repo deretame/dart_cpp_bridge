@@ -12,9 +12,11 @@
 
 namespace dcb {
 
-template <class EncodeFn>
+template <typename T>
 class StreamSink {
  public:
+  using EncodeFn = std::function<std::vector<std::uint8_t>(const T&)>;
+
   StreamSink(Session* session, std::uint64_t stream_id, std::uint64_t generation,
              std::uint32_t method_id, EncodeFn encode)
       : state_(std::make_shared<State>()) {
@@ -26,7 +28,6 @@ class StreamSink {
     session->set_stream_open(stream_id, true);
   }
 
-  template <class T>
   void add(const T& item) {
     auto st = state_;
     if (!st) {
@@ -106,13 +107,15 @@ class StreamSink {
   std::shared_ptr<State> state_;
 };
 
-inline auto make_i32_sink(Session* session, std::uint64_t stream_id, std::uint64_t generation,
-                          std::uint32_t method_id) {
-  return StreamSink(session, stream_id, generation, method_id, [](std::int32_t v) {
-    ByteWriter w;
-    w.i32(v);
-    return w.raw();
-  });
+inline StreamSink<std::int32_t> make_i32_sink(Session* session, std::uint64_t stream_id,
+                                               std::uint64_t generation,
+                                               std::uint32_t method_id) {
+  return StreamSink<std::int32_t>(session, stream_id, generation, method_id,
+                                  [](std::int32_t v) {
+                                    ByteWriter w;
+                                    w.i32(v);
+                                    return w.raw();
+                                  });
 }
 
 }  // namespace dcb

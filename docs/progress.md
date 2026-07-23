@@ -198,8 +198,16 @@ dart test
      - Dart 生成：inline 按位置逐个 write/read，类型用 Dart Record 表示。
    - 测试：`examples/codegen_demo` 添加 `pair_echo(std::pair<int, std::string>)` 和 `tuple_echo(std::tuple<int, std::string, bool>)` 两个 BRIDGE_ASYNC 往返函数并跑通。
 
-7. **Stream 生成**
-   - 识别 `StreamSink<T>` 参数，生成 Dart `Stream<T>`。
+7. **Stream 生成** ✅
+   - 目标：C++ `StreamSink<T>` 参数映射为 Dart `Stream<T>`；函数返回 `void`，由业务代码在内部通过 sink 异步/多线程发数据。
+   - 实现点：
+     - IR：`StreamSink<T>` 参数标记为 `"kind": "stream_sink"`；函数整体归类为 `stream`。
+     - C++ 生成：从请求 payload 读出其余参数，构造带 encode lambda 的 `dcb::StreamSink<T>`，调用业务函数；stream id 复用 `request_id`。
+     - Dart 运行层：把 `_streams` 从 `Map<int, StreamController<int>>` 改为带类型化 decoder 的 `Map<int, _StreamSubscription>`，并新增公共 `openStream<T>(methodId, payload, decodeItem)` 方法。
+     - Dart 生成：stream 方法返回 `Stream<T>`，构造 payload 后调用 `bridge.openStream<T>(...)`。
+     - `StreamSink<T>` 模板参数从 encode lambda 类型改为 value 类型 `T`，内部用 `std::function` 类型擦除，使业务 API 可以写 `dcb::StreamSink<std::int32_t>`。
+     - 手写 `ticks()` / `_counterIncrementStream` / `failStream` 改用新的 `openStream<int>`。
+   - 测试：`examples/codegen_demo` 添加 `tick_stream(StreamSink<int>, int count, int interval_ms)` fixture 并跑通（含正常结束和取消订阅）。
 
 8. **结构体/数据类生成**
    - 无导出方法的 `struct` / `class` 按值编解码。

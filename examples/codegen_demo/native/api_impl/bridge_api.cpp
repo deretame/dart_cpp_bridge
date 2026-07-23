@@ -1,5 +1,10 @@
 #include "bridge_api.h"
 
+#include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/stream_sink.hpp"
+
+#include <asio/post.hpp>
+
 #include <chrono>
 #include <thread>
 
@@ -116,6 +121,20 @@ async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
 async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
     std::tuple<std::int32_t, std::string, bool> value) {
   co_return value;
+}
+
+void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
+                 std::int32_t interval_ms) {
+  asio::post(dcb::Runtime::instance().pool(),
+             [sink = std::move(sink), count, interval_ms]() mutable {
+               for (std::int32_t i = 0; i < count; ++i) {
+                 sink.add(i);
+                 if (interval_ms > 0) {
+                   std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+                 }
+               }
+               sink.end();
+             });
 }
 
 }  // namespace demo::api

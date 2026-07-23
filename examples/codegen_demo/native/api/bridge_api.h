@@ -3,6 +3,7 @@
 #include "dart_cpp_bridge/annotate.h"
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <array>
 #include <async_simple/coro/Lazy.h>
@@ -111,5 +112,9 @@ async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
     std::tuple<std::int32_t, std::string, bool> value);
+
+// stream → Dart: Stream<int> tickStream({int count = 5, int intervalMs = 10})
+void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
+                 std::int32_t interval_ms = 10);
 
 }  // namespace demo::api

@@ -8,6 +8,16 @@ import 'package:ffi/ffi.dart';
 import 'bindings.dart';
 import 'codec.dart';
 
+/// Internal holder that pairs a [StreamController] with the per-item decoder
+/// for its generic type. Stored in [DartCppBridge._streams] so stream data
+/// frames can be dispatched to the right controller with the right decoder.
+final class _StreamSubscription<T> {
+  _StreamSubscription(this.controller, this.decodeItem);
+
+  final StreamController<T> controller;
+  final T Function(ByteReader) decodeItem;
+}
+
 /// Dart ↔ C++ bridge.
 ///
 /// - **Runtime**: process-wide.
@@ -45,7 +55,7 @@ final class DartCppBridge implements Finalizable {
   final ReceivePort _rp;
   final Pointer<Uint64> _finalizerToken;
   final Map<int, Completer<Uint8List>> _pending = {};
-  final Map<int, StreamController<int>> _streams = {};
+  final Map<int, _StreamSubscription<dynamic>> _streams = {};
   /// FRB-style: callbacks passed into C++ calls, keyed by fn_id for this session.
   /// Values are binary-level callbacks: C++ sends raw arg bytes, we send back
   /// raw result bytes. Codegen wraps typed user closures around this layer.
@@ -122,7 +132,7 @@ final class DartCppBridge implements Finalizable {
     }
     _pending.clear();
     for (final s in _streams.values) {
-      if (!s.isClosed) s.close();
+      if (!s.controller.isClosed) s.controller.close();
     }
     _streams.clear();
     _dartFns.clear();
@@ -167,18 +177,18 @@ final class DartCppBridge implements Finalizable {
         c?.completeError(StateError(r.str()));
       case MsgType.streamData:
         final s = _streams[frame.requestId];
-        if (s != null && !s.isClosed) {
-          s.add(ByteReader(frame.payload).i32());
+        if (s != null && !s.controller.isClosed) {
+          s.controller.add(s.decodeItem(ByteReader(frame.payload)));
         }
       case MsgType.streamEnd:
-        _streams.remove(frame.requestId)?.close();
+        _streams.remove(frame.requestId)?.controller.close();
       case MsgType.streamErr:
         final s = _streams.remove(frame.requestId);
         if (s != null) {
           final r = ByteReader(frame.payload);
           r.i32();
-          s.addError(StateError(r.str()));
-          s.close();
+          s.controller.addError(StateError(r.str()));
+          s.controller.close();
         }
       case MsgType.dartFnCall:
         // fire-and-forget async handle; reply goes back via FFI.
@@ -254,6 +264,35 @@ final class DartCppBridge implements Finalizable {
   /// Unregister a callback previously registered with [registerDartFn].
   void unregisterDartFn(int id) {
     _dartFns.remove(id);
+  }
+
+  /// Open a typed stream from C++.
+  ///
+  /// [methodId] is the generated wire method id. [payload] is the request
+  /// payload excluding the stream id (the stream id is allocated here and used
+  /// as [request_id]). [decodeItem] decodes one stream data item from the
+  /// payload bytes.
+  Stream<T> openStream<T>(
+    int methodId,
+    Uint8List payload,
+    T Function(ByteReader) decodeItem,
+  ) {
+    _ensureAlive();
+    final id = _allocId();
+    final controller = StreamController<T>(
+      onCancel: () {
+        _b.streamClose(_sessionId, id);
+        _streams.remove(id);
+      },
+    );
+    _streams[id] = _StreamSubscription<T>(controller, decodeItem);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: methodId,
+      payload: payload,
+    ));
+    return controller.stream;
   }
 
   Uint8List _invokeSyncRaw(Uint8List req) {
@@ -361,24 +400,10 @@ final class DartCppBridge implements Finalizable {
 
   /// Stream demo: emits `0 .. count-1` with optional delay between items.
   Stream<int> ticks({int count = 5, int intervalMs = 100}) {
-    final id = _allocId();
-    final controller = StreamController<int>(
-      onCancel: () {
-        _b.streamClose(_sessionId, id);
-        _streams.remove(id);
-      },
-    );
-    _streams[id] = controller;
     final payload = ByteWriter()
       ..i32(count)
       ..i32(intervalMs);
-    _invokeAsyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: id,
-      methodId: MethodId.ticks.value,
-      payload: payload.takeBytes(),
-    ));
-    return controller.stream;
+    return openStream<int>(MethodId.ticks.value, payload.takeBytes(), (r) => r.i32());
   }
 
   /// Async demo: echoes [s] back from C++.
@@ -684,25 +709,15 @@ final class DartCppBridge implements Finalizable {
   }
 
   Stream<int> _counterIncrementStream(int handle, int count, int intervalMs) {
-    final id = _allocId();
-    final controller = StreamController<int>(
-      onCancel: () {
-        _b.streamClose(_sessionId, id);
-        _streams.remove(id);
-      },
-    );
-    _streams[id] = controller;
     final payload = ByteWriter()
       ..u64(handle)
       ..i32(count)
       ..i32(intervalMs);
-    _invokeAsyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: id,
-      methodId: MethodId.counterIncrementStream.value,
-      payload: payload.takeBytes(),
-    ));
-    return controller.stream;
+    return openStream<int>(
+      MethodId.counterIncrementStream.value,
+      payload.takeBytes(),
+      (r) => r.i32(),
+    );
   }
 
   /// Test helper: C++ always fails this async call with [message].
@@ -722,22 +737,8 @@ final class DartCppBridge implements Finalizable {
 
   /// Test helper: stream emits one value then errors with [message].
   Stream<int> failStream([String message = 'fail_stream']) {
-    final id = _allocId();
-    final controller = StreamController<int>(
-      onCancel: () {
-        _b.streamClose(_sessionId, id);
-        _streams.remove(id);
-      },
-    );
-    _streams[id] = controller;
     final payload = ByteWriter()..str(message);
-    _invokeAsyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: id,
-      methodId: MethodId.failStream.value,
-      payload: payload.takeBytes(),
-    ));
-    return controller.stream;
+    return openStream<int>(MethodId.failStream.value, payload.takeBytes(), (r) => r.i32());
   }
 
   /// Test helper: invoke an async-only method via the sync FFI entry and expect

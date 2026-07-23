@@ -153,4 +153,16 @@ void main() {
     expect(await tupleEcho((1, 'hello', true)), (1, 'hello', true));
     expect(await tupleEcho((-42, 'world', false)), (-42, 'world', false));
   });
+
+  test('Stream tick_stream emits 0..count-1 then done', () async {
+    final values = await tickStream(5, 10).toList();
+    expect(values, [0, 1, 2, 3, 4]);
+  });
+
+  test('Stream tick_stream cancels subscription', () async {
+    final stream = tickStream(100, 10);
+    final sub = stream.listen(null);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await sub.cancel();
+  });
 }
