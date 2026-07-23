@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from clang.cindex import Config, CursorKind, Index, TranslationUnit
+from clang.cindex import AccessSpecifier, Config, CursorKind, Index, TranslationUnit
 
 # Ensure scripts dir import
 _SCRIPTS = Path(__file__).resolve().parent
@@ -22,6 +22,8 @@ ATTR_SYNC = "bridge::sync"
 ATTR_ASYNC = "bridge::async"
 ATTR_NORMAL = "bridge::normal"
 ATTR_EXPORT = "bridge::export"
+ATTR_CONSTRUCTOR = "bridge::constructor"
+ATTR_DESTRUCTOR = "bridge::destructor"
 
 
 def _stable_method_id(qualified: str) -> int:
@@ -121,6 +123,189 @@ def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
 
     visit(tu.cursor, [])
     return out
+
+
+def _is_public(cursor) -> bool:
+    """Return true if the cursor's access specifier is public (or unspecified)."""
+    try:
+        return cursor.access_specifier == AccessSpecifier.PUBLIC
+    except Exception:
+        return False
+
+
+def _collect_classes(
+    tu,
+    header_path: Path,
+    enum_by_qualified: dict[str, dict[str, Any]] | None = None,
+    enum_by_name: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Collect BRIDGE_EXPORT class/struct declarations from a translation unit.
+
+    Returns a list of class descriptors. Field types are resolved if enum maps
+    are available; data_class references to other data_classes are left as raw
+    spellings and resolved in a second pass after all classes are known.
+    """
+    out: list[dict[str, Any]] = []
+    header_s = str(header_path.resolve())
+
+    def visit(cursor, ns_stack: list[str]):
+        if cursor.kind == CursorKind.NAMESPACE:
+            name = cursor.spelling or ""
+            for ch in cursor.get_children():
+                visit(ch, ns_stack + ([name] if name else []))
+            return
+
+        if cursor.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
+            loc = cursor.location
+            if not loc.file:
+                return
+            if Path(loc.file.name).resolve() != Path(header_s):
+                return
+            attrs = _cursor_attrs(cursor)
+            if ATTR_EXPORT not in attrs:
+                return
+
+            qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
+            fields: list[dict[str, Any]] = []
+            methods: list[dict[str, Any]] = []
+            has_exported_method = False
+
+            for ch in cursor.get_children():
+                if ch.kind == CursorKind.FIELD_DECL:
+                    if not _is_public(ch):
+                        continue
+                    fields.append(
+                        {
+                            "name": ch.spelling,
+                            "type": _type_ir(
+                                ch.type.spelling, enum_by_qualified, enum_by_name
+                            ),
+                        }
+                    )
+                elif ch.kind in (
+                    CursorKind.CXX_METHOD,
+                    CursorKind.CONSTRUCTOR,
+                    CursorKind.DESTRUCTOR,
+                ):
+                    if not _is_public(ch):
+                        continue
+                    method_attrs = _cursor_attrs(ch)
+                    exported_attrs = {
+                        ATTR_SYNC,
+                        ATTR_ASYNC,
+                        ATTR_NORMAL,
+                        ATTR_CONSTRUCTOR,
+                        ATTR_DESTRUCTOR,
+                    }
+                    if method_attrs & exported_attrs:
+                        has_exported_method = True
+                    args = []
+                    for p in ch.get_children():
+                        if p.kind == CursorKind.PARM_DECL:
+                            args.append(
+                                {
+                                    "name": p.spelling or f"arg{len(args)}",
+                                    "type": _type_ir(
+                                        p.type.spelling,
+                                        enum_by_qualified,
+                                        enum_by_name,
+                                    ),
+                                }
+                            )
+                    ret = {"kind": "void"}
+                    if ch.kind == CursorKind.CXX_METHOD:
+                        ret = _type_ir(
+                            ch.result_type.spelling, enum_by_qualified, enum_by_name
+                        )
+                    methods.append(
+                        {
+                            "name": ch.spelling,
+                            "cursor_kind": ch.kind.name,
+                            "attrs": sorted(method_attrs),
+                            "args": args,
+                            "return": ret,
+                        }
+                    )
+
+            kind = "opaque_class" if has_exported_method else "data_class"
+            out.append(
+                {
+                    "name": cursor.spelling,
+                    "qualified": qname,
+                    "kind": kind,
+                    "fields": fields,
+                    "methods": methods,
+                    "header": header_s,
+                }
+            )
+            return
+
+        for ch in cursor.get_children():
+            visit(ch, ns_stack)
+
+    visit(tu.cursor, [])
+    return out
+
+
+def _resolve_class_field_types(
+    classes: list[dict[str, Any]],
+    data_class_by_qualified: dict[str, dict[str, Any]],
+    data_class_by_name: dict[str, dict[str, Any]],
+    opaque_class_by_qualified: dict[str, dict[str, Any]],
+    opaque_class_by_name: dict[str, dict[str, Any]],
+) -> None:
+    """Walk every field type in collected classes and resolve references to
+    other exported classes (data_class or opaque_class) using the class maps."""
+
+    def resolve(t: dict[str, Any]) -> dict[str, Any]:
+        k = t.get("kind")
+        if k in ("vector", "array"):
+            t["inner"] = resolve(t["inner"])
+        elif k == "optional":
+            t["inner"] = resolve(t["inner"])
+        elif k == "map":
+            t["key"] = resolve(t["key"])
+            t["value"] = resolve(t["value"])
+        elif k == "set":
+            t["inner"] = resolve(t["inner"])
+        elif k in ("pair", "tuple"):
+            t["elements"] = [resolve(e) for e in t.get("elements", [])]
+        elif k == "dart_fn":
+            t["args"] = [resolve(a) for a in t.get("args", [])]
+            t["return"] = resolve(t["return"])
+        elif k == "unsupported":
+            s = t.get("spelling", "")
+            plain = " ".join(s.replace("&&", " ").replace("&", " ").split())
+            plain = __import__("re").sub(r"\b(const|volatile|class|struct)\b", "", plain)
+            plain = " ".join(plain.split())
+            if plain in data_class_by_qualified:
+                c = data_class_by_qualified[plain]
+                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+            if plain in data_class_by_name:
+                c = data_class_by_name[plain]
+                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+            name = plain.split("::")[-1]
+            if name in data_class_by_name:
+                c = data_class_by_name[name]
+                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+            if plain in opaque_class_by_qualified:
+                c = opaque_class_by_qualified[plain]
+                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+            if plain in opaque_class_by_name:
+                c = opaque_class_by_name[plain]
+                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+            if name in opaque_class_by_name:
+                c = opaque_class_by_name[name]
+                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+        return t
+
+    for cls in classes:
+        for f in cls.get("fields", []):
+            f["type"] = resolve(f["type"])
+        for m in cls.get("methods", []):
+            m["return"] = resolve(m["return"])
+            for a in m.get("args", []):
+                a["type"] = resolve(a["type"])
 
 
 def _template_args(type_spell: str) -> list[str]:
@@ -259,42 +444,51 @@ def _type_ir(
     type_spell: str,
     enum_by_qualified: dict[str, dict[str, Any]] | None = None,
     enum_by_name: dict[str, dict[str, Any]] | None = None,
+    data_class_by_qualified: dict[str, dict[str, Any]] | None = None,
+    data_class_by_name: dict[str, dict[str, Any]] | None = None,
+    opaque_class_by_qualified: dict[str, dict[str, Any]] | None = None,
+    opaque_class_by_name: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     s = " ".join(type_spell.replace("&&", " ").replace("&", " ").split())
     # strip const/class/struct
     s = re.sub(r"\b(const|volatile|class|struct)\b", "", s)
     s = " ".join(s.split())
 
+    def _rec(spell: str) -> dict[str, Any]:
+        return _type_ir(
+            spell,
+            enum_by_qualified,
+            enum_by_name,
+            data_class_by_qualified,
+            data_class_by_name,
+            opaque_class_by_qualified,
+            opaque_class_by_name,
+        )
+
     if s.startswith("async_simple::coro::Lazy"):
         args = _template_args(s)
         if args:
-            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
-            return {"kind": "lazy", "inner": inner}
+            return {"kind": "lazy", "inner": _rec(args[0])}
 
     if s.startswith("StreamSink") or s.startswith("dcb::StreamSink"):
         args = _template_args(s)
         if args:
-            return {
-                "kind": "stream_sink",
-                "inner": _type_ir(args[0], enum_by_qualified, enum_by_name),
-            }
+            return {"kind": "stream_sink", "inner": _rec(args[0])}
 
     if s.startswith("std::optional"):
         args = _template_args(s)
         if args:
-            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
-            return {"kind": "optional", "inner": inner}
+            return {"kind": "optional", "inner": _rec(args[0])}
 
     if s.startswith("std::vector"):
         args = _template_args(s)
         if args:
-            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
-            return {"kind": "vector", "inner": inner}
+            return {"kind": "vector", "inner": _rec(args[0])}
 
     if s.startswith("std::array"):
         args = _template_args(s)
         if len(args) >= 2:
-            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            inner = _rec(args[0])
             m = re.match(r"(\d+)", args[1])
             if m:
                 return {"kind": "array", "inner": inner, "size": int(m.group(1))}
@@ -302,35 +496,22 @@ def _type_ir(
     if s.startswith("std::unordered_map"):
         args = _template_args(s)
         if len(args) >= 2:
-            key = _type_ir(args[0], enum_by_qualified, enum_by_name)
-            value = _type_ir(args[1], enum_by_qualified, enum_by_name)
-            return {"kind": "map", "key": key, "value": value}
+            return {"kind": "map", "key": _rec(args[0]), "value": _rec(args[1])}
 
     if s.startswith("std::unordered_set"):
         args = _template_args(s)
         if args:
-            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
-            return {"kind": "set", "inner": inner}
+            return {"kind": "set", "inner": _rec(args[0])}
 
     if s.startswith("std::pair"):
         args = _template_args(s)
         if len(args) >= 2:
-            return {
-                "kind": "pair",
-                "elements": [
-                    _type_ir(a, enum_by_qualified, enum_by_name) for a in args
-                ],
-            }
+            return {"kind": "pair", "elements": [_rec(a) for a in args]}
 
     if s.startswith("std::tuple"):
         args = _template_args(s)
         if args:
-            return {
-                "kind": "tuple",
-                "elements": [
-                    _type_ir(a, enum_by_qualified, enum_by_name) for a in args
-                ],
-            }
+            return {"kind": "tuple", "elements": [_rec(a) for a in args]}
 
     # std::string may be spelled as std::basic_string<char, ...> (or
     # std::__cxx11::basic_string<char, ...> under libstdc++) when it appears
@@ -381,6 +562,22 @@ def _type_ir(
         e = enum_by_name[name]
         return {"kind": "enum", "name": e["name"], "qualified": e["qualified"]}
 
+    # data class references (pass-by-value)
+    if data_class_by_qualified and s in data_class_by_qualified:
+        c = data_class_by_qualified[s]
+        return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+    if data_class_by_name and name in data_class_by_name:
+        c = data_class_by_name[name]
+        return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+
+    # opaque class references (handle only)
+    if opaque_class_by_qualified and s in opaque_class_by_qualified:
+        c = opaque_class_by_qualified[s]
+        return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+    if opaque_class_by_name and name in opaque_class_by_name:
+        c = opaque_class_by_name[name]
+        return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+
     aliases = {
         "int": "i32",
         "int32_t": "i32",
@@ -393,12 +590,20 @@ def _type_ir(
         "void": "void",
         "std::string": "string",
         "string": "string",
+        "float": "f32",
+        "double": "f64",
+        "f32": "f32",
+        "f64": "f64",
     }
     if s in aliases:
         return {"kind": aliases[s]}
     # bare unqual
     if s.endswith("int32_t"):
         return {"kind": "i32"}
+    if s in ("float", "f32"):
+        return {"kind": "f32"}
+    if s in ("double", "f64"):
+        return {"kind": "f64"}
     return {"kind": "unsupported", "spelling": type_spell}
 
 
@@ -423,6 +628,10 @@ def _collect_functions(
     header_path: Path,
     enum_by_qualified: dict[str, dict[str, Any]],
     enum_by_name: dict[str, dict[str, Any]],
+    data_class_by_qualified: dict[str, dict[str, Any]],
+    data_class_by_name: dict[str, dict[str, Any]],
+    opaque_class_by_qualified: dict[str, dict[str, Any]],
+    opaque_class_by_name: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     header_s = str(header_path.resolve())
@@ -453,11 +662,25 @@ def _collect_functions(
                         {
                             "name": ch.spelling or f"arg{len(args)}",
                             "type": _type_ir(
-                                ch.type.spelling, enum_by_qualified, enum_by_name
+                                ch.type.spelling,
+                                enum_by_qualified,
+                                enum_by_name,
+                                data_class_by_qualified,
+                                data_class_by_name,
+                                opaque_class_by_qualified,
+                                opaque_class_by_name,
                             ),
                         }
                     )
-            ret = _type_ir(cursor.result_type.spelling, enum_by_qualified, enum_by_name)
+            ret = _type_ir(
+                cursor.result_type.spelling,
+                enum_by_qualified,
+                enum_by_name,
+                data_class_by_qualified,
+                data_class_by_name,
+                opaque_class_by_qualified,
+                opaque_class_by_name,
+            )
             kind = _classify(attrs, ret, args)
             if kind is None:
                 return
@@ -553,7 +776,43 @@ def parse_project(config_path: Path) -> dict[str, Any]:
     for e in enums:
         enum_by_name[e["name"]] = e
 
-    # Pass 2: collect marked functions with enum-aware type resolution.
+    # Pass 2: collect exported class/struct declarations.
+    classes: list[dict[str, Any]] = []
+    for h in headers:
+        tu = index.parse(
+            str(h),
+            args=args,
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+            | TranslationUnit.PARSE_INCOMPLETE,
+        )
+        if tu is None:
+            raise RuntimeError(f"parse failed: {h}")
+        for d in tu.diagnostics:
+            if d.severity >= 3:
+                diags_out.append(f"{h}: {d.spelling}")
+        classes.extend(_collect_classes(tu, h, enum_by_qualified, enum_by_name))
+
+    data_classes = [c for c in classes if c["kind"] == "data_class"]
+    opaque_classes = [c for c in classes if c["kind"] == "opaque_class"]
+    data_class_by_qualified = {c["qualified"]: c for c in data_classes}
+    data_class_by_name: dict[str, dict[str, Any]] = {}
+    for c in data_classes:
+        data_class_by_name[c["name"]] = c
+    opaque_class_by_qualified = {c["qualified"]: c for c in opaque_classes}
+    opaque_class_by_name: dict[str, dict[str, Any]] = {}
+    for c in opaque_classes:
+        opaque_class_by_name[c["name"]] = c
+
+    # Resolve class references inside class fields now that all classes are known.
+    _resolve_class_field_types(
+        classes,
+        data_class_by_qualified,
+        data_class_by_name,
+        opaque_class_by_qualified,
+        opaque_class_by_name,
+    )
+
+    # Pass 3: collect marked functions with enum + class aware type resolution.
     functions: list[dict[str, Any]] = []
     for h in headers:
         tu = index.parse(
@@ -567,7 +826,18 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         for d in tu.diagnostics:
             if d.severity >= 3:
                 diags_out.append(f"{h}: {d.spelling}")
-        functions.extend(_collect_functions(tu, h, enum_by_qualified, enum_by_name))
+        functions.extend(
+            _collect_functions(
+                tu,
+                h,
+                enum_by_qualified,
+                enum_by_name,
+                data_class_by_qualified,
+                data_class_by_name,
+                opaque_class_by_qualified,
+                opaque_class_by_name,
+            )
+        )
 
     # de-dupe by qualified name
     by_q: dict[str, dict[str, Any]] = {}
@@ -575,11 +845,12 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         by_q[fn["qualified"]] = fn
 
     ir = {
-        "version": 1,
+        "version": 2,
         "config": str(cfg["config_path"]),
         "headers": [str(h) for h in headers],
         "clang_args": args,
         "enums": sorted(enums, key=lambda e: e["qualified"]),
+        "classes": sorted(classes, key=lambda c: c["qualified"]),
         "functions": sorted(by_q.values(), key=lambda f: f["method_id"]),
         "diagnostics": diags_out,
     }
@@ -602,7 +873,10 @@ def main(argv: list[str] | None = None) -> int:
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(text + "\n", encoding="utf-8")
-        print(f"wrote {out_path} ({len(ir['functions'])} functions)")
+        print(
+            f"wrote {out_path} "
+            f"({len(ir['functions'])} functions, {len(ir.get('classes', []))} classes)"
+        )
     else:
         print(text)
 
@@ -611,8 +885,8 @@ def main(argv: list[str] | None = None) -> int:
         for d in ir["diagnostics"]:
             print(" ", d, file=sys.stderr)
         # still allow incomplete parse for stubs
-    if not ir["functions"]:
-        print("WARNING: no marked functions found", file=sys.stderr)
+    if not ir["functions"] and not ir.get("classes"):
+        print("WARNING: no marked functions or classes found", file=sys.stderr)
         return 1
     return 0
 

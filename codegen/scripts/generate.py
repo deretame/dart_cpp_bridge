@@ -37,6 +37,8 @@ def _dart_type(t: dict[str, Any]) -> str:
     if k in ("pair", "tuple"):
         elems = ", ".join(_dart_type(e) for e in t["elements"])
         return f"({elems})"
+    if k == "data_class":
+        return t["name"]
     return {
         "i32": "int",
         "u32": "int",
@@ -44,6 +46,8 @@ def _dart_type(t: dict[str, Any]) -> str:
         "bool": "bool",
         "string": "String",
         "void": "void",
+        "f32": "double",
+        "f64": "double",
     }.get(k, "dynamic")
 
 
@@ -93,6 +97,15 @@ def _cpp_type(t: dict[str, Any]) -> str:
     if k == "tuple":
         elems = ", ".join(_cpp_type(e) for e in t["elements"])
         return f"std::tuple<{elems}>"
+    if k == "f32":
+        return "float"
+    if k == "f64":
+        return "double"
+    if k == "data_class":
+        q = t["qualified"]
+        if not q.startswith("::"):
+            q = "::" + q
+        return q
     raise ValueError(f"unsupported C++ type: {t}")
 
 
@@ -109,8 +122,14 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         return f"w.u8({expr} ? 1 : 0);"
     if k == "string":
         return f"w.str({expr});"
+    if k == "f32":
+        return f"w.f32({expr});"
+    if k == "f64":
+        return f"w.f64({expr});"
     if k == "enum":
         return f"w.i32(static_cast<std::int32_t>({expr}));"
+    if k == "data_class":
+        return f"encode_{t['name']}(w, {expr});"
     if k in ("pair", "tuple"):
         helper = "pair" if k == "pair" else "tuple"
         writes = ", ".join(
@@ -134,11 +153,17 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         return f"static_cast<bool>({reader}.u8())"
     if k == "string":
         return f"{reader}.str()"
+    if k == "f32":
+        return f"{reader}.f32()"
+    if k == "f64":
+        return f"{reader}.f64()"
     if k == "enum":
         q = t["qualified"]
         if not q.startswith("::"):
             q = "::" + q
         return f"static_cast<{q}>({reader}.i32())"
+    if k == "data_class":
+        return f"decode_{t['name']}({reader})"
     if k in ("pair", "tuple"):
         helper = "pair" if k == "pair" else "tuple"
         elem_types = ", ".join(_cpp_type(e) for e in t["elements"])
@@ -150,11 +175,150 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
+def _data_class_type_quals(t: dict[str, Any]) -> set[str]:
+    """Return qualified names of all data_class types referenced inside `t`."""
+    k = t.get("kind")
+    if k == "data_class":
+        return {t["qualified"]}
+    if k in ("vector", "array", "set", "optional"):
+        return _data_class_type_quals(t["inner"])
+    if k == "map":
+        return _data_class_type_quals(t["key"]) | _data_class_type_quals(t["value"])
+    if k in ("pair", "tuple"):
+        result: set[str] = set()
+        for e in t.get("elements", []):
+            result.update(_data_class_type_quals(e))
+        return result
+    return set()
+
+
+def _order_data_classes(classes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Topologically sort data classes so dependencies are defined first."""
+    by_q = {c["qualified"]: c for c in classes}
+    visited: set[str] = set()
+    ordered: list[dict[str, Any]] = []
+
+    def visit(q: str, stack: set[str]) -> None:
+        if q in visited:
+            return
+        if q in stack:
+            raise ValueError(f"data_class cycle detected: {q}")
+        stack.add(q)
+        cls = by_q[q]
+        for dep in sorted(_data_class_dependencies(cls)):
+            if dep in by_q:
+                visit(dep, stack)
+        stack.remove(q)
+        visited.add(q)
+        ordered.append(cls)
+
+    def _data_class_dependencies(cls: dict[str, Any]) -> set[str]:
+        deps: set[str] = set()
+        for f in cls.get("fields", []):
+            deps.update(_data_class_type_quals(f["type"]))
+        return deps
+
+    for q in sorted(by_q):
+        visit(q, set())
+    return ordered
+
+
+def _cpp_data_class_helpers(classes: list[dict[str, Any]]) -> str:
+    """Generate inline encode/decode helpers for every data_class."""
+    lines: list[str] = []
+    for cls in _order_data_classes(classes):
+        name = cls["name"]
+        cpp_t = _cpp_type({"kind": "data_class", "qualified": cls["qualified"]})
+        lines.append(f"inline void encode_{name}(ByteWriter& w, const {cpp_t}& v) {{")
+        for f in cls["fields"]:
+            field_expr = f"v.{f['name']}"
+            lines.append(f"  {_cpp_write_item(f['type'], field_expr)}")
+        lines.append("}")
+        lines.append("")
+        lines.append(f"inline {cpp_t} decode_{name}(ByteReader& r) {{")
+        lines.append(f"  {cpp_t} v;")
+        for f in cls["fields"]:
+            lines.append(f"  v.{f['name']} = {_cpp_read_item(f['type'])};")
+        lines.append("  return v;")
+        lines.append("}")
+    return "\n".join(lines)
+
+
+def _dart_data_class_defs(classes: list[dict[str, Any]]) -> str:
+    """Generate immutable Dart data classes with const constructors."""
+    defs: list[str] = []
+    for cls in classes:
+        name = cls["name"]
+        fields = cls["fields"]
+        ctor_lines = []
+        field_lines = []
+        equals_parts = []
+        hash_fields = []
+        for f in fields:
+            dart_name = _dart_param_name(f["name"])
+            ctor_lines.append(f"    required this.{dart_name},")
+            field_lines.append(f"  final {_dart_type(f['type'])} {dart_name};")
+            equals_parts.append(
+                f"        {dart_name} == other.{dart_name}"
+            )
+            hash_fields.append(dart_name)
+        ctor_s = "\n".join(ctor_lines)
+        field_s = "\n".join(field_lines)
+        equals_s = " &&\n".join(equals_parts) if equals_parts else "        true"
+        hash_args = ", ".join(hash_fields) if hash_fields else "0"
+        defs.append(
+            f"""/// Generated data class for `{cls['qualified']}`.
+final class {name} {{
+  const {name}({{
+{ctor_s}
+  }});
+
+{field_s}
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is {name} &&
+{equals_s});
+
+  @override
+  int get hashCode => Object.hash({hash_args});
+}}"""
+        )
+    return "\n\n".join(defs)
+
+
+def _dart_data_class_helpers(classes: list[dict[str, Any]]) -> str:
+    """Generate Dart encode/decode helpers for every data_class."""
+    lines: list[str] = []
+    for cls in classes:
+        name = cls["name"]
+        fields = cls["fields"]
+        lines.append(f"void _writeDataClass_{name}(ByteWriter w, {name} v) {{")
+        for f in fields:
+            dart_name = _dart_param_name(f["name"])
+            lines.extend(
+                _dart_write_item(f["type"], f"v.{dart_name}", indent="  ", writer="w")
+            )
+        lines.append("}")
+        lines.append("")
+        lines.append(f"{name} _readDataClass_{name}(ByteReader _r) {{")
+        lines.append(f"  return {name}(")
+        for f in fields:
+            dart_name = _dart_param_name(f["name"])
+            lines.append(
+                f"    {dart_name}: {_dart_read_item(f['type'], '_r')},"
+            )
+        lines.append("  );")
+        lines.append("}")
+    return "\n".join(lines)
+
+
 def _cpp_read_arg(a: dict[str, Any]) -> str:
     t = a["type"]
     k = t.get("kind")
     name = a["name"]
-    if k in ("i32", "u32", "i64", "bool", "string", "enum"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class"):
         return f"const auto {name} = {_cpp_read_item(t)};"
     if k == "optional":
         inner = t["inner"]
@@ -227,7 +391,7 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return ""
-    if k in ("i32", "u32", "i64", "bool", "string", "enum"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class"):
         return _cpp_write_item(t, expr)
     if k == "optional":
         inner = t["inner"]
@@ -285,8 +449,14 @@ def _dart_write_item(
         return [f"{indent}{writer}.u8({expr} ? 1 : 0);"]
     if k == "string":
         return [f"{indent}{writer}.str({expr});"]
+    if k == "f32":
+        return [f"{indent}{writer}.f32({expr});"]
+    if k == "f64":
+        return [f"{indent}{writer}.f64({expr});"]
     if k == "enum":
         return [f"{indent}{writer}.i32({expr}.index);"]
+    if k == "data_class":
+        return [f"{indent}_writeDataClass_{t['name']}({writer}, {expr});"]
     if k == "i128":
         return [f"{indent}{writer}.writeI128({expr});"]
     if k == "u128":
@@ -354,10 +524,14 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{reader}.u8() != 0"
     if k == "string":
         return f"{reader}.str()"
+    if k == "f32":
+        return f"{reader}.f32()"
+    if k == "f64":
+        return f"{reader}.f64()"
     if k == "enum":
         return f"{t['name']}.values[{reader}.i32()]"
-    if k == "i128":
-        return f"{reader}.readI128()"
+    if k == "data_class":
+        return f"_readDataClass_{t['name']}({reader})"
     if k == "u128":
         return f"{reader}.readU128()"
     if k == "optional":
@@ -409,8 +583,14 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).str()"
     if k == "bool":
         return f"ByteReader({expr}).u8() != 0"
+    if k == "f32":
+        return f"ByteReader({expr}).f32()"
+    if k == "f64":
+        return f"ByteReader({expr}).f64()"
     if k == "enum":
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
+    if k == "data_class":
+        return f"_readDataClass_{t['name']}(ByteReader({expr}))"
     if k == "optional":
         inner = t["inner"]
         read_value = _dart_read_item(inner, "_r")
@@ -466,7 +646,7 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
         n = a["dart_name"]
         if k == "dart_fn":
             lines.append(f"_payload.u64(_{n}Id);")
-        elif k in ("i32", "u32", "i64", "string", "bool", "enum"):
+        elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
             inner = t["inner"]
@@ -514,6 +694,8 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
 def generate_cpp(ir: dict[str, Any], api_includes: list[str]) -> tuple[str, str]:
     """Returns (hpp, cpp)."""
     fns = ir["functions"]
+    data_classes = [c for c in ir.get("classes", []) if c.get("kind") == "data_class"]
+    cpp_helpers = _cpp_data_class_helpers(data_classes)
     hpp = """#pragma once
 // GENERATED by dart_cpp_bridge codegen — do not edit.
 
@@ -720,6 +902,8 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 }}
 
 }}  // namespace
+
+{cpp_helpers}
 
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len) {{
@@ -936,8 +1120,19 @@ enum {name} {{
 """)
     enums_s = "\n".join(enum_defs)
 
+    data_classes = [
+        c for c in ir.get("classes", []) if c.get("kind") == "data_class"
+    ]
+    data_class_defs = _dart_data_class_defs(data_classes)
+    if data_class_defs:
+        data_class_defs += "\n"
+    data_class_helpers = _dart_data_class_helpers(data_classes)
+    if data_class_helpers:
+        data_class_helpers += "\n"
+
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // Low-level impl (method ids + wire). Prefer importing api.dart singleton.
+// ignore_for_file: unused_element
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -945,6 +1140,8 @@ import 'dart:typed_data';
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
 {enums_s}
+{data_class_defs}
+{data_class_helpers}
 /// Wire-level API. Prefer [BridgeApi.instance] from `api.dart`.
 final class {impl_class} {{
   {impl_class}(this.bridge);

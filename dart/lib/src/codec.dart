@@ -165,6 +165,18 @@ class ByteWriter {
     _b.add(bd.buffer.asUint8List());
   }
 
+  /// Append little-endian `f32`.
+  void f32(double v) {
+    final bd = ByteData(4)..setFloat32(0, v, Endian.little);
+    _b.add(bd.buffer.asUint8List());
+  }
+
+  /// Append little-endian `f64`.
+  void f64(double v) {
+    final bd = ByteData(8)..setFloat64(0, v, Endian.little);
+    _b.add(bd.buffer.asUint8List());
+  }
+
   /// Append a nullable `i32` (1-byte presence tag + value if non-null).
   void writeOptI32(int? v) {
     if (v == null) {
@@ -313,6 +325,22 @@ class ByteReader {
     _need(4);
     final v = _bd.getInt32(_pos, Endian.little);
     _pos += 4;
+    return v;
+  }
+
+  /// Read little-endian `f32` as `double`.
+  double f32() {
+    _need(4);
+    final v = _bd.getFloat32(_pos, Endian.little);
+    _pos += 4;
+    return v;
+  }
+
+  /// Read little-endian `f64`.
+  double f64() {
+    _need(8);
+    final v = _bd.getFloat64(_pos, Endian.little);
+    _pos += 8;
     return v;
   }
 

@@ -165,4 +165,38 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 30));
     await sub.cancel();
   });
+
+  test('data class distance', () async {
+    final a = const Point(x: 0.0, y: 0.0);
+    final b = const Point(x: 3.0, y: 4.0);
+    expect(await distance(a, b), closeTo(5.0, 1e-9));
+    expect(await distance(a, a), closeTo(0.0, 1e-9));
+  });
+
+  test('data class scale', () async {
+    final p = const Point(x: 1.5, y: -2.0);
+    final scaled = await scale(p, 2.0);
+    expect(scaled.x, closeTo(3.0, 1e-9));
+    expect(scaled.y, closeTo(-4.0, 1e-9));
+  });
+
+  test('data class bounding_box', () async {
+    final points = [
+      const Point(x: 1.0, y: 2.0),
+      const Point(x: -3.0, y: 4.0),
+      const Point(x: 0.0, y: -1.0),
+    ];
+    final box = await boundingBox(points);
+    expect(box.topLeft.x, closeTo(-3.0, 1e-9));
+    expect(box.topLeft.y, closeTo(-1.0, 1e-9));
+    expect(box.bottomRight.x, closeTo(1.0, 1e-9));
+    expect(box.bottomRight.y, closeTo(4.0, 1e-9));
+    expect(
+      box,
+      const Rect(
+        topLeft: Point(x: -3.0, y: -1.0),
+        bottomRight: Point(x: 1.0, y: 4.0),
+      ),
+    );
+  });
 }

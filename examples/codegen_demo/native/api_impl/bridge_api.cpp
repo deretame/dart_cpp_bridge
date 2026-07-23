@@ -6,6 +6,7 @@
 #include <asio/post.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 namespace demo::api {
@@ -135,6 +136,37 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
                }
                sink.end();
              });
+}
+
+async_simple::coro::Lazy<double> distance(Point a, Point b) {
+  const double dx = a.x - b.x;
+  const double dy = a.y - b.y;
+  co_return std::sqrt(dx * dx + dy * dy);
+}
+
+async_simple::coro::Lazy<Point> scale(Point p, double factor) {
+  Point r;
+  r.x = p.x * factor;
+  r.y = p.y * factor;
+  co_return r;
+}
+
+async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points) {
+  Rect r;
+  if (points.empty()) {
+    r.top_left = {0.0, 0.0};
+    r.bottom_right = {0.0, 0.0};
+    co_return r;
+  }
+  r.top_left = points[0];
+  r.bottom_right = points[0];
+  for (const auto& p : points) {
+    r.top_left.x = std::min(r.top_left.x, p.x);
+    r.top_left.y = std::min(r.top_left.y, p.y);
+    r.bottom_right.x = std::max(r.bottom_right.x, p.x);
+    r.bottom_right.y = std::max(r.bottom_right.y, p.y);
+  }
+  co_return r;
 }
 
 }  // namespace demo::api

@@ -145,6 +145,19 @@ class ByteWriter {
   void i32(std::int32_t v) { u32(static_cast<std::uint32_t>(v)); }
   void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
 
+  void f32(float v) {
+    static_assert(sizeof(float) == 4, "float must be 4 bytes");
+    std::uint32_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    u32(bits);
+  }
+  void f64(double v) {
+    static_assert(sizeof(double) == 8, "double must be 8 bytes");
+    std::uint64_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    u64(bits);
+  }
+
   // 128-bit integers are sent as a length-prefixed decimal string.
   // Dart is responsible for BigInt <-> string conversion.
   void u128(UInt128 v) { str(v.value); }
@@ -264,6 +277,21 @@ class ByteReader {
   }
   std::int32_t i32() { return static_cast<std::int32_t>(u32()); }
   std::int64_t i64() { return static_cast<std::int64_t>(u64()); }
+
+  float f32() {
+    static_assert(sizeof(float) == 4, "float must be 4 bytes");
+    std::uint32_t bits = u32();
+    float v;
+    std::memcpy(&v, &bits, sizeof(bits));
+    return v;
+  }
+  double f64() {
+    static_assert(sizeof(double) == 8, "double must be 8 bytes");
+    std::uint64_t bits = u64();
+    double v;
+    std::memcpy(&v, &bits, sizeof(bits));
+    return v;
+  }
 
   UInt128 u128() {
     UInt128 v;

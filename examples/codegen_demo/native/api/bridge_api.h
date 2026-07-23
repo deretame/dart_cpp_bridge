@@ -20,6 +20,17 @@ namespace demo::api {
 // unmarked — must not appear in IR
 inline std::int32_t internal_helper() { return -1; }
 
+// data classes
+struct BRIDGE_EXPORT Point {
+    double x;
+    double y;
+};
+
+struct BRIDGE_EXPORT Rect {
+    Point top_left;
+    Point bottom_right;
+};
+
 // sync → Dart: int bridgeVersion()
 BRIDGE_SYNC
 std::int32_t bridge_version();
@@ -116,5 +127,18 @@ async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo
 // stream → Dart: Stream<int> tickStream({int count = 5, int intervalMs = 10})
 void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
                  std::int32_t interval_ms = 10);
+
+// data class tests
+// async → Dart: Future<double> distance(Point a, Point b)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<double> distance(Point a, Point b);
+
+// async → Dart: Future<Point> scale(Point p, double factor)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<Point> scale(Point p, double factor);
+
+// async → Dart: Future<Rect> boundingBox(List<Point> points)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points);
 
 }  // namespace demo::api

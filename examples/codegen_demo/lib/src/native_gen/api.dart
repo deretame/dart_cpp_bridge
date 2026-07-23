@@ -64,6 +64,7 @@ final class BridgeApi {
   }
 
   Future<int> sumScores(Map<String, int> scores) => _impl.sumScores(scores);
+  Future<double> distance(Point a, Point b) => _impl.distance(a, b);
   Future<(int, String)> pairEcho((int, String) value) => _impl.pairEcho(value);
   Future<(int, String, bool)> tupleEcho((int, String, bool) value) => _impl.tupleEcho(value);
   Future<int?> maybeDouble(int? value) => _impl.maybeDouble(value);
@@ -73,6 +74,7 @@ final class BridgeApi {
   Future<int> incrementI64(int value) => _impl.incrementI64(value);
   Future<OrderStatus?> optionalStatus(OrderStatus? value) => _impl.optionalStatus(value);
   Future<List<int>> echoList(List<int> values) => _impl.echoList(values);
+  Future<Point> scale(Point p, double factor) => _impl.scale(p, factor);
   Future<bool> negateBool(bool value) => _impl.negateBool(value);
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);
   Future<BigInt> echoU128(BigInt value) => _impl.echoU128(value);
@@ -80,6 +82,7 @@ final class BridgeApi {
   Stream<int> tickStream(int count, int intervalMs) => _impl.tickStream(count, intervalMs);
   Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) => _impl.greetDartFn(callback, name);
   Future<int> sumSet(Set<int> values) => _impl.sumSet(values);
+  Future<Rect> boundingBox(List<Point> points) => _impl.boundingBox(points);
   Future<BigInt> echoI128(BigInt value) => _impl.echoI128(value);
   Future<String?> optionalString(String? value) => _impl.optionalString(value);
   Future<OrderStatus> nextStatus(OrderStatus current) => _impl.nextStatus(current);

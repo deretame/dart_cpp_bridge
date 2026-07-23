@@ -38,6 +38,29 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 
 }  // namespace
 
+inline void encode_Point(ByteWriter& w, const ::demo::api::Point& v) {
+  w.f64(v.x);
+  w.f64(v.y);
+}
+
+inline ::demo::api::Point decode_Point(ByteReader& r) {
+  ::demo::api::Point v;
+  v.x = r.f64();
+  v.y = r.f64();
+  return v;
+}
+inline void encode_Rect(ByteWriter& w, const ::demo::api::Rect& v) {
+  encode_Point(w, v.top_left);
+  encode_Point(w, v.bottom_right);
+}
+
+inline ::demo::api::Rect decode_Rect(ByteReader& r) {
+  ::demo::api::Rect v;
+  v.top_left = decode_Point(r);
+  v.bottom_right = decode_Point(r);
+  return v;
+}
+
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len) {
   const auto gen = session->generation();
@@ -67,6 +90,27 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 auto out = co_await ::demo::api::sum_scores(scores);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 75330037: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto a = decode_Point(r);
+        const auto b = decode_Point(r);
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, a, b]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::distance(a, b);
+                ByteWriter w;
+                w.f64(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());
@@ -251,6 +295,27 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1132741135: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto p = decode_Point(r);
+        const auto factor = r.f64();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, p, factor]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::scale(p, factor);
+                ByteWriter w;
+                encode_Point(w, out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1187695424: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = static_cast<bool>(r.u8());
@@ -386,6 +451,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 auto out = co_await ::demo::api::sum_set(values);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 1914574156: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto points = r.vec<::demo::api::Point>([&]() { return decode_Point(r); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, points]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::bounding_box(points);
+                ByteWriter w;
+                encode_Rect(w, out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

@@ -18,6 +18,9 @@ void shutdownBridge() => BridgeApi.instance.shutdown();
 Future<int> sumScores(Map<String, int> scores) =>
     BridgeApi.instance.sumScores(scores);
 
+Future<double> distance(Point a, Point b) =>
+    BridgeApi.instance.distance(a, b);
+
 Future<(int, String)> pairEcho((int, String) value) =>
     BridgeApi.instance.pairEcho(value);
 
@@ -45,6 +48,9 @@ Future<OrderStatus?> optionalStatus(OrderStatus? value) =>
 Future<List<int>> echoList(List<int> values) =>
     BridgeApi.instance.echoList(values);
 
+Future<Point> scale(Point p, double factor) =>
+    BridgeApi.instance.scale(p, factor);
+
 Future<bool> negateBool(bool value) =>
     BridgeApi.instance.negateBool(value);
 
@@ -65,6 +71,9 @@ Future<String> greetDartFn(FutureOr<String> Function(String) callback, String na
 
 Future<int> sumSet(Set<int> values) =>
     BridgeApi.instance.sumSet(values);
+
+Future<Rect> boundingBox(List<Point> points) =>
+    BridgeApi.instance.boundingBox(points);
 
 Future<BigInt> echoI128(BigInt value) =>
     BridgeApi.instance.echoI128(value);

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
   "headers": [
     "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
@@ -42,6 +42,54 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
+  "classes": [
+    {
+      "name": "Point",
+      "qualified": "demo::api::Point",
+      "kind": "data_class",
+      "fields": [
+        {
+          "name": "x",
+          "type": {
+            "kind": "f64"
+          }
+        },
+        {
+          "name": "y",
+          "type": {
+            "kind": "f64"
+          }
+        }
+      ],
+      "methods": [],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "Rect",
+      "qualified": "demo::api::Rect",
+      "kind": "data_class",
+      "fields": [
+        {
+          "name": "top_left",
+          "type": {
+            "kind": "data_class",
+            "name": "Point",
+            "qualified": "demo::api::Point"
+          }
+        },
+        {
+          "name": "bottom_right",
+          "type": {
+            "kind": "data_class",
+            "name": "Point",
+            "qualified": "demo::api::Point"
+          }
+        }
+      ],
+      "methods": [],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    }
+  ],
   "functions": [
     {
       "name": "sum_scores",
@@ -64,6 +112,37 @@
       ],
       "return": {
         "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "distance",
+      "qualified": "demo::api::distance",
+      "kind": "async",
+      "method_id": 75330037,
+      "args": [
+        {
+          "name": "a",
+          "type": {
+            "kind": "data_class",
+            "name": "Point",
+            "qualified": "demo::api::Point"
+          }
+        },
+        {
+          "name": "b",
+          "type": {
+            "kind": "data_class",
+            "name": "Point",
+            "qualified": "demo::api::Point"
+          }
+        }
+      ],
+      "return": {
+        "kind": "f64"
       },
       "attrs": [
         "bridge::async"
@@ -323,6 +402,37 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "scale",
+      "qualified": "demo::api::scale",
+      "kind": "async",
+      "method_id": 1132741135,
+      "args": [
+        {
+          "name": "p",
+          "type": {
+            "kind": "data_class",
+            "name": "Point",
+            "qualified": "demo::api::Point"
+          }
+        },
+        {
+          "name": "factor",
+          "type": {
+            "kind": "f64"
+          }
+        }
+      ],
+      "return": {
+        "kind": "data_class",
+        "name": "Point",
+        "qualified": "demo::api::Point"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "negate_bool",
       "qualified": "demo::api::negate_bool",
       "kind": "async",
@@ -494,6 +604,34 @@
       ],
       "return": {
         "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "bounding_box",
+      "qualified": "demo::api::bounding_box",
+      "kind": "async",
+      "method_id": 1914574156,
+      "args": [
+        {
+          "name": "points",
+          "type": {
+            "kind": "vector",
+            "inner": {
+              "kind": "data_class",
+              "name": "Point",
+              "qualified": "demo::api::Point"
+            }
+          }
+        }
+      ],
+      "return": {
+        "kind": "data_class",
+        "name": "Rect",
+        "qualified": "demo::api::Rect"
       },
       "attrs": [
         "bridge::async"
