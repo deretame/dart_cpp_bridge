@@ -152,14 +152,62 @@ dart test
 
 ---
 
-## 5. 下一步建议
+## 5. Phase 2 Codegen 推进计划
 
-1. **Phase 2 续**：struct / Stream / DartFn 生成；错误与类型表；用户模板产品化。类型映射白名单见 [codegen_type_mapping.md](./codegen_type_mapping.md)，后续实现按该文档落地。  
-2. **Phase 3**：Native Assets hook；CMake export。  
+按“小步快跑、每步都跑通 `examples/codegen_demo` 端到端测试”的顺序推进：
+
+1. **枚举生成**（当前下一步）
+   - 解析 `enum class T : int32_t` / `enum T`。
+   - C++ wire 按底层 `i32` 编解码。
+   - Dart 生成同名 `enum T`，函数签名/返回值使用 `T`。
+   - 在 `examples/codegen_demo` 添加 `status_next(StatusCode)` 测试。
+
+2. **可选类型 `std::optional<T>` 生成**
+   - 在已有类型基础上加 presence tag。
+   - Dart 生成 `T?`。
+
+3. **结构体/数据类生成**
+   - 无导出方法的 `struct` / `class` 按值编解码。
+   - Dart 生成同名数据类（字段、==、hashCode 可选）。
+   - 支持嵌套数据类。
+
+4. **容器生成**
+   - `std::vector<T>` / `std::array<T, N>` → `List<T>`（typed list 优化）。
+   - `std::unordered_map<K, V>` → `Map<K, V>`。
+   - `std::unordered_set<T>` → `Set<T>`。
+   - 元素类型递归支持白名单内类型。
+
+5. **元组生成**
+   - `std::pair<T1, T2>` / `std::tuple<Ts...>` → Dart Record。
+   - wire 按位置顺序依次编解码，无长度/字段名。
+
+6. **Stream 生成**
+   - 识别 `StreamSink<T>` 参数，生成 Dart `Stream<T>`。
+
+7. **DartFn 生成**
+   - 识别 Dart 回调参数，生成反向调用。
+
+8. **类方法导出（opaque 对象）生成**
+   - 把 Phase 1 手写的 Counter fixture 经验转化为 codegen。
+   - 生成构造函数/析构函数/实例方法/静态方法/DartFn 方法/Stream 方法。
+
+9. **类型白名单校验与友好报错**
+   - codegen 遇到不支持类型时给出清晰的文件、行号、类型信息。
+
+10. **用户模板产品化**
+    - 完善 `examples/codegen_demo` 作为可复制的项目模板。
+    - CMake FetchContent 接入文档化。
+
+---
+
+## 6. 下一步建议
+
+1. 按上述 Phase 2 顺序逐个实现并跑通 `examples/codegen_demo` 端到端测试。
+2. **Phase 3**：Native Assets hook；CMake export。
 3. 可选：`spawn_blocking` 复用 oneshot；跨平台 CI。
 
 ---
 
-## 6. 一句话
+## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；hook / 富类型生成未做。**
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；hook / 富类型生成未做。"
