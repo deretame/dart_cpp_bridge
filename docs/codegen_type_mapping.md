@@ -3,7 +3,7 @@
 > 记录 dart_cpp_bridge Codegen 阶段当前计划支持的 C++ ↔ Dart 类型映射规则。用于后续实现 IR 生成、Dart 代码生成和 C++ wire 编解码时参照。
 >
 > 更新日期：2026-07-23
-> 状态：基础类型、容器、Option、枚举、tuple、Stream、128 位整数、DartFn 已实现并测试；struct / opaque 类方法生成待做。
+> 状态：基础类型、容器、Option、枚举、tuple、Stream、128 位整数、DartFn、struct / opaque 类方法生成均已实现并测试。
 
 ---
 
@@ -184,7 +184,7 @@ encodeOpt(name, (v) => w.str(v));
 
 ## 5. 类与结构体
 
-> 状态：数据类与 Opaque 类的**运行时基础设施和第一阶段手写测试已完成**；**代码生成（第二阶段）待实现**。本节把已验证的运行时行为和计划中的生成规则写在一起，作为后续 `parse_api.py` / `generate.py` 改动的设计依据。
+> 状态：数据类与 Opaque 类的**运行时基础设施、第一阶段手写测试和第二阶段代码生成均已完成**，`examples/codegen_demo` 已覆盖端到端场景。本节同时记录已验证的运行时行为与生成规则。
 
 ### 5.1 总体分类
 
@@ -592,10 +592,10 @@ class Counter extends CppOpaqueInterface {
 | P1 | `std::unordered_map<K, V>` | 已手写测试 |
 | P1 | `std::unordered_set<T>` | 已手写测试 |
 | P1 | `std::pair<T1, T2>` / `std::tuple<T1, T2, ...>` → Dart Record | 已手写测试 |
-| P1 | 数据类（只有 public 字段的 struct / class，按值编解码） | 已手写测试；codegen 进行中 |
+| P1 | 数据类（只有 public 字段的 struct / class，按值编解码） | 已手写测试；codegen 已实现 |
 | P2 | 大整数 `Int128` / `UInt128` → `BigInt`（统一字符串存储） | 已手写测试 |
 | P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
-| P3 | Opaque 类方法导出（构造/析构/实例/静态方法） | 已手写测试；codegen 待实现 |
+| P3 | Opaque 类方法导出（构造/析构/实例/静态方法） | 已手写测试；codegen 已实现 |
 | P3 | 嵌套复合类型（`list<struct>` 等） | 已手写测试 |
 
 ---

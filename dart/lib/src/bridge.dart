@@ -843,6 +843,14 @@ abstract base class CppOpaqueInterface implements Finalizable {
   late final NativeFinalizer _finalizer;
   bool _disposed = false;
 
+  /// The native handle. Exposed so generated wrapper classes can pass handles
+  /// as arguments to other generated methods.
+  int get handle => _handle;
+
+  /// Public alias of [_ensureAlive] for generated subclasses in other
+  /// packages/libraries.
+  void ensureAlive() => _ensureAlive();
+
   void _attachFinalizer() {
     _finalizer.attach(
       this,

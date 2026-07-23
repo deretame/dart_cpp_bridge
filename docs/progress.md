@@ -17,7 +17,7 @@
 
 当前仓库是 **独立实验工程**，与 Breeze 等业务仓解耦。
 
-Dart 测试：`cd dart && dart test`（约 **38** 例，含 DartFn sync/async 入口）。  
+Dart 测试：`cd dart && dart test`（约 **82** 例，含 DartFn sync/async、数据类、Opaque 类方法导出）。  
 C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、DartFn e2e 模拟 reply）。
 
 ---
@@ -209,7 +209,7 @@ dart test
      - 手写 `ticks()` / `_counterIncrementStream` / `failStream` 改用新的 `openStream<int>`。
    - 测试：`examples/codegen_demo` 添加 `tick_stream(StreamSink<int>, int count, int interval_ms)` fixture 并跑通（含正常结束和取消订阅）。
 
-8. **结构体/数据类生成** ⏳
+8. **结构体/数据类生成** ✅
    - 设计已写入 `docs/codegen_type_mapping.md` §5.2。
    - 实现点：
      - `parse_api.py`：识别 `BRIDGE_EXPORT` 的 `struct` / `class`，收集 public 非静态字段；若类无导出方法则标记为 `"kind": "data_class"`。
@@ -219,7 +219,7 @@ dart test
        - C++：为每个 data_class 生成 `encode_<Name>` / `decode_<Name>`，在 wire dispatch 中内联使用。
        - Dart：生成不可变 Dart class（字段、`const` 构造函数、`==`、`hashCode`）。
    - Fixture：`examples/codegen_demo/native/api/point_rect.h` 新增 `Point`、`Rect` 和顶层函数 `distance(Point, Point)` / `scale(Point, double)` / `boundingBox(List<Point>)`。
-   - 测试目标：数据类作为参数、返回值、嵌套、以及 `List<data_class>` 都能端到端跑通。
+   - 测试：`examples/codegen_demo` 36 例 demo 测试全绿，数据类作为参数、返回值、嵌套以及 `List<data_class>` 均已端到端跑通。
 
 9. **类型白名单校验与友好报错** ⏳
    - 在 `_type_ir` 返回 `unsupported` 时携带源文件/行号，生成阶段报错前打印清晰上下文。
@@ -229,7 +229,7 @@ dart test
     - 完善 `examples/codegen_demo` 作为可复制的项目模板。
     - CMake FetchContent 接入文档化。
 
-11. **类方法导出（opaque 对象）生成** ⏳
+11. **类方法导出（opaque 对象）生成** ✅
     - 设计已写入 `docs/codegen_type_mapping.md` §5.3。
     - 运行时已提供 `dcb::ObjectHandleRegistry`（per-Session）和 `dcb_drop_object`；codegen 只需调用。
     - 实现点：
@@ -243,7 +243,8 @@ dart test
       - `generate.py`：
         - C++：构造函数生成 insert 到 `ObjectHandleRegistry` 并返回 handle；实例方法 payload 首字段为 handle；析构复用 `dcb_drop_object`。
         - Dart：生成 `class Counter extends CppOpaqueInterface`，实例方法首参数隐藏 `_handle`。
-    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 生成版 Counter，复用手写测试覆盖的 sync/async/static/DartFn/Normal/Stream 场景。
+    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`，覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝等场景。
+    - 测试：`examples/codegen_demo` 36 例 demo 测试全绿（含 Counter 13 例）；`dart/` 主包 82 例全绿。
     - 限制：当前阶段不导出 Opaque 类字段、不支持方法重载、不支持多态继承。
 
 ---
@@ -258,4 +259,5 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；数据类 / Opaque 类方法生成待实现，设计文档已更新。"
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。
+

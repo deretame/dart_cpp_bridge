@@ -9,11 +9,15 @@
 #  define DCB_SYNC __attribute__((annotate("bridge::sync")))
 #  define DCB_ASYNC __attribute__((annotate("bridge::async")))
 #  define DCB_NORMAL __attribute__((annotate("bridge::normal")))
+#  define DCB_CONSTRUCTOR __attribute__((annotate("bridge::constructor")))
+#  define DCB_DESTRUCTOR __attribute__((annotate("bridge::destructor")))
 #  define DCB_EXPORT __attribute__((annotate("bridge::export")))
 #else
 #  define DCB_SYNC
 #  define DCB_ASYNC
 #  define DCB_NORMAL
+#  define DCB_CONSTRUCTOR
+#  define DCB_DESTRUCTOR
 #  define DCB_EXPORT
 #endif
 
@@ -21,5 +25,7 @@
 #  define BRIDGE_SYNC DCB_SYNC
 #  define BRIDGE_ASYNC DCB_ASYNC
 #  define BRIDGE_NORMAL DCB_NORMAL
+#  define BRIDGE_CONSTRUCTOR DCB_CONSTRUCTOR
+#  define BRIDGE_DESTRUCTOR DCB_DESTRUCTOR
 #  define BRIDGE_EXPORT DCB_EXPORT
 #endif

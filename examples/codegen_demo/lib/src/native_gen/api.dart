@@ -3,7 +3,7 @@
 
 import 'dart:async';
 
-import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+import 'package:dart_cpp_bridge/dart_cpp_bridge.dart' hide Counter;
 
 export 'api.g.dart';
 import 'api.g.dart';
@@ -86,4 +86,66 @@ final class BridgeApi {
   Future<BigInt> echoI128(BigInt value) => _impl.echoI128(value);
   Future<String?> optionalString(String? value) => _impl.optionalString(value);
   Future<OrderStatus> nextStatus(OrderStatus current) => _impl.nextStatus(current);
+  int counterNewWithInitialValue(int initialValue) => _impl.counterNewWithInitialValue(initialValue);
+  int counterNew() => _impl.counterNew();
+  Future<int> counterValue(int handle) async => _impl.counterValue(handle);
+  int counterValueSync(int handle) => _impl.counterValueSync(handle);
+  Future<void> counterIncrement(int handle, int delta) async => _impl.counterIncrement(handle, delta);
+  Future<int> counterSleepAndGet(int handle, int sleepMs) async => _impl.counterSleepAndGet(handle, sleepMs);
+  Future<int> counterAddList(int handle, List<int> values) async => _impl.counterAddList(handle, values);
+  Future<void> counterSetValue(int handle, int? value) async => _impl.counterSetValue(handle, value);
+  Future<int> counterDuplicate(int handle) async => _impl.counterDuplicate(handle);
+  int counterSum(int a, int b) => _impl.counterSum(a, b);
+  Future<String> counterGreetDartFn(int handle, FutureOr<String> Function(String) callback, String name) async => _impl.counterGreetDartFn(handle, callback, name);
+  Stream<int> counterTickStream(int handle, int count, int intervalMs) => _impl.counterTickStream(handle, count, intervalMs);
 }
+
+
+final class Counter extends CppOpaqueInterface {
+  Counter._({required super.bridge, required super.handle});
+
+  factory Counter.withInitialValue({required int initialValue}) => Counter._(bridge: BridgeApi.instance.bridge, handle: BridgeApi.instance.counterNewWithInitialValue(initialValue));
+  factory Counter() => Counter._(bridge: BridgeApi.instance.bridge, handle: BridgeApi.instance.counterNew());
+
+  Future<int> value() async {
+    ensureAlive();
+    return await BridgeApi.instance.counterValue(handle);
+  }
+  int valueSync() {
+    ensureAlive();
+    return BridgeApi.instance.counterValueSync(handle);
+  }
+  Future<void> increment([int delta = 1]) async {
+    ensureAlive();
+    await BridgeApi.instance.counterIncrement(handle, delta);
+  }
+  Future<int> sleepAndGet(int sleepMs) async {
+    ensureAlive();
+    return await BridgeApi.instance.counterSleepAndGet(handle, sleepMs);
+  }
+  Future<int> addList(List<int> values) async {
+    ensureAlive();
+    return await BridgeApi.instance.counterAddList(handle, values);
+  }
+  Future<void> setValue(int? value) async {
+    ensureAlive();
+    await BridgeApi.instance.counterSetValue(handle, value);
+  }
+  Future<Counter> duplicate() async {
+    ensureAlive();
+    final newHandle = await BridgeApi.instance.counterDuplicate(handle);
+    return Counter._(bridge: BridgeApi.instance.bridge, handle: newHandle);
+  }
+  static int sum(int a, int b) {
+    return BridgeApi.instance.counterSum(a, b);
+  }
+  Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) async {
+    ensureAlive();
+    return await BridgeApi.instance.counterGreetDartFn(handle, callback, name);
+  }
+  Stream<int> tickStream([int count = 5, int intervalMs = 10]) {
+    ensureAlive();
+    return BridgeApi.instance.counterTickStream(handle, count, intervalMs);
+  }
+}
+

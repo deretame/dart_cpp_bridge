@@ -15,6 +15,33 @@ from config_util import resolve_config  # noqa: E402
 from parse_api import parse_project  # noqa: E402
 
 
+def _lower_first(s: str) -> str:
+    if not s:
+        return s
+    return s[0].lower() + s[1:]
+
+
+def _cap_first(s: str) -> str:
+    if not s:
+        return s
+    return s[0].upper() + s[1:]
+
+
+def _class_impl_method_name(cls: dict[str, Any], method: dict[str, Any]) -> str:
+    """Generated public method name on BridgeApiImpl for a class method."""
+    prefix = _lower_first(cls["name"])
+    if method["kind"] == "constructor":
+        if not method["args"]:
+            return f"{prefix}New"
+        first = _dart_param_name(method["args"][0]["name"])
+        return f"{prefix}NewWith{_cap_first(first)}"
+    return f"{prefix}{_cap_first(_dart_fn_name(method['name']))}"
+
+
+def _class_method_id_const_name(cls: dict[str, Any], method: dict[str, Any]) -> str:
+    return _class_impl_method_name(cls, method) + "Id"
+
+
 def _dart_type(t: dict[str, Any]) -> str:
     k = t.get("kind")
     if k == "enum":
@@ -39,6 +66,8 @@ def _dart_type(t: dict[str, Any]) -> str:
         return f"({elems})"
     if k == "data_class":
         return t["name"]
+    if k == "opaque_class":
+        return "int"
     return {
         "i32": "int",
         "u32": "int",
@@ -102,6 +131,11 @@ def _cpp_type(t: dict[str, Any]) -> str:
     if k == "f64":
         return "double"
     if k == "data_class":
+        q = t["qualified"]
+        if not q.startswith("::"):
+            q = "::" + q
+        return q
+    if k == "opaque_class":
         q = t["qualified"]
         if not q.startswith("::"):
             q = "::" + q
@@ -244,6 +278,226 @@ def _cpp_data_class_helpers(classes: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _cpp_class_method_cases(
+    classes: list[dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    """Generate C++ dispatch cases for opaque class methods (constructor,
+    instance, static)."""
+    cases: list[str] = []
+    sync_cases: list[str] = []
+
+    for cls in classes:
+        if cls.get("kind") != "opaque_class":
+            continue
+        class_q = cls["qualified"]
+        if not class_q.startswith("::"):
+            class_q = "::" + class_q
+        class_name = cls["name"]
+
+        for m in cls.get("methods", []):
+            mid = m["method_id"]
+            kind = m["kind"]
+            is_static = m.get("is_static", False)
+            is_constructor = kind == "constructor"
+            non_sink_args = [
+                a for a in m["args"] if a["type"].get("kind") != "stream_sink"
+            ]
+            arg_names = [a["name"] for a in non_sink_args]
+            ret = m["return"]
+            arg_reads = "\n        ".join(_cpp_read_arg(a) for a in non_sink_args)
+
+            if is_constructor:
+                ctor_call = f"std::make_shared<{class_q}>({', '.join(arg_names)})"
+                body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {arg_reads}
+        auto obj = {ctor_call};
+        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {{}});
+        ByteWriter w;
+        w.u64(handle);
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }}"""
+                sync_body = f"""
+  if (frame.method_id == {mid}u) {{
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    {arg_reads}
+    auto obj = {ctor_call};
+    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {{}});
+    ByteWriter w;
+    w.u64(handle);
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }}"""
+                cases.append(body)
+                sync_cases.append(sync_body)
+                continue
+
+            err_msg = f"{class_name} handle not found or already dropped"
+            if is_static:
+                handle_block = arg_reads
+                sync_handle_block = arg_reads
+                call = f"{class_q}::{m['name']}({', '.join(arg_names)})"
+            else:
+                handle_block = f"""const auto handle = r.u64();
+        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        if (!obj) {{
+          post_err(session, gen, req, method, "{err_msg}");
+          break;
+        }}
+        {arg_reads}"""
+                sync_handle_block = f"""const auto handle = r.u64();
+        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        if (!obj) {{
+          ByteWriter ew;
+          ew.i32(1);
+          ew.str("{err_msg}");
+          return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+        }}
+        {arg_reads}"""
+                call = f"static_cast<{class_q}*>(obj.get())->{m['name']}({', '.join(arg_names)})"
+
+            write = _cpp_write_ret(ret, "out") if kind != "stream" else ""
+
+            if kind == "sync":
+                body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {handle_block}
+        ByteWriter w;
+        {{
+          auto out = {call};
+          {write}
+        }}
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }}"""
+                sync_body = f"""
+  if (frame.method_id == {mid}u) {{
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    {sync_handle_block}
+    ByteWriter w;
+    {{
+      auto out = {call};
+      {write}
+    }}
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }}"""
+                cases.append(body)
+                sync_cases.append(sync_body)
+
+            elif kind == "async":
+                move_caps = ", ".join(
+                    f"{a['name']} = std::move({a['name']})"
+                    if a["type"].get("kind") == "string"
+                    else a["name"]
+                    for a in non_sink_args
+                )
+                handle_cap = "handle, obj, " if not is_static else ""
+                if move_caps:
+                    captures = handle_cap + move_caps
+                else:
+                    captures = handle_cap.rstrip(", ")
+                call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
+                body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {handle_block}
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, session_id, {captures}]() -> async_simple::coro::Lazy<> {{
+              try {{
+                {call_stmt}
+                ByteWriter w;
+                {write}
+                post_ok(session, gen, req, method, w.raw());
+              }} catch (const std::exception& e) {{
+                post_err(session, gen, req, method, e.what());
+              }} catch (...) {{
+                post_err(session, gen, req, method, "unknown");
+              }}
+              co_return;
+            }});
+        break;
+      }}"""
+                cases.append(body)
+
+            elif kind == "normal":
+                move_caps = ", ".join(
+                    f"{a['name']} = std::move({a['name']})"
+                    if a["type"].get("kind") == "string"
+                    else a["name"]
+                    for a in non_sink_args
+                )
+                handle_cap = "handle, obj, " if not is_static else ""
+                if move_caps:
+                    lambda_extra = ", " + handle_cap + move_caps
+                else:
+                    lambda_extra = ", " + handle_cap.rstrip(", ") if handle_cap else ""
+                call_stmt = call + ";" if ret.get("kind") == "void" else f"auto out = {call};"
+                body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {handle_block}
+        auto* io = &Runtime::instance().io();
+        asio::post(Runtime::instance().pool(), [session, gen, req, method, io, session_id{lambda_extra}]() {{
+          try {{
+            {call_stmt}
+            asio::post(*io, [session, gen, req, method, session_id, out = std::move(out)]() {{
+              ByteWriter w;
+              {write}
+              post_ok(session, gen, req, method, w.raw());
+            }});
+          }} catch (const std::exception& e) {{
+            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {{
+              post_err(session, gen, req, method, msg);
+            }});
+          }} catch (...) {{
+            asio::post(*io, [session, gen, req, method]() {{
+              post_err(session, gen, req, method, "unknown");
+            }});
+          }}
+        }});
+        break;
+      }}"""
+                cases.append(body)
+
+            elif kind == "stream":
+                sink_arg = next(
+                    a for a in m["args"] if a["type"].get("kind") == "stream_sink"
+                )
+                sink_inner = sink_arg["type"]["inner"]
+                sink_encode = _cpp_write_item(sink_inner, "v")
+                call_arg_exprs = []
+                for a in m["args"]:
+                    if a["type"].get("kind") == "stream_sink":
+                        call_arg_exprs.append("std::move(sink)")
+                    else:
+                        call_arg_exprs.append(a["name"])
+                stream_call = (
+                    f"static_cast<{class_q}*>(obj.get())->{m['name']}({', '.join(call_arg_exprs)})"
+                    if not is_static
+                    else f"{class_q}::{m['name']}({', '.join(call_arg_exprs)})"
+                )
+                body = f"""
+      case {mid}: {{
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        {handle_block}
+        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session.get(), req, gen, method, []({_cpp_type(sink_inner)} v) {{
+          ByteWriter w;
+          {sink_encode}
+          return w.raw();
+        }});
+        {stream_call};
+        break;
+      }}"""
+                cases.append(body)
+
+            else:
+                raise ValueError(f"kind not supported yet: {kind}")
+
+    return cases, sync_cases
+
+
 def _dart_data_class_defs(classes: list[dict[str, Any]]) -> str:
     """Generate immutable Dart data classes with const constructors."""
     defs: list[str] = []
@@ -358,6 +612,20 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
         )
         return f"const auto {name} = r.{helper}<{elem_types}>({reads});"
 
+    if k == "opaque_class":
+        q = t["qualified"]
+        if not q.startswith("::"):
+            q = "::" + q
+        return (
+            f"const auto {name}Handle = r.u64();\n"
+            f"        auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
+            f"        if (!{name}Obj) {{\n"
+            f"          post_err(session, gen, req, method, \"{t['name']} handle not found or already dropped\");\n"
+            f"          break;\n"
+            f"        }}\n"
+            f"        {q}& {name} = *static_cast<{q}*>({name}Obj.get());"
+        )
+
     if k == "dart_fn":
         sig_ret = _cpp_type(t["return"])
         sig_args = [_cpp_type(a) for a in t.get("args", [])]
@@ -428,6 +696,15 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
             for e in t["elements"]
         )
         return f"w.{helper}({expr}, {writes});"
+    if k == "opaque_class":
+        q = t["qualified"]
+        if not q.startswith("::"):
+            q = "::" + q
+        return (
+            f"{{ auto __obj = std::make_shared<{q}>(std::move({expr})); "
+            f"const auto __handle = dcb::ObjectHandleRegistry::instance().insert("
+            f"session_id, __obj, [](std::shared_ptr<void>&) {{}}); w.u64(__handle); }}"
+        )
     raise ValueError(f"unsupported return type: {t}")
 
 
@@ -457,6 +734,8 @@ def _dart_write_item(
         return [f"{indent}{writer}.i32({expr}.index);"]
     if k == "data_class":
         return [f"{indent}_writeDataClass_{t['name']}({writer}, {expr});"]
+    if k == "opaque_class":
+        return [f"{indent}{writer}.u64({expr});"]
     if k == "i128":
         return [f"{indent}{writer}.writeI128({expr});"]
     if k == "u128":
@@ -532,6 +811,8 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{t['name']}.values[{reader}.i32()]"
     if k == "data_class":
         return f"_readDataClass_{t['name']}({reader})"
+    if k == "opaque_class":
+        return f"{reader}.u64()"
     if k == "u128":
         return f"{reader}.readU128()"
     if k == "optional":
@@ -591,6 +872,8 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
     if k == "data_class":
         return f"_readDataClass_{t['name']}(ByteReader({expr}))"
+    if k == "opaque_class":
+        return f"ByteReader({expr}).u64()"
     if k == "optional":
         inner = t["inner"]
         read_value = _dart_read_item(inner, "_r")
@@ -646,6 +929,8 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
         n = a["dart_name"]
         if k == "dart_fn":
             lines.append(f"_payload.u64(_{n}Id);")
+        elif k == "opaque_class":
+            lines.append(f"_payload.u64({n});")
         elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
@@ -691,6 +976,163 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def _dart_opaque_class_wrappers(classes: list[dict[str, Any]]) -> str:
+    """Generate user-facing Dart wrapper classes for each opaque C++ class."""
+
+    def wrapper_type(t: dict[str, Any]) -> str:
+        if t.get("kind") == "opaque_class":
+            return t["name"]
+        return _dart_type(t)
+
+    def build_params(args: list[dict[str, Any]], named: bool) -> str:
+        parts: list[str] = []
+        for a in args:
+            t = a["type"]
+            if t.get("kind") == "stream_sink":
+                continue
+            dn = _dart_param_name(a["name"])
+            if t.get("kind") == "dart_fn":
+                arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
+                ret_t = _dart_type(t["return"])
+                p = f"FutureOr<{ret_t}> Function({arg_types}) {dn}"
+            else:
+                p = f"{wrapper_type(t)} {dn}"
+            if a.get("default_value"):
+                p = f"{p} = {a['default_value']}"
+            parts.append(p)
+        required = [p for p in parts if " = " not in p]
+        optional = [p for p in parts if " = " in p]
+        if named:
+            named_required = [f"required {p}" for p in required]
+            all_named = named_required + optional
+            if all_named:
+                return "{" + ", ".join(all_named) + "}"
+            return ""
+        # positional optional
+        if required and optional:
+            return ", ".join(required) + ", [" + ", ".join(optional) + "]"
+        if optional:
+            return "[" + ", ".join(optional) + "]"
+        return ", ".join(required)
+
+    wrappers: list[str] = []
+    for cls in classes:
+        if cls.get("kind") != "opaque_class":
+            continue
+        class_name = cls["name"]
+        ctor_lines: list[str] = []
+        method_lines: list[str] = []
+
+        for method in cls.get("methods", []):
+            if method["kind"] == "constructor":
+                param_s = build_params(method["args"], named=True)
+                impl_name = _class_impl_method_name(cls, method)
+                call_args = []
+                for a in method["args"]:
+                    t = a["type"]
+                    dn = _dart_param_name(a["name"])
+                    if t.get("kind") == "opaque_class":
+                        call_args.append(f"{dn}.handle")
+                    else:
+                        call_args.append(dn)
+                call = f"BridgeApi.instance.{impl_name}({', '.join(call_args)})"
+                if not method["args"]:
+                    factory_name = class_name
+                else:
+                    first = _dart_param_name(method["args"][0]["name"])
+                    factory_name = f"{class_name}.with{_cap_first(first)}"
+                ctor_lines.append(
+                    f"  factory {factory_name}({param_s}) => {class_name}._("
+                    f"bridge: BridgeApi.instance.bridge, handle: {call});"
+                )
+                continue
+
+            is_static = method.get("is_static", False)
+            is_stream = method["kind"] == "stream"
+            is_async = method["kind"] not in ("sync",)
+            dart_name = _dart_fn_name(method["name"])
+            ret = method["return"]
+
+            if is_stream:
+                sink_arg = next(
+                    a for a in method["args"] if a["type"].get("kind") == "stream_sink"
+                )
+                item_t = sink_arg["type"]["inner"]
+                ret_t = _dart_type(item_t)
+                sig_ret = f"Stream<{ret_t}>"
+            elif ret.get("kind") == "opaque_class":
+                ret_t = ret["name"]
+                sig_ret = f"Future<{ret_t}>" if is_async else ret_t
+            else:
+                ret_t = _dart_type(ret)
+                if is_async:
+                    sig_ret = "Future<void>" if ret_t == "void" else f"Future<{ret_t}>"
+                else:
+                    sig_ret = ret_t
+
+            param_s = build_params(method["args"], named=False)
+
+            call_args: list[str] = []
+            if not is_static:
+                call_args.append("handle")
+            for a in method["args"]:
+                t = a["type"]
+                dn = _dart_param_name(a["name"])
+                if t.get("kind") == "stream_sink":
+                    continue
+                if t.get("kind") == "opaque_class":
+                    call_args.append(f"{dn}.handle")
+                else:
+                    call_args.append(dn)
+
+            impl_name = _class_impl_method_name(cls, method)
+            call = f"BridgeApi.instance.{impl_name}({', '.join(call_args)})"
+
+            if is_static:
+                if ret.get("kind") == "opaque_class":
+                    body = (
+                        f"final newHandle = {'await ' if is_async else ''}{call};\n"
+                        f"    return {ret['name']}._(bridge: BridgeApi.instance.bridge, handle: newHandle);"
+                    )
+                else:
+                    body = f"return {call};"
+                method_lines.append(
+                    f"  static {sig_ret} {dart_name}({param_s}) "
+                    f"{'async ' if is_async and not is_stream else ''}{{\n    {body}\n  }}"
+                )
+            else:
+                if is_stream:
+                    body = f"return {call};"
+                elif ret.get("kind") == "opaque_class":
+                    body = (
+                        f"final newHandle = await {call};\n"
+                        f"    return {ret['name']}._(bridge: BridgeApi.instance.bridge, handle: newHandle);"
+                    )
+                elif is_async:
+                    body = f"return await {call};" if ret_t != "void" else f"await {call};"
+                else:
+                    body = f"return {call};"
+                method_lines.append(
+                    f"  {sig_ret} {dart_name}({param_s}) "
+                    f"{'async ' if is_async and not is_stream else ''}{{\n"
+                    f"    ensureAlive();\n    {body}\n  }}"
+                )
+
+        ctor_s = "\n".join(ctor_lines)
+        method_s = "\n".join(method_lines)
+        wrappers.append(
+            f"""final class {class_name} extends CppOpaqueInterface {{
+  {class_name}._({{required super.bridge, required super.handle}});
+
+{ctor_s}
+
+{method_s}
+}}"""
+        )
+
+    return "\n\n".join(wrappers)
+
+
 def generate_cpp(ir: dict[str, Any], api_includes: list[str]) -> tuple[str, str]:
     """Returns (hpp, cpp)."""
     fns = ir["functions"]
@@ -710,7 +1152,7 @@ namespace demo {
 
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len);
-std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 
 }  // namespace demo
 }  // namespace dcb
@@ -860,6 +1302,10 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
         else:
             raise ValueError(f"kind not supported yet: {kind}")
 
+    class_cases, class_sync_cases = _cpp_class_method_cases(ir.get("classes", []))
+    cases.extend(class_cases)
+    sync_cases.extend(class_sync_cases)
+
     cases_s = "\n".join(cases) if cases else ""
     sync_s = "\n".join(sync_cases) if sync_cases else ""
 
@@ -868,6 +1314,7 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
 
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
@@ -936,7 +1383,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   }}
 }}
 
-std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len) {{
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len) {{
   auto frame = parse_frame(data, len);
 {sync_s}
   throw std::runtime_error("sync: method not sync-capable");
@@ -1106,6 +1553,135 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
   }}"""
         methods.append(body)
 
+    # Opaque class low-level methods
+    opaque_classes = [c for c in ir.get("classes", []) if c.get("kind") == "opaque_class"]
+    for cls in opaque_classes:
+        for method in cls.get("methods", []):
+            for a in method["args"]:
+                a.setdefault("dart_name", _dart_param_name(a["name"]))
+
+            impl_name = _class_impl_method_name(cls, method)
+            mid = method["method_id"]
+            id_consts.append(f"  static const int {_class_method_id_const_name(cls, method)} = {mid};")
+            is_constructor = method["kind"] == "constructor"
+            is_static = method.get("is_static", False)
+            is_instance = not is_constructor and not is_static
+            is_stream = method["kind"] == "stream"
+
+            # Build params and call args for the impl method.
+            params = []
+            call_args = []
+            if is_instance:
+                params.append("int handle")
+                call_args.append("handle")
+            for a in method["args"]:
+                t = a["type"]
+                if t.get("kind") == "stream_sink":
+                    continue
+                dart_name = a["dart_name"]
+                if t.get("kind") == "opaque_class":
+                    params.append(f"int {dart_name}")
+                elif t.get("kind") == "dart_fn":
+                    arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
+                    ret_t = _dart_type(t["return"])
+                    params.append(f"FutureOr<{ret_t}> Function({arg_types}) {dart_name}")
+                else:
+                    params.append(f"{_dart_type(t)} {dart_name}")
+                call_args.append(dart_name)
+            param_s = ", ".join(params)
+
+            # Payload construction (handle first for instance methods).
+            payload_lines = ["final _payload = ByteWriter();"]
+            if is_instance:
+                payload_lines.append("_payload.u64(handle);")
+            for a in method["args"]:
+                t = a["type"]
+                n = a["dart_name"]
+                k = t.get("kind")
+                if k == "stream_sink":
+                    continue
+                if k == "dart_fn":
+                    payload_lines.append(f"_payload.u64(_{n}Id);")
+                elif k == "opaque_class":
+                    payload_lines.append(f"_payload.u64({n});")
+                else:
+                    payload_lines.extend(_dart_write_item(t, n))
+
+            # Determine return type handling.
+            ret_type = method["return"]
+            if is_constructor or ret_type.get("kind") == "opaque_class":
+                ret_t = "int"
+                read_ret = "ByteReader(_bytes).u64()"
+            else:
+                ret_t = _dart_type(ret_type)
+                read_ret = _dart_read_ret(ret_type, "_bytes")
+
+            if is_stream:
+                sink_args = [a for a in method["args"] if a["type"].get("kind") == "stream_sink"]
+                if not sink_args:
+                    raise ValueError(f"stream method without StreamSink: {cls['qualified']}::{method['name']}")
+                item_t = sink_args[0]["type"]["inner"]
+                ret_t = _dart_type(item_t)
+                sig_ret = f"Stream<{ret_t}>"
+                stream_decode_expr = _dart_read_item(item_t, "_r")
+                is_async = False
+            else:
+                is_async = method["kind"] not in ("sync", "constructor")
+                sig_ret = "Future<void>" if is_async and ret_t == "void" else (f"Future<{ret_t}>" if is_async else ret_t)
+
+            dart_fn_args = [a for a in method["args"] if a["type"].get("kind") == "dart_fn"]
+
+            body_lines: list[str] = []
+            dart_fn_try = bool(dart_fn_args)
+            if dart_fn_try:
+                if is_stream:
+                    raise ValueError(
+                        f"DartFn callbacks inside stream methods are not supported: {cls['qualified']}::{method['name']}"
+                    )
+                for a in dart_fn_args:
+                    body_lines.extend(_dart_fn_wrapper_lines(a))
+                body_lines.append("try {")
+                indent = "  "
+            else:
+                indent = ""
+
+            if is_stream:
+                for line in payload_lines:
+                    body_lines.append(f"{indent}{line}")
+                body_lines.append(
+                    f"{indent}return bridge.openStream<{ret_t}>({impl_name}Id, _payload.takeBytes(), "
+                    f"(final _r) => {stream_decode_expr});"
+                )
+            else:
+                for line in payload_lines:
+                    body_lines.append(f"{indent}{line}")
+                body_lines.append(f"{indent}final _payloadBytes = _payload.takeBytes();")
+                if not is_async:
+                    if ret_t == "void":
+                        body_lines.append(f"{indent}bridge.invokeSyncMethod({impl_name}Id, _payloadBytes);")
+                    else:
+                        body_lines.append(f"{indent}final _bytes = bridge.invokeSyncMethod({impl_name}Id, _payloadBytes);")
+                        body_lines.append(f"{indent}return {read_ret};")
+                else:
+                    if ret_t == "void":
+                        body_lines.append(f"{indent}await bridge.invokeAsyncMethod({impl_name}Id, _payloadBytes);")
+                    else:
+                        body_lines.append(f"{indent}final _bytes = await bridge.invokeAsyncMethod({impl_name}Id, _payloadBytes);")
+                        body_lines.append(f"{indent}return {read_ret};")
+
+            if dart_fn_try:
+                body_lines.append("} finally {")
+                for a in dart_fn_args:
+                    body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
+                body_lines.append("}")
+
+            body_inner = "\n    ".join(body_lines)
+            async_keyword = "async " if is_async else ""
+            body = f"""  {sig_ret} {impl_name}({param_s}) {async_keyword}{{
+    {body_inner}
+  }}"""
+            methods.append(body)
+
     methods_s = "\n\n".join(methods)
     ids_s = "\n".join(id_consts)
 
@@ -1171,13 +1747,67 @@ def generate_dart_facade(
         body = f"""  {m['sig_ret']} {dart_name}({param_s}) => _impl.{dart_name}({call});"""
         forwards.append(body)
 
+    # Forwarders for opaque class methods (called by generated wrapper classes).
+    for cls in ir.get("classes", []):
+        if cls.get("kind") != "opaque_class":
+            continue
+        for method in cls.get("methods", []):
+            impl_name = _class_impl_method_name(cls, method)
+            params = []
+            call_args = []
+            is_instance = not method.get("is_static", False) and method["kind"] != "constructor"
+            if is_instance:
+                params.append("int handle")
+                call_args.append("handle")
+            for a in method["args"]:
+                t = a["type"]
+                if t.get("kind") == "stream_sink":
+                    continue
+                dn = _dart_param_name(a["name"])
+                if t.get("kind") == "opaque_class":
+                    params.append(f"int {dn}")
+                elif t.get("kind") == "dart_fn":
+                    arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
+                    ret_t = _dart_type(t["return"])
+                    params.append(f"FutureOr<{ret_t}> Function({arg_types}) {dn}")
+                else:
+                    params.append(f"{_dart_type(t)} {dn}")
+                call_args.append(dn)
+            param_s = ", ".join(params)
+            call = ", ".join(call_args)
+
+            if method["kind"] == "stream":
+                sink_args = [a for a in method["args"] if a["type"].get("kind") == "stream_sink"]
+                item_t = sink_args[0]["type"]["inner"]
+                sig_ret = f"Stream<{_dart_type(item_t)}>"
+            else:
+                ret_type = method["return"]
+                if method["kind"] == "constructor" or ret_type.get("kind") == "opaque_class":
+                    ret_t = "int"
+                else:
+                    ret_t = _dart_type(ret_type)
+                is_async = method["kind"] not in ("sync", "constructor")
+                sig_ret = "Future<void>" if is_async and ret_t == "void" else (f"Future<{ret_t}>" if is_async else ret_t)
+
+            async_keyword = "async " if method["kind"] not in ("sync", "constructor") and method["kind"] != "stream" else ""
+            forwards.append(
+                f"  {sig_ret} {impl_name}({param_s}) {async_keyword}=> _impl.{impl_name}({call});"
+            )
+
     forwards_s = "\n".join(forwards)
+
+    opaque_classes = [c for c in ir.get("classes", []) if c.get("kind") == "opaque_class"]
+    opaque_names = [c["name"] for c in opaque_classes]
+    hide_clause = f" hide {', '.join(opaque_names)}" if opaque_names else ""
+    wrappers = _dart_opaque_class_wrappers(ir.get("classes", []))
+    wrappers_s = f"\n\n{wrappers}\n" if wrappers else ""
+
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // Public singleton facade (also used by top-level api_fn.dart).
 
 import 'dart:async';
 
-import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+import 'package:dart_cpp_bridge/dart_cpp_bridge.dart'{hide_clause};
 
 export '{impl_import}';
 import '{impl_import}';
@@ -1239,6 +1869,7 @@ final class {facade_class} {{
 
 {forwards_s}
 }}
+{wrappers_s}
 """
 
 

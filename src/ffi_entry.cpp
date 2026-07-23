@@ -19,7 +19,7 @@ namespace dcb {
 namespace demo {
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len);
-std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 }  // namespace demo
 }  // namespace dcb
 
@@ -110,7 +110,7 @@ DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t
     if (!dcb::SessionRegistry::instance().get(session_id)) {
       throw std::runtime_error("invalid session");
     }
-    auto out = dcb::demo::dispatch_sync(req, req_len);
+    auto out = dcb::demo::dispatch_sync(session_id, req, req_len);
     return dup_bytes(out, out_len);
   } catch (const std::exception& e) {
     if (error_out) {

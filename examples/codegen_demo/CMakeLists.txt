@@ -80,6 +80,7 @@ add_library(dcb_codegen_demo SHARED
   ${DCB_DART_API_DIR}/dart_api_dl.c
   native/generated/wire_dispatch.cpp
   native/api_impl/bridge_api.cpp
+  native/api_impl/counter.cpp
 )
 
 target_include_directories(dcb_codegen_demo

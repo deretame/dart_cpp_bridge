@@ -108,6 +108,18 @@ final class BridgeApiImpl {
   static const int echoI128Id = 2053397325;
   static const int optionalStringId = 2057196713;
   static const int nextStatusId = 2129366549;
+  static const int counterNewWithInitialValueId = 546811180;
+  static const int counterNewId = 1174608690;
+  static const int counterValueId = 1819503097;
+  static const int counterValueSyncId = 190346512;
+  static const int counterIncrementId = 1534254823;
+  static const int counterSleepAndGetId = 809700219;
+  static const int counterAddListId = 1623490793;
+  static const int counterSetValueId = 1197060560;
+  static const int counterDuplicateId = 1724183534;
+  static const int counterSumId = 1521970656;
+  static const int counterGreetDartFnId = 1190014947;
+  static const int counterTickStreamId = 550621099;
 
   Future<int> sumScores(Map<String, int> scores) async {
     final _payload = ByteWriter();
@@ -331,5 +343,123 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(nextStatusId, _payloadBytes);
     return OrderStatus.values[ByteReader(_bytes).i32()];
+  }
+
+  int counterNewWithInitialValue(int initialValue) {
+    final _payload = ByteWriter();
+    _payload.i32(initialValue);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterNewWithInitialValueId, _payloadBytes);
+    return ByteReader(_bytes).u64();
+  }
+
+  int counterNew() {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterNewId, _payloadBytes);
+    return ByteReader(_bytes).u64();
+  }
+
+  Future<int> counterValue(int handle) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(counterValueId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  int counterValueSync(int handle) {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterValueSyncId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Future<void> counterIncrement(int handle, int delta) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    _payload.i32(delta);
+    final _payloadBytes = _payload.takeBytes();
+    await bridge.invokeAsyncMethod(counterIncrementId, _payloadBytes);
+  }
+
+  Future<int> counterSleepAndGet(int handle, int sleepMs) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    _payload.i32(sleepMs);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(counterSleepAndGetId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Future<int> counterAddList(int handle, List<int> values) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    _payload.u32(values.length);
+    for (final _v in values) {
+      _payload.i32(_v);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(counterAddListId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Future<void> counterSetValue(int handle, int? value) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+      _payload.i32(value);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    await bridge.invokeAsyncMethod(counterSetValueId, _payloadBytes);
+  }
+
+  Future<int> counterDuplicate(int handle) async {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(counterDuplicateId, _payloadBytes);
+    return ByteReader(_bytes).u64();
+  }
+
+  int counterSum(int a, int b) {
+    final _payload = ByteWriter();
+    _payload.i32(a);
+    _payload.i32(b);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterSumId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Future<String> counterGreetDartFn(int handle, FutureOr<String> Function(String) callback, String name) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    try {
+      final _payload = ByteWriter();
+      _payload.u64(handle);
+      _payload.u64(_callbackId);
+      _payload.str(name);
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(counterGreetDartFnId, _payloadBytes);
+      return ByteReader(_bytes).str();
+    } finally {
+      bridge.unregisterDartFn(_callbackId);
+    }
+  }
+
+  Stream<int> counterTickStream(int handle, int count, int intervalMs) {
+    final _payload = ByteWriter();
+    _payload.u64(handle);
+    _payload.i32(count);
+    _payload.i32(intervalMs);
+    return bridge.openStream<int>(counterTickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
   }
 }

@@ -133,6 +133,18 @@ def _is_public(cursor) -> bool:
         return False
 
 
+def _extract_default_value(cursor) -> str | None:
+    """Extract the default-value token string from a PARM_DECL cursor, if any."""
+    try:
+        tokens = list(cursor.get_tokens())
+    except Exception:
+        return None
+    for i, tok in enumerate(tokens):
+        if tok.spelling == "=":
+            return "".join(t.spelling for t in tokens[i + 1 :]).strip()
+    return None
+
+
 def _collect_classes(
     tu,
     header_path: Path,
@@ -190,18 +202,11 @@ def _collect_classes(
                     if not _is_public(ch):
                         continue
                     method_attrs = _cursor_attrs(ch)
-                    exported_attrs = {
-                        ATTR_SYNC,
-                        ATTR_ASYNC,
-                        ATTR_NORMAL,
-                        ATTR_CONSTRUCTOR,
-                        ATTR_DESTRUCTOR,
-                    }
-                    if method_attrs & exported_attrs:
-                        has_exported_method = True
+
                     args = []
                     for p in ch.get_children():
                         if p.kind == CursorKind.PARM_DECL:
+                            default_value = _extract_default_value(p)
                             args.append(
                                 {
                                     "name": p.spelling or f"arg{len(args)}",
@@ -210,17 +215,63 @@ def _collect_classes(
                                         enum_by_qualified,
                                         enum_by_name,
                                     ),
+                                    "default_value": default_value,
                                 }
                             )
+
+                    exported_attrs = {
+                        ATTR_SYNC,
+                        ATTR_ASYNC,
+                        ATTR_NORMAL,
+                        ATTR_CONSTRUCTOR,
+                        ATTR_DESTRUCTOR,
+                    }
+                    if not (method_attrs & exported_attrs) and not _has_stream_sink(args):
+                        continue
+                    has_exported_method = True
+                    # Destructors are handled uniformly by dcb_drop_object; no wire
+                    # method is generated for them.
+                    if ch.kind == CursorKind.DESTRUCTOR:
+                        continue
+
                     ret = {"kind": "void"}
                     if ch.kind == CursorKind.CXX_METHOD:
                         ret = _type_ir(
                             ch.result_type.spelling, enum_by_qualified, enum_by_name
                         )
+
+                    if ch.kind == CursorKind.CONSTRUCTOR or ATTR_CONSTRUCTOR in method_attrs:
+                        method_kind = "constructor"
+                    elif _has_stream_sink(args):
+                        method_kind = "stream"
+                    elif ATTR_SYNC in method_attrs:
+                        method_kind = "sync"
+                    elif ATTR_ASYNC in method_attrs or ret.get("kind") == "lazy":
+                        method_kind = "async"
+                    elif ATTR_NORMAL in method_attrs:
+                        method_kind = "normal"
+                    else:
+                        method_kind = "sync"  # default for constructors
+
+                    # Strip Lazy wrapper; wire payload carries the inner type.
+                    if ret.get("kind") == "lazy":
+                        ret = ret["inner"]
+
+                    is_static = False
+                    try:
+                        is_static = bool(ch.is_static_method())
+                    except Exception:
+                        pass
+
+                    sig_qname = qname + "::" + (ch.displayname or ch.spelling)
                     methods.append(
                         {
                             "name": ch.spelling,
+                            "displayname": ch.displayname,
                             "cursor_kind": ch.kind.name,
+                            "kind": method_kind,
+                            "is_static": is_static,
+                            "method_id": _stable_method_id(sig_qname),
                             "attrs": sorted(method_attrs),
                             "args": args,
                             "return": ret,
@@ -648,6 +699,13 @@ def _collect_functions(
             CursorKind.CXX_METHOD,
             CursorKind.FUNCTION_TEMPLATE,
         ):
+            # Class/struct member functions are handled by _collect_classes.
+            parent = cursor.semantic_parent
+            if parent is not None and parent.kind in (
+                CursorKind.CLASS_DECL,
+                CursorKind.STRUCT_DECL,
+            ):
+                return
             loc = cursor.location
             if not loc.file:
                 return

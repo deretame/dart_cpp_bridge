@@ -199,4 +199,87 @@ void main() {
       ),
     );
   });
+
+  test('opaque class Counter create and value', () async {
+    final counter = Counter.withInitialValue(initialValue: 10);
+    expect(await counter.value(), 10);
+    expect(counter.valueSync(), 10);
+  });
+
+  test('opaque class Counter default constructor', () async {
+    final counter = Counter();
+    expect(await counter.value(), 0);
+  });
+
+  test('opaque class Counter increment and default delta', () async {
+    final counter = Counter.withInitialValue(initialValue: 5);
+    await counter.increment();
+    expect(await counter.value(), 6);
+    await counter.increment(3);
+    expect(await counter.value(), 9);
+  });
+
+  test('opaque class Counter addList', () async {
+    final counter = Counter.withInitialValue(initialValue: 10);
+    expect(await counter.addList([1, 2, 3]), 16);
+    expect(await counter.value(), 16);
+  });
+
+  test('opaque class Counter setValue', () async {
+    final counter = Counter.withInitialValue(initialValue: 0);
+    await counter.setValue(42);
+    expect(await counter.value(), 42);
+    await counter.setValue(null);
+    expect(await counter.value(), 42);
+  });
+
+  test('opaque class Counter duplicate', () async {
+    final counter = Counter.withInitialValue(initialValue: 7);
+    final copy = await counter.duplicate();
+    expect(await copy.value(), 7);
+    await counter.increment();
+    expect(await counter.value(), 8);
+    expect(await copy.value(), 7);
+  });
+
+  test('opaque class Counter static sum', () {
+    expect(Counter.sum(3, 4), 7);
+  });
+
+  test('opaque class Counter sleepAndGet normal method', () async {
+    final counter = Counter.withInitialValue(initialValue: 100);
+    expect(await counter.sleepAndGet(50), 100);
+  });
+
+  test('opaque class Counter greetDartFn', () async {
+    final counter = Counter.withInitialValue(initialValue: 5);
+    final result = await counter.greetDartFn(
+      (value) => 'Dart got $value',
+      'world',
+    );
+    expect(result, 'hello, Dart got world');
+  });
+
+  test('opaque class Counter tickStream', () async {
+    final counter = Counter.withInitialValue(initialValue: 3);
+    final values = await counter.tickStream(3, 10).toList();
+    expect(values, [3, 3, 3]);
+  });
+
+  test('opaque class Counter dispose then throws', () async {
+    final counter = Counter.withInitialValue(initialValue: 1);
+    counter.dispose();
+    expect(() => counter.valueSync(), throwsA(isA<StateError>()));
+  });
+
+  test('opaque class Counter instances are independent', () async {
+    final a = Counter.withInitialValue(initialValue: 1);
+    final b = Counter.withInitialValue(initialValue: 2);
+    await a.increment();
+    expect(await a.value(), 2);
+    expect(await b.value(), 2);
+    await b.increment(5);
+    expect(await a.value(), 2);
+    expect(await b.value(), 7);
+  });
 }

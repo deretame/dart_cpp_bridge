@@ -24,7 +24,7 @@
 #include <vector>
 
 namespace dcb::demo {
-std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 }  // namespace dcb::demo
 
@@ -284,7 +284,7 @@ int main() {
   {
     auto req =
         make_frame(MsgType::kRequest, 1, static_cast<std::uint32_t>(MethodId::kBridgeVersion), {});
-    auto resp = demo::dispatch_sync(req.data(), req.size());
+    auto resp = demo::dispatch_sync(0, req.data(), req.size());
     auto h = parse_frame(resp.data(), resp.size());
     ByteReader r(h.payload.data(), h.payload.size());
     std::printf("version=%d\n", r.i32());

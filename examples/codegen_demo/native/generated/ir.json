@@ -2,7 +2,8 @@
   "version": 2,
   "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
   "headers": [
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
   ],
   "clang_args": [
     "-std=c++20",
@@ -43,6 +44,317 @@
     }
   ],
   "classes": [
+    {
+      "name": "Counter",
+      "qualified": "demo::api::Counter",
+      "kind": "opaque_class",
+      "fields": [],
+      "methods": [
+        {
+          "name": "Counter",
+          "displayname": "Counter(std::int32_t)",
+          "cursor_kind": "CONSTRUCTOR",
+          "kind": "constructor",
+          "is_static": false,
+          "method_id": 546811180,
+          "attrs": [
+            "bridge::constructor"
+          ],
+          "args": [
+            {
+              "name": "initialValue",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": null,
+              "dart_name": "initialValue"
+            }
+          ],
+          "return": {
+            "kind": "void"
+          }
+        },
+        {
+          "name": "Counter",
+          "displayname": "Counter()",
+          "cursor_kind": "CONSTRUCTOR",
+          "kind": "constructor",
+          "is_static": false,
+          "method_id": 1174608690,
+          "attrs": [
+            "bridge::constructor"
+          ],
+          "args": [],
+          "return": {
+            "kind": "void"
+          }
+        },
+        {
+          "name": "value",
+          "displayname": "value()",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1819503097,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "valueSync",
+          "displayname": "valueSync()",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "sync",
+          "is_static": false,
+          "method_id": 190346512,
+          "attrs": [
+            "bridge::sync"
+          ],
+          "args": [],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "increment",
+          "displayname": "increment(std::int32_t)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1534254823,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [
+            {
+              "name": "delta",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": "1",
+              "dart_name": "delta"
+            }
+          ],
+          "return": {
+            "kind": "void"
+          }
+        },
+        {
+          "name": "sleepAndGet",
+          "displayname": "sleepAndGet(std::int32_t)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "normal",
+          "is_static": false,
+          "method_id": 809700219,
+          "attrs": [
+            "bridge::normal"
+          ],
+          "args": [
+            {
+              "name": "sleepMs",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": null,
+              "dart_name": "sleepMs"
+            }
+          ],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "addList",
+          "displayname": "addList(const std::vector<std::int32_t> &)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1623490793,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [
+            {
+              "name": "values",
+              "type": {
+                "kind": "vector",
+                "inner": {
+                  "kind": "i32"
+                }
+              },
+              "default_value": null,
+              "dart_name": "values"
+            }
+          ],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "setValue",
+          "displayname": "setValue(std::optional<std::int32_t>)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1197060560,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [
+            {
+              "name": "value",
+              "type": {
+                "kind": "optional",
+                "inner": {
+                  "kind": "i32"
+                }
+              },
+              "default_value": null,
+              "dart_name": "value"
+            }
+          ],
+          "return": {
+            "kind": "void"
+          }
+        },
+        {
+          "name": "duplicate",
+          "displayname": "duplicate()",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1724183534,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [],
+          "return": {
+            "kind": "opaque_class",
+            "name": "Counter",
+            "qualified": "demo::api::Counter"
+          }
+        },
+        {
+          "name": "sum",
+          "displayname": "sum(std::int32_t, std::int32_t)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "sync",
+          "is_static": true,
+          "method_id": 1521970656,
+          "attrs": [
+            "bridge::sync"
+          ],
+          "args": [
+            {
+              "name": "a",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": null,
+              "dart_name": "a"
+            },
+            {
+              "name": "b",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": null,
+              "dart_name": "b"
+            }
+          ],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
+          "name": "greetDartFn",
+          "displayname": "greetDartFn(dcb::DartFn<std::string (std::string)>, std::string)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 1190014947,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [
+            {
+              "name": "callback",
+              "type": {
+                "kind": "dart_fn",
+                "signature": "std::string (std::string)",
+                "args": [
+                  {
+                    "kind": "string"
+                  }
+                ],
+                "return": {
+                  "kind": "string"
+                }
+              },
+              "default_value": null,
+              "dart_name": "callback"
+            },
+            {
+              "name": "name",
+              "type": {
+                "kind": "string"
+              },
+              "default_value": null,
+              "dart_name": "name"
+            }
+          ],
+          "return": {
+            "kind": "string"
+          }
+        },
+        {
+          "name": "tickStream",
+          "displayname": "tickStream(dcb::StreamSink<std::int32_t>, std::int32_t, std::int32_t)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "stream",
+          "is_static": false,
+          "method_id": 550621099,
+          "attrs": [],
+          "args": [
+            {
+              "name": "sink",
+              "type": {
+                "kind": "stream_sink",
+                "inner": {
+                  "kind": "i32"
+                }
+              },
+              "default_value": null,
+              "dart_name": "sink"
+            },
+            {
+              "name": "count",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": "5",
+              "dart_name": "count"
+            },
+            {
+              "name": "intervalMs",
+              "type": {
+                "kind": "i32"
+              },
+              "default_value": "10",
+              "dart_name": "intervalMs"
+            }
+          ],
+          "return": {
+            "kind": "void"
+          }
+        }
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+    },
     {
       "name": "Point",
       "qualified": "demo::api::Point",
