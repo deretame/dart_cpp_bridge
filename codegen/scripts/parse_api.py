@@ -159,6 +159,32 @@ def _template_args(type_spell: str) -> list[str]:
     return parts
 
 
+def _template_base_name(type_spell: str) -> str | None:
+    """Return the base name before the outermost `<`.
+
+    For `std::__cxx11::basic_string<char, ...>` returns `std::__cxx11::basic_string`.
+    Returns None if the spelling is not a template instantiation.
+    """
+    start = type_spell.find("<")
+    if start < 0:
+        return None
+    return type_spell[:start].strip()
+
+
+def _is_basic_string(type_spell: str) -> bool:
+    """Detect std::string spellings from libstdc++ / libc++ / MSVC.
+
+    libstdc++ may emit `std::__cxx11::basic_string<char, ...>`, libc++ and MSVC
+    usually emit `std::basic_string<char, ...>`. We parse the base name and first
+    template argument dynamically so any namespace prefix works.
+    """
+    base = _template_base_name(type_spell)
+    if base is None or not base.endswith("basic_string"):
+        return False
+    args = _template_args(type_spell)
+    return bool(args and args[0] in ("char", "const char"))
+
+
 def _split_top_level(s: str, sep: str = ",") -> list[str]:
     """Split `s` by `sep` while ignoring separators inside (), <>, []."""
     parts: list[str] = []
@@ -306,12 +332,11 @@ def _type_ir(
                 ],
             }
 
-    # std::string may be spelled as std::basic_string<char, ...> when it appears
+    # std::string may be spelled as std::basic_string<char, ...> (or
+    # std::__cxx11::basic_string<char, ...> under libstdc++) when it appears
     # inside a template instantiation.
-    if s.startswith("std::basic_string"):
-        args = _template_args(s)
-        if args and args[0] in ("char", "const char"):
-            return {"kind": "string"}
+    if _is_basic_string(s):
+        return {"kind": "string"}
 
     # 128-bit integers are bridge-specific value types sent as marker + decimal string.
     if s in ("dcb::Int128", "Int128"):
