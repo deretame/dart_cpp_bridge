@@ -169,4 +169,5 @@ shutdownBridge(); // 仅进程退出
 | SYNC / ASYNC / NORMAL 生成 | ✅ `examples/codegen_demo` |
 | Dart 三层（impl / 单例 / 顶层函数） | ✅ |
 | struct / Stream / DartFn 生成 | ❌ |
+| 枚举（enum class）生成 | ✅ |
 | Native Assets hook 集成 | ❌（Phase 3；hook 仍不跑 codegen） |

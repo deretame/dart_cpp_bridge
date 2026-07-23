@@ -56,4 +56,10 @@ void main() {
   test('BRIDGE_NORMAL sleep_greeting', () async {
     expect(await sleepGreeting('Ada'), 'hello, Ada');
   });
+
+  test('BRIDGE_ASYNC enum next_status', () async {
+    expect(await nextStatus(OrderStatus.created), OrderStatus.paid);
+    expect(await nextStatus(OrderStatus.paid), OrderStatus.shipped);
+    expect(await nextStatus(OrderStatus.shipped), OrderStatus.created);
+  });
 }

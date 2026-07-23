@@ -24,4 +24,15 @@ async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
 BRIDGE_NORMAL
 std::string sleep_greeting(std::string name);
 
+// enum test
+enum class OrderStatus : std::int32_t {
+  kCreated = 0,
+  kPaid = 1,
+  kShipped = 2,
+};
+
+// async → Dart: Future<OrderStatus> nextStatus(OrderStatus current)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current);
+
 }  // namespace demo::api

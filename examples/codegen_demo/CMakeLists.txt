@@ -75,6 +75,7 @@ endif()
 
 add_library(dcb_codegen_demo SHARED
   ${DCB_ROOT}/src/runtime/runtime.cpp
+  ${DCB_ROOT}/src/runtime/object_handle.cpp
   ${DCB_ROOT}/src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
   native/generated/wire_dispatch.cpp

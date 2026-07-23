@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
+  "config": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/dart_cpp_bridge.yaml",
   "headers": [
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
   ],
   "clang_args": [
     "-std=c++20",
@@ -10,10 +10,35 @@
     "c++",
     "-DBRIDGE_CODEGEN",
     "-DDART_CPP_BRIDGE_CODEGEN",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\include",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+    "-I/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native",
+    "-I/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api",
+    "-I/mnt/d/Project/flutter/dart_cpp_bridge/include",
+    "-I/mnt/d/Project/flutter/dart_cpp_bridge/codegen/stubs"
+  ],
+  "enums": [
+    {
+      "name": "OrderStatus",
+      "qualified": "demo::api::OrderStatus",
+      "underlying": "std::int32_t",
+      "values": [
+        {
+          "name": "kCreated",
+          "dart_name": "created",
+          "value": 0
+        },
+        {
+          "name": "kPaid",
+          "dart_name": "paid",
+          "value": 1
+        },
+        {
+          "name": "kShipped",
+          "dart_name": "shipped",
+          "value": 2
+        }
+      ],
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    }
   ],
   "functions": [
     {
@@ -41,7 +66,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
       "name": "bridge_version",
@@ -55,7 +80,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
       "name": "sleep_greeting",
@@ -76,8 +101,74 @@
       "attrs": [
         "bridge::normal"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
+      "name": "next_status",
+      "qualified": "demo::api::next_status",
+      "kind": "async",
+      "method_id": 2129366549,
+      "args": [
+        {
+          "name": "current",
+          "type": {
+            "kind": "enum",
+            "name": "OrderStatus",
+            "qualified": "demo::api::OrderStatus"
+          }
+        }
+      ],
+      "return": {
+        "kind": "enum",
+        "name": "OrderStatus",
+        "qualified": "demo::api::OrderStatus"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     }
   ],
-  "diagnostics": []
+  "diagnostics": [
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'abs' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'acos' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'asin' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'atan' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'atan2' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'cos' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sin' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'tan' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'cosh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sinh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'tanh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'exp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'frexp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'ldexp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'log' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'log10' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'modf' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'pow' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sqrt' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: too many errors emitted, stopping now",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'abs' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'acos' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'asin' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'atan' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'atan2' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'cos' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sin' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'tan' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'cosh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sinh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'tanh' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'exp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'frexp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'ldexp' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'log' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'log10' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'modf' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'pow' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no member named 'sqrt' in namespace 'std'",
+    "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: too many errors emitted, stopping now"
+  ]
 }

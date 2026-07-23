@@ -36,8 +36,8 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 
 }  // namespace
 
-void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data,
-                      std::size_t len) {
+void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
+                      const std::uint8_t* data, std::size_t len) {
   const auto gen = session->generation();
   FrameHeader frame;
   try {
@@ -111,6 +111,26 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
             });
           }
         });
+        break;
+      }
+
+      case 2129366549: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto current = static_cast<::demo::api::OrderStatus>(r.i32());
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, current]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::next_status(current);
+                ByteWriter w;
+                w.i32(static_cast<std::int32_t>(out));
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
         break;
       }
       default:

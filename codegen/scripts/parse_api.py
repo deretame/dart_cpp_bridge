@@ -56,7 +56,78 @@ def _cursor_attrs(cursor) -> set[str]:
     return attrs
 
 
-def _type_ir(type_spell: str) -> dict[str, Any]:
+def _enum_constant_name_to_dart(name: str) -> str:
+    """Convert common C++ enum value naming to Dart camelCase.
+
+    Examples:
+      kOk        -> ok
+      k_not_found -> notFound
+      server_error -> serverError
+    """
+    if name.startswith("k_"):
+        name = name[2:]
+    elif name.startswith("k") and len(name) > 1 and name[1].isupper():
+        name = name[1:]
+    parts = name.split("_")
+    if not parts:
+        return name
+    return parts[0][0].lower() + parts[0][1:] + "".join(p.title() for p in parts[1:])
+
+
+def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
+    """Collect enum declarations from a translation unit."""
+    out: list[dict[str, Any]] = []
+    header_s = str(header_path.resolve())
+
+    def visit(cursor, ns_stack: list[str]):
+        if cursor.kind == CursorKind.NAMESPACE:
+            name = cursor.spelling or ""
+            for ch in cursor.get_children():
+                visit(ch, ns_stack + ([name] if name else []))
+            return
+
+        if cursor.kind == CursorKind.ENUM_DECL:
+            loc = cursor.location
+            if not loc.file:
+                return
+            if Path(loc.file.name).resolve() != Path(header_s):
+                return
+            qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
+            values = []
+            for ch in cursor.get_children():
+                if ch.kind == CursorKind.ENUM_CONSTANT_DECL:
+                    values.append(
+                        {
+                            "name": ch.spelling,
+                            "dart_name": _enum_constant_name_to_dart(ch.spelling),
+                            "value": ch.enum_value,
+                        }
+                    )
+            # underlying type: prefer enum's integer type, else int32_t
+            underlying = cursor.enum_type.spelling if cursor.enum_type else "std::int32_t"
+            out.append(
+                {
+                    "name": cursor.spelling,
+                    "qualified": qname,
+                    "underlying": underlying,
+                    "values": values,
+                    "header": header_s,
+                }
+            )
+            return
+
+        for ch in cursor.get_children():
+            visit(ch, ns_stack)
+
+    visit(tu.cursor, [])
+    return out
+
+
+def _type_ir(
+    type_spell: str,
+    enum_by_qualified: dict[str, dict[str, Any]] | None = None,
+    enum_by_name: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     s = " ".join(type_spell.replace("&&", " ").replace("&", " ").split())
     # strip const/class/struct
     s = re.sub(r"\b(const|volatile|class|struct)\b", "", s)
@@ -64,14 +135,30 @@ def _type_ir(type_spell: str) -> dict[str, Any]:
 
     m = re.match(r"async_simple::coro::Lazy\s*<\s*(.+)\s*>$", s)
     if m:
-        inner = _type_ir(m.group(1).strip())
+        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
         return {"kind": "lazy", "inner": inner}
 
     m = re.match(r"StreamSink\s*<\s*(.+)\s*>$", s) or re.match(
         r"dcb::StreamSink\s*<\s*(.+)\s*>$", s
     )
     if m:
-        return {"kind": "stream_sink", "inner": _type_ir(m.group(1).strip())}
+        return {
+            "kind": "stream_sink",
+            "inner": _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name),
+        }
+
+    # enum references
+    if enum_by_qualified and s in enum_by_qualified:
+        e = enum_by_qualified[s]
+        return {"kind": "enum", "name": e["name"], "qualified": e["qualified"]}
+    if enum_by_name and s in enum_by_name:
+        e = enum_by_name[s]
+        return {"kind": "enum", "name": e["name"], "qualified": e["qualified"]}
+    # bare unqual name like "StatusCode" when no namespace in spelling
+    name = s.split("::")[-1]
+    if enum_by_name and name in enum_by_name:
+        e = enum_by_name[name]
+        return {"kind": "enum", "name": e["name"], "qualified": e["qualified"]}
 
     aliases = {
         "int": "i32",
@@ -110,7 +197,12 @@ def _classify(attrs: set[str], ret: dict[str, Any], args: list[dict[str, Any]]) 
     return None
 
 
-def _collect_functions(tu, header_path: Path) -> list[dict[str, Any]]:
+def _collect_functions(
+    tu,
+    header_path: Path,
+    enum_by_qualified: dict[str, dict[str, Any]],
+    enum_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     header_s = str(header_path.resolve())
 
@@ -139,10 +231,12 @@ def _collect_functions(tu, header_path: Path) -> list[dict[str, Any]]:
                     args.append(
                         {
                             "name": ch.spelling or f"arg{len(args)}",
-                            "type": _type_ir(ch.type.spelling),
+                            "type": _type_ir(
+                                ch.type.spelling, enum_by_qualified, enum_by_name
+                            ),
                         }
                     )
-            ret = _type_ir(cursor.result_type.spelling)
+            ret = _type_ir(cursor.result_type.spelling, enum_by_qualified, enum_by_name)
             kind = _classify(attrs, ret, args)
             if kind is None:
                 return
@@ -194,9 +288,10 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         args.append(f"-I{inc}")
 
     index = Index.create()
-    functions: list[dict[str, Any]] = []
     diags_out: list[str] = []
 
+    # Pass 1: collect enum declarations across all headers.
+    enums: list[dict[str, Any]] = []
     for h in headers:
         tu = index.parse(
             str(h),
@@ -207,10 +302,32 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         if tu is None:
             raise RuntimeError(f"parse failed: {h}")
         for d in tu.diagnostics:
-            # severity 3 = error, 4 = fatal
             if d.severity >= 3:
                 diags_out.append(f"{h}: {d.spelling}")
-        functions.extend(_collect_functions(tu, h))
+        enums.extend(_collect_enums(tu, h))
+
+    enum_by_qualified = {e["qualified"]: e for e in enums}
+    # If multiple enums share a short name, the last one wins; codegen will
+    # rely on qualified spelling in function signatures when available.
+    enum_by_name: dict[str, dict[str, Any]] = {}
+    for e in enums:
+        enum_by_name[e["name"]] = e
+
+    # Pass 2: collect marked functions with enum-aware type resolution.
+    functions: list[dict[str, Any]] = []
+    for h in headers:
+        tu = index.parse(
+            str(h),
+            args=args,
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
+            | TranslationUnit.PARSE_INCOMPLETE,
+        )
+        if tu is None:
+            raise RuntimeError(f"parse failed: {h}")
+        for d in tu.diagnostics:
+            if d.severity >= 3:
+                diags_out.append(f"{h}: {d.spelling}")
+        functions.extend(_collect_functions(tu, h, enum_by_qualified, enum_by_name))
 
     # de-dupe by qualified name
     by_q: dict[str, dict[str, Any]] = {}
@@ -222,6 +339,7 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         "config": str(cfg["config_path"]),
         "headers": [str(h) for h in headers],
         "clang_args": args,
+        "enums": sorted(enums, key=lambda e: e["qualified"]),
         "functions": sorted(by_q.values(), key=lambda f: f["method_id"]),
         "diagnostics": diags_out,
     }

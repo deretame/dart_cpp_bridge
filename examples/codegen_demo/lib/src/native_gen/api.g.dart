@@ -5,6 +5,13 @@ import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
+/// Generated enum for `demo::api::OrderStatus`.
+enum OrderStatus {
+  created,
+  paid,
+  shipped,
+}
+
 /// Wire-level API. Prefer [BridgeApi.instance] from `api.dart`.
 final class BridgeApiImpl {
   BridgeApiImpl(this.bridge);
@@ -14,6 +21,7 @@ final class BridgeApiImpl {
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
   static const int sleepGreetingId = 1347623235;
+  static const int nextStatusId = 2129366549;
 
   Future<int> add(int a, int b) async {
     final _payload = ByteWriter();
@@ -36,5 +44,13 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(sleepGreetingId, _payloadBytes);
     return ByteReader(_bytes).str();
+  }
+
+  Future<OrderStatus> nextStatus(OrderStatus current) async {
+    final _payload = ByteWriter();
+    _payload.i32(current.index);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(nextStatusId, _payloadBytes);
+    return OrderStatus.values[ByteReader(_bytes).i32()];
   }
 }

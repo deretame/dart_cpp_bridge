@@ -16,4 +16,15 @@ std::string sleep_greeting(std::string name) {
   return std::string("hello, ") + name;
 }
 
+async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current) {
+  switch (current) {
+    case OrderStatus::kCreated:
+      co_return OrderStatus::kPaid;
+    case OrderStatus::kPaid:
+      co_return OrderStatus::kShipped;
+    default:
+      co_return OrderStatus::kCreated;
+  }
+}
+
 }  // namespace demo::api

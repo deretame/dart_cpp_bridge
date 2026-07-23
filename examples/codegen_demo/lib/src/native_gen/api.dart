@@ -3,6 +3,7 @@
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
+export 'api.g.dart';
 import 'api.g.dart';
 
 /// App-facing API singleton.
@@ -63,4 +64,5 @@ final class BridgeApi {
   Future<int> add(int a, int b) => _impl.add(a, b);
   int bridgeVersion() => _impl.bridgeVersion();
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);
+  Future<OrderStatus> nextStatus(OrderStatus current) => _impl.nextStatus(current);
 }

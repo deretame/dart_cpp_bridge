@@ -10,8 +10,8 @@
 namespace dcb {
 namespace demo {
 
-void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data,
-                      std::size_t len);
+void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
+                      const std::uint8_t* data, std::size_t len);
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
 
 }  // namespace demo

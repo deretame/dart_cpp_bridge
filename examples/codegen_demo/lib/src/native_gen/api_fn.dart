@@ -21,3 +21,6 @@ int bridgeVersion() =>
 
 Future<String> sleepGreeting(String name) =>
     BridgeApi.instance.sleepGreeting(name);
+
+Future<OrderStatus> nextStatus(OrderStatus current) =>
+    BridgeApi.instance.nextStatus(current);
