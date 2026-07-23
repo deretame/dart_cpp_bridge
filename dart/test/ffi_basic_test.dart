@@ -318,6 +318,19 @@ void main() {
       expect(() => counter.increment(1), throwsA(isA<StateError>()));
       expect(() => counter.value(), throwsA(isA<StateError>()));
     });
+
+    test('Counter valueSync reads current value synchronously', () async {
+      final counter = await bridge.createCounter(initialValue: 7);
+      expect(counter.valueSync(), 7);
+      await counter.increment(3);
+      expect(counter.valueSync(), 10);
+      counter.dispose();
+    });
+
+    test('Counter.sum static method returns a + b', () {
+      expect(Counter.sum(12, 34), 46);
+      expect(Counter.sum(-5, 5), 0);
+    });
   });
 
   group('DartFn reverse call (FRB-style)', () {

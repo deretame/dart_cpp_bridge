@@ -98,6 +98,10 @@ enum class MethodId : std::uint32_t {
   kCounterGetValue = 22,
   // payload: handle u64 — drop Counter (also used by NativeFinalizer via dcb_drop_object)
   kCounterDrop = 23,
+  // payload: handle u64 — sync return i32 value
+  kCounterValueSync = 24,
+  // payload: a i32 + b i32 — sync static method return a + b
+  kCounterStaticSum = 25,
 };
 
 class ByteWriter {

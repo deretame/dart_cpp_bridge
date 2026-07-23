@@ -184,6 +184,20 @@ std::int32_t counter_get_value(std::uint64_t handle) {
   return obj->value();
 }
 
+std::int32_t counter_value_sync(std::uint64_t handle) {
+  // Sync instance method: read the current value directly on the calling thread.
+  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+  if (!obj) {
+    throw std::runtime_error("Counter handle not found");
+  }
+  return obj->value();
+}
+
+std::int32_t counter_static_sum(std::int32_t a, std::int32_t b) {
+  // Sync static method: no object handle required.
+  return a + b;
+}
+
 namespace {
 
 void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
@@ -652,12 +666,46 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
 
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len) {
   auto frame = parse_frame(data, len);
-  if (static_cast<MethodId>(frame.method_id) != MethodId::kBridgeVersion) {
-    throw std::runtime_error("sync: method not sync-capable");
+  const auto req = frame.request_id;
+  const auto method = frame.method_id;
+
+  try {
+    switch (static_cast<MethodId>(method)) {
+      case MethodId::kBridgeVersion: {
+        ByteWriter w;
+        w.i32(bridge_version());
+        return make_frame(MsgType::kResponseOk, req, method, w.raw());
+      }
+      case MethodId::kCounterValueSync: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto value = counter_value_sync(handle);
+        ByteWriter w;
+        w.i32(value);
+        return make_frame(MsgType::kResponseOk, req, method, w.raw());
+      }
+      case MethodId::kCounterStaticSum: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto a = r.i32();
+        const auto b = r.i32();
+        ByteWriter w;
+        w.i32(counter_static_sum(a, b));
+        return make_frame(MsgType::kResponseOk, req, method, w.raw());
+      }
+      default:
+        throw std::runtime_error("sync: method not sync-capable");
+    }
+  } catch (const std::exception& e) {
+    ByteWriter w;
+    w.i32(1);
+    w.str(e.what());
+    return make_frame(MsgType::kResponseErr, req, method, w.raw());
+  } catch (...) {
+    ByteWriter w;
+    w.i32(1);
+    w.str("unknown");
+    return make_frame(MsgType::kResponseErr, req, method, w.raw());
   }
-  ByteWriter w;
-  w.i32(bridge_version());
-  return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
 }
 
 }  // namespace demo

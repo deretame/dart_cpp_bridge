@@ -106,7 +106,9 @@ enum MethodId {
   counterCreate(20),
   counterIncrement(21),
   counterGetValue(22),
-  counterDrop(23);
+  counterDrop(23),
+  counterValueSync(24),
+  counterStaticSum(25);
 
   /// Numeric method id on the wire.
   final int value;

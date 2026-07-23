@@ -58,6 +58,10 @@ final class DartCppBridge implements Finalizable {
   static NativeFinalizer? _sharedFinalizer;
   static NativeFinalizer get _nativeFinalizer => _sharedFinalizer!;
 
+  /// The bridge instance for this isolate, if [init] has been called.
+  static DartCppBridge get instance =>
+      _instance ?? (throw StateError('DartCppBridge not initialized'));
+
   /// Open a session on **this** isolate.
   static Future<DartCppBridge> init({String? libraryPath}) async {
     if (_instance != null) return _instance!;
@@ -566,6 +570,18 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await invokeAsyncMethod(MethodId.counterGetValue.value, payload.takeBytes())).i32();
   }
 
+  int _counterValueSync(int handle) {
+    final payload = ByteWriter()..u64(handle);
+    return ByteReader(invokeSyncMethod(MethodId.counterValueSync.value, payload.takeBytes())).i32();
+  }
+
+  int _counterStaticSum(int a, int b) {
+    final payload = ByteWriter()
+      ..i32(a)
+      ..i32(b);
+    return ByteReader(invokeSyncMethod(MethodId.counterStaticSum.value, payload.takeBytes())).i32();
+  }
+
   /// Test helper: C++ always fails this async call with [message].
   Future<void> failAsync([String message = 'fail_async']) async {
     final id = _allocId();
@@ -601,13 +617,10 @@ final class DartCppBridge implements Finalizable {
     return controller.stream;
   }
 
-  /// Test helper: invoke an async-only method via the sync FFI entry.
+  /// Test helper: invoke an async-only method via the sync FFI entry and expect
+  /// an error response frame.
   void invokeSyncNonSyncMethodForTest() {
-    _invokeSyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: 0,
-      methodId: MethodId.add.value,
-    ));
+    invokeSyncMethod(MethodId.add.value);
   }
 
   /// Test helper: call an unknown method id and expect an error Future.
@@ -729,10 +742,21 @@ final class Counter extends CppOpaqueInterface {
     await _bridge._counterIncrement(_handle, delta);
   }
 
-  /// Return the current value.
+  /// Return the current value (async).
   Future<int> value() async {
     _ensureAlive();
     return _bridge._counterGetValue(_handle);
+  }
+
+  /// Return the current value synchronously via the sync FFI entry.
+  int valueSync() {
+    _ensureAlive();
+    return _bridge._counterValueSync(_handle);
+  }
+
+  /// Static method: sum two integers on the C++ side.
+  static int sum(int a, int b) {
+    return DartCppBridge.instance._counterStaticSum(a, b);
   }
 }
 
