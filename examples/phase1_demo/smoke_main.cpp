@@ -25,7 +25,7 @@
 
 namespace dcb::demo {
 std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t len);
-void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data, std::size_t len);
+void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 }  // namespace dcb::demo
 
 namespace {
@@ -296,7 +296,7 @@ int main() {
     payload.i32(2);
     auto req =
         make_frame(MsgType::kRequest, 2, static_cast<std::uint32_t>(MethodId::kAdd), payload.raw());
-    demo::dispatch_request(session, req.data(), req.size());
+    demo::dispatch_request(session, sid, req.data(), req.size());
   }
 
   if (add_fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
