@@ -18,10 +18,21 @@ final class BridgeApiImpl {
 
   final DartCppBridge bridge;
 
+  static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
   static const int sleepGreetingId = 1347623235;
   static const int nextStatusId = 2129366549;
+
+  Future<int?> maybeDouble(int? value) async {
+    final _payload = ByteWriter();
+    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+      _payload.i32(value);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(maybeDoubleId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? _r.i32() : null; })();
+  }
 
   Future<int> add(int a, int b) async {
     final _payload = ByteWriter();

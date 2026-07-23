@@ -5,6 +5,7 @@
 #include <async_simple/coro/Lazy.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace demo::api {
@@ -34,5 +35,10 @@ enum class OrderStatus : std::int32_t {
 // async → Dart: Future<OrderStatus> nextStatus(OrderStatus current)
 BRIDGE_ASYNC
 async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current);
+
+// async → Dart: Future<int?> maybeDouble(int? value)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
+    std::optional<std::int32_t> value);
 
 }  // namespace demo::api

@@ -147,6 +147,11 @@ def _type_ir(
             "inner": _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name),
         }
 
+    m = re.match(r"std::optional\s*<\s*(.+)\s*>\s*$", s)
+    if m:
+        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
+        return {"kind": "optional", "inner": inner}
+
     # enum references
     if enum_by_qualified and s in enum_by_qualified:
         e = enum_by_qualified[s]

@@ -42,6 +42,33 @@
   ],
   "functions": [
     {
+      "name": "maybe_double",
+      "qualified": "demo::api::maybe_double",
+      "kind": "async",
+      "method_id": 489154044,
+      "args": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "optional",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        }
+      ],
+      "return": {
+        "kind": "optional",
+        "inner": {
+          "kind": "i32"
+        }
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/mnt/d/Project/flutter/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
       "name": "add",
       "qualified": "demo::api::add",
       "kind": "async",

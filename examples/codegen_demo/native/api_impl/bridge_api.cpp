@@ -27,4 +27,12 @@ async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current) {
   }
 }
 
+async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
+    std::optional<std::int32_t> value) {
+  if (value.has_value()) {
+    co_return std::optional<std::int32_t>(value.value() * 2);
+  }
+  co_return std::nullopt;
+}
+
 }  // namespace demo::api

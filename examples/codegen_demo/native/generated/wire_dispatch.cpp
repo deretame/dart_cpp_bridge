@@ -56,6 +56,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   try {
     switch (method) {
 
+      case 489154044: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = r.opt<std::int32_t>([&]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::maybe_double(value);
+                ByteWriter w;
+                w.opt(out, [&](const auto& v) { w.i32(v); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 513277594: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto a = r.i32();

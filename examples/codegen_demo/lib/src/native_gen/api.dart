@@ -61,6 +61,7 @@ final class BridgeApi {
     _implOrNull = null;
   }
 
+  Future<int?> maybeDouble(int? value) => _impl.maybeDouble(value);
   Future<int> add(int a, int b) => _impl.add(a, b);
   int bridgeVersion() => _impl.bridgeVersion();
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);

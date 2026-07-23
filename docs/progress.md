@@ -156,15 +156,18 @@ dart test
 
 按“小步快跑、每步都跑通 `examples/codegen_demo` 端到端测试”的顺序推进：
 
-1. **枚举生成**（当前下一步）
+1. **枚举生成** ✅
    - 解析 `enum class T : int32_t` / `enum T`。
    - C++ wire 按底层 `i32` 编解码。
    - Dart 生成同名 `enum T`，函数签名/返回值使用 `T`。
-   - 在 `examples/codegen_demo` 添加 `status_next(StatusCode)` 测试。
+   - 在 `examples/codegen_demo` 添加 `next_status(OrderStatus)` 测试并跑通。
 
-2. **可选类型 `std::optional<T>` 生成**
-   - 在已有类型基础上加 presence tag。
-   - Dart 生成 `T?`。
+2. **可选类型 `std::optional<T>` 生成**（当前下一步）
+   - 支持 `T` 为 `i32` / `u32` / `i64` / `bool` / `std::string` / 已生成 enum。
+   - Wire 格式：1-byte presence tag（0 = null，1 = 有值）+ `T` 的编码。
+   - C++ 生成使用现有 `ByteReader::opt` / `ByteWriter::opt` 模板。
+   - Dart 生成 `T?`，读写生成内联 `u8` tag + value。
+   - 在 `examples/codegen_demo` 添加 `maybe_double(std::optional<int32_t>)` 测试：null → null，有值 → 值 × 2。
 
 3. **结构体/数据类生成**
    - 无导出方法的 `struct` / `class` 按值编解码。
@@ -210,4 +213,4 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；hook / 富类型生成未做。"
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；optional / struct / 容器 / tuple / Stream / DartFn / 类方法生成 未做。"

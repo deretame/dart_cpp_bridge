@@ -62,4 +62,10 @@ void main() {
     expect(await nextStatus(OrderStatus.paid), OrderStatus.shipped);
     expect(await nextStatus(OrderStatus.shipped), OrderStatus.created);
   });
+
+  test('BRIDGE_ASYNC optional maybe_double', () async {
+    expect(await maybeDouble(null), isNull);
+    expect(await maybeDouble(5), 10);
+    expect(await maybeDouble(-3), -6);
+  });
 }

@@ -19,6 +19,8 @@ def _dart_type(t: dict[str, Any]) -> str:
     k = t.get("kind")
     if k == "enum":
         return t["name"]
+    if k == "optional":
+        return f"{_dart_type(t['inner'])}?"
     return {
         "i32": "int",
         "u32": "int",
@@ -56,6 +58,25 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
         if not q.startswith("::"):
             q = "::" + q
         return f"const auto {name} = static_cast<{q}>(r.i32());"
+    if k == "optional":
+        inner = a["type"]["inner"]
+        ik = inner.get("kind")
+        if ik == "i32":
+            return f"const auto {name} = r.opt<std::int32_t>([&]() {{ return r.i32(); }});"
+        if ik == "u32":
+            return f"const auto {name} = r.opt<std::uint32_t>([&]() {{ return r.u32(); }});"
+        if ik == "i64":
+            return f"const auto {name} = r.opt<std::int64_t>([&]() {{ return r.i64(); }});"
+        if ik == "bool":
+            return f"const auto {name} = r.opt<bool>([&]() {{ return r.u8() != 0; }});"
+        if ik == "string":
+            return f"const auto {name} = r.opt<std::string>([&]() {{ return r.str(); }});"
+        if ik == "enum":
+            q = inner["qualified"]
+            if not q.startswith("::"):
+                q = "::" + q
+            return f"const auto {name} = r.opt<{q}>([&]() {{ return static_cast<{q}>(r.i32()); }});"
+        raise ValueError(f"unsupported optional inner type: {inner}")
     raise ValueError(f"unsupported arg type for codegen: {a}")
 
 
@@ -75,6 +96,22 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
         return f"w.u8({expr} ? 1 : 0);"
     if k == "enum":
         return f"w.i32(static_cast<std::int32_t>({expr}));"
+    if k == "optional":
+        inner = t["inner"]
+        ik = inner.get("kind")
+        if ik == "i32":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.i32(v); }});"
+        if ik == "u32":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.u32(v); }});"
+        if ik == "i64":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.i64(v); }});"
+        if ik == "bool":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.u8(v ? 1 : 0); }});"
+        if ik == "string":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.str(v); }});"
+        if ik == "enum":
+            return f"w.opt({expr}, [&](const auto& v) {{ w.i32(static_cast<std::int32_t>(v)); }});"
+        raise ValueError(f"unsupported optional inner type: {inner}")
     raise ValueError(f"unsupported return type: {t}")
 
 
@@ -92,6 +129,23 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).u8() != 0"
     if k == "enum":
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
+    if k == "optional":
+        inner = t["inner"]
+        ik = inner.get("kind")
+        read_value: str
+        if ik == "i32" or ik == "u32":
+            read_value = "_r.i32()"
+        elif ik == "i64":
+            read_value = "_r.i64()"
+        elif ik == "bool":
+            read_value = "_r.u8() != 0"
+        elif ik == "string":
+            read_value = "_r.str()"
+        elif ik == "enum":
+            read_value = f"{inner['name']}.values[_r.i32()]"
+        else:
+            raise ValueError(f"unsupported optional inner type: {inner}")
+        return f"(() {{ final _r = ByteReader({expr}); final _has = _r.u8() != 0; return _has ? {read_value} : null; }})()"
     raise ValueError(f"unsupported dart return: {t}")
 
 
@@ -113,6 +167,23 @@ def _dart_write_args(args: list[dict[str, Any]]) -> str:
             lines.append(f"_payload.u8({n} ? 1 : 0);")
         elif k == "enum":
             lines.append(f"_payload.i32({n}.index);")
+        elif k == "optional":
+            inner = a["type"]["inner"]
+            ik = inner.get("kind")
+            lines.append(f"if ({n} == null) {{ _payload.u8(0); }} else {{ _payload.u8(1);")
+            if ik == "i32" or ik == "u32":
+                lines.append(f"  _payload.i32({n});")
+            elif ik == "i64":
+                lines.append(f"  _payload.i64({n});")
+            elif ik == "string":
+                lines.append(f"  _payload.str({n});")
+            elif ik == "bool":
+                lines.append(f"  _payload.u8({n} ? 1 : 0);")
+            elif ik == "enum":
+                lines.append(f"  _payload.i32({n}.index);")
+            else:
+                raise ValueError(f"unsupported optional inner type: {inner}")
+            lines.append("}")
         else:
             raise ValueError(f"unsupported dart arg: {a}")
     lines.append("final _payloadBytes = _payload.takeBytes();")

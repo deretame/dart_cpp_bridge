@@ -90,7 +90,7 @@ chmod +x codegen.sh bootstrap.sh
 未知的 `[[bridge::*]]` 会被 clang 丢掉，**AST 不可见**，不能用于过滤。  
 业务编译不定义 `BRIDGE_CODEGEN`，宏为空。
 
-当前类型支持（v1）：`int32_t` / `std::string` / `Lazy<上述>`；struct / Stream 后续扩展。
+当前类型支持（v1）：`int32_t` / `std::string` / `Lazy<上述>` / `enum class T : int32_t` / `std::optional<T>`；struct / Stream 后续扩展。
 
 ---
 

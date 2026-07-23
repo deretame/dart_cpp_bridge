@@ -13,6 +13,9 @@ void disposeBridge() => BridgeApi.instance.dispose();
 /// Process-wide runtime shutdown (main isolate / app exit only).
 void shutdownBridge() => BridgeApi.instance.shutdown();
 
+Future<int?> maybeDouble(int? value) =>
+    BridgeApi.instance.maybeDouble(value);
+
 Future<int> add(int a, int b) =>
     BridgeApi.instance.add(a, b);
 
