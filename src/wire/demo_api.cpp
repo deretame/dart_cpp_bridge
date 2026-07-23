@@ -152,6 +152,12 @@ class Counter {
 
   void increment(std::int32_t delta = 1) { value_ += delta; }
   std::int32_t value() const { return value_; }
+  void add_list(const std::vector<std::int32_t>& values) {
+    for (const auto v : values) value_ += v;
+  }
+  void set_value(std::optional<std::int32_t> value) {
+    if (value.has_value()) value_ = value.value();
+  }
 
  private:
   std::int32_t value_;
@@ -185,6 +191,11 @@ std::shared_ptr<Counter> counter_checked_get(std::uint64_t handle, const char* o
     throw std::runtime_error(std::string("Counter handle not found or already dropped while ") + operation);
   }
   return obj;
+}
+
+std::uint64_t counter_duplicate(std::uint64_t session_id, std::uint64_t handle) {
+  auto obj = counter_checked_get(handle, "duplicating");
+  return counter_create(session_id, obj->value());
 }
 
 }  // namespace
@@ -736,6 +747,64 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           auto handle = counter_zero(session_id);
           ByteWriter w;
           w.u64(handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "unknown");
+        }
+        break;
+      }
+      case MethodId::kCounterAddList: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto values = r.vec<std::int32_t>([&r]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle, values = std::move(values)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto obj = counter_checked_get(handle, "addList");
+                obj->add_list(values);
+                ByteWriter w;
+                w.i32(obj->value());
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterSetValue: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        const auto value = r.opt<std::int32_t>([&r]() { return r.i32(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto obj = counter_checked_get(handle, "setValue");
+                obj->set_value(value);
+                ByteWriter w;
+                w.i32(obj->value());
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterDuplicate: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        try {
+          auto new_handle = counter_duplicate(session_id, handle);
+          ByteWriter w;
+          w.u64(new_handle);
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
           post_err(session, gen, req, method, e.what());

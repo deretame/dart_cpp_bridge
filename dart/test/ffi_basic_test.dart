@@ -323,6 +323,33 @@ void main() {
       counter.dispose();
     });
 
+    test('Counter.addList sums and adds all values', () async {
+      final counter = await bridge.createCounter(initialValue: 10);
+      expect(await counter.addList([1, 2, 3, 4]), 20);
+      expect(await counter.value(), 20);
+      expect(await counter.addList([]), 20);
+      counter.dispose();
+    });
+
+    test('Counter.setValue sets value when non-null, keeps value when null', () async {
+      final counter = await bridge.createCounter(initialValue: 5);
+      expect(await counter.setValue(100), 100);
+      expect(await counter.value(), 100);
+      expect(await counter.setValue(null), 100);
+      counter.dispose();
+    });
+
+    test('Counter.duplicate creates independent copy', () async {
+      final counter = await bridge.createCounter(initialValue: 7);
+      final copy = await counter.duplicate();
+      expect(await copy.value(), 7);
+      await counter.increment(5);
+      expect(await counter.value(), 12);
+      expect(await copy.value(), 7);
+      counter.dispose();
+      copy.dispose();
+    });
+
     test('Counter disposed twice is no-op', () async {
       final counter = await bridge.createCounter(initialValue: 0);
       counter.dispose();

@@ -113,6 +113,12 @@ enum class MethodId : std::uint32_t {
   kCounterCreateDefault = 29,
   // payload: empty — factory constructor (static method), returns handle u64
   kCounterZero = 30,
+  // payload: handle u64 + list_i32 — add each value to Counter
+  kCounterAddList = 31,
+  // payload: handle u64 + opt_i32 — set value if present
+  kCounterSetValue = 32,
+  // payload: handle u64 — returns new Counter handle with same value
+  kCounterDuplicate = 33,
 };
 
 class ByteWriter {

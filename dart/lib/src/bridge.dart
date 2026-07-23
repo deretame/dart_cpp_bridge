@@ -593,6 +593,25 @@ final class DartCppBridge implements Finalizable {
     await invokeAsyncMethod(MethodId.counterIncrement.value, payload.takeBytes());
   }
 
+  Future<int> _counterAddList(int handle, List<int> values) async {
+    final payload = ByteWriter()
+      ..u64(handle)
+      ..writeListI32(values);
+    return ByteReader(await invokeAsyncMethod(MethodId.counterAddList.value, payload.takeBytes())).i32();
+  }
+
+  Future<int> _counterSetValue(int handle, int? value) async {
+    final payload = ByteWriter()
+      ..u64(handle)
+      ..writeOptI32(value);
+    return ByteReader(await invokeAsyncMethod(MethodId.counterSetValue.value, payload.takeBytes())).i32();
+  }
+
+  Future<int> _counterDuplicate(int handle) async {
+    final payload = ByteWriter()..u64(handle);
+    return ByteReader(await invokeAsyncMethod(MethodId.counterDuplicate.value, payload.takeBytes())).u64();
+  }
+
   Future<int> _counterGetValue(int handle) async {
     final payload = ByteWriter()..u64(handle);
     return ByteReader(await invokeAsyncMethod(MethodId.counterGetValue.value, payload.takeBytes())).i32();
@@ -827,6 +846,25 @@ final class Counter extends CppOpaqueInterface {
   Future<void> increment([int delta = 1]) async {
     _ensureAlive();
     await _bridge._counterIncrement(_handle, delta);
+  }
+
+  /// Add all values in [values] to the counter and return the new value.
+  Future<int> addList(List<int> values) async {
+    _ensureAlive();
+    return _bridge._counterAddList(_handle, values);
+  }
+
+  /// Set the counter to [value] if non-null. Returns the current value.
+  Future<int> setValue(int? value) async {
+    _ensureAlive();
+    return _bridge._counterSetValue(_handle, value);
+  }
+
+  /// Create a new Counter with the same current value.
+  Future<Counter> duplicate() async {
+    _ensureAlive();
+    final newHandle = await _bridge._counterDuplicate(_handle);
+    return Counter._(bridge: _bridge, handle: newHandle);
   }
 
   /// Return the current value (async).

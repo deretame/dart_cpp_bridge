@@ -113,7 +113,10 @@ enum MethodId {
   counterSleepAndGet(27),
   counterIncrementStream(28),
   counterCreateDefault(29),
-  counterZero(30);
+  counterZero(30),
+  counterAddList(31),
+  counterSetValue(32),
+  counterDuplicate(33);
 
   /// Numeric method id on the wire.
   final int value;
