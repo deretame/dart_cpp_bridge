@@ -488,7 +488,7 @@ class Counter extends CppOpaqueInterface {
 | 4 | **Sync / Async / Normal / Stream 成员方法** | 已实现并手写测试：Counter 覆盖六种调用模式。 |
 | 5 | **Static 方法** | 已实现并手写测试：`Counter.sum(a, b)`。 |
 | 6 | **方法重载** | 同名不同参数的方法需要生成不同 method_id。 |
-| 7 | **默认参数** | C++ 默认参数在 Dart 侧生成显式可选参数。 |
+| 7 | **默认参数** | 已实现并手写测试：C++ `Counter::increment(delta = 1)` 映射为 Dart 可选参数 `counter.increment()` / `counter.increment(5)`。 |
 | 8 | **const 方法** | 标记为只读，不影响 wire，但可用于文档/代码提示。 |
 | 9 | **丰富参数/返回值类型** | 支持基本类型、容器、option、枚举、其他 opaque 对象作为参数或返回值。 |
 | 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
@@ -515,9 +515,9 @@ class Counter extends CppOpaqueInterface {
    - handle 不存在或已 drop 时返回清晰错误，区分“未找到”和“已释放”。
    - 例如：`Counter handle not found or already dropped in session X`。
 
-4. **默认参数**
-   - C++ 成员方法支持默认参数，Dart 侧生成显式可选命名参数。
-   - 示例：`Counter.increment([int delta = 1])`，Dart 侧 `counter.increment()` 默认 `+1`。
+4. **默认参数** ✅
+   - C++ 成员方法支持默认参数，Dart 侧生成显式可选参数。
+   - 示例：`Counter::increment(std::int32_t delta = 1)`，Dart 侧 `counter.increment()` 默认 `+1`，`counter.increment(5)` 指定 `+5`。
 
 5. **丰富的参数/返回值类型**
    - 扩展 Counter 或新增 fixture，验证成员方法参数/返回值可以是：

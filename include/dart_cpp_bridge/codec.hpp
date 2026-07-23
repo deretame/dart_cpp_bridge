@@ -20,8 +20,9 @@ namespace dcb {
 inline constexpr std::uint32_t kMagic = 0x31424344;  // 'DCB1' LE
 inline constexpr std::uint16_t kProtocolVersion = 1;
 
-// Portable 128-bit integer types. MSVC does not expose __int128, so we use
-// a string on the wire and let Dart do BigInt conversion.
+// Portable 128-bit integer types. 128-bit integers are not part of the C++
+// standard, so they are sent as length-prefixed decimal strings on the wire;
+// Dart is responsible for BigInt <-> string conversion.
 struct UInt128 {
   std::string value;
 

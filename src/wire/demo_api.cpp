@@ -150,7 +150,7 @@ class Counter {
  public:
   explicit Counter(std::int32_t initial_value) : value_(initial_value) {}
 
-  void increment(std::int32_t delta) { value_ += delta; }
+  void increment(std::int32_t delta = 1) { value_ += delta; }
   std::int32_t value() const { return value_; }
 
  private:

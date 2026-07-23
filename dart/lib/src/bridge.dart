@@ -823,8 +823,8 @@ final class Counter extends CppOpaqueInterface {
     return DartCppBridge.instance.createCounterZero();
   }
 
-  /// Increment the counter by [delta].
-  Future<void> increment(int delta) async {
+  /// Increment the counter by [delta]. Defaults to 1.
+  Future<void> increment([int delta = 1]) async {
     _ensureAlive();
     await _bridge._counterIncrement(_handle, delta);
   }

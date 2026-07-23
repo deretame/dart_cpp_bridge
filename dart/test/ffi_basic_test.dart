@@ -313,6 +313,16 @@ void main() {
       counter.dispose();
     });
 
+    test('Counter increment uses default delta of 1', () async {
+      final counter = await bridge.createCounter(initialValue: 10);
+      expect(await counter.value(), 10);
+      await counter.increment();
+      expect(await counter.value(), 11);
+      await counter.increment(4);
+      expect(await counter.value(), 15);
+      counter.dispose();
+    });
+
     test('Counter disposed twice is no-op', () async {
       final counter = await bridge.createCounter(initialValue: 0);
       counter.dispose();
