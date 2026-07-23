@@ -61,14 +61,20 @@ final class BridgeApi {
     _implOrNull = null;
   }
 
+  Future<int> sumScores(Map<String, int> scores) => _impl.sumScores(scores);
   Future<int?> maybeDouble(int? value) => _impl.maybeDouble(value);
   Future<int> add(int a, int b) => _impl.add(a, b);
   int bridgeVersion() => _impl.bridgeVersion();
+  Future<int> sumArray(List<int> values) => _impl.sumArray(values);
   Future<int> incrementI64(int value) => _impl.incrementI64(value);
   Future<OrderStatus?> optionalStatus(OrderStatus? value) => _impl.optionalStatus(value);
+  Future<List<int>> echoList(List<int> values) => _impl.echoList(values);
   Future<bool> negateBool(bool value) => _impl.negateBool(value);
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);
+  Future<BigInt> echoU128(BigInt value) => _impl.echoU128(value);
   Future<int> incrementU32(int value) => _impl.incrementU32(value);
+  Future<int> sumSet(Set<int> values) => _impl.sumSet(values);
+  Future<BigInt> echoI128(BigInt value) => _impl.echoI128(value);
   Future<String?> optionalString(String? value) => _impl.optionalString(value);
   Future<OrderStatus> nextStatus(OrderStatus current) => _impl.nextStatus(current);
 }

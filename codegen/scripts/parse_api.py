@@ -152,6 +152,33 @@ def _type_ir(
         inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
         return {"kind": "optional", "inner": inner}
 
+    m = re.match(r"std::vector\s*<\s*(.+?)\s*>\s*$", s)
+    if m:
+        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
+        return {"kind": "vector", "inner": inner}
+
+    m = re.match(r"std::array\s*<\s*(.+?)\s*,\s*(\d+)\s*>\s*$", s)
+    if m:
+        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
+        return {"kind": "array", "inner": inner, "size": int(m.group(2))}
+
+    m = re.match(r"std::unordered_map\s*<\s*(.+?)\s*,\s*(.+?)\s*>\s*$", s)
+    if m:
+        key = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
+        value = _type_ir(m.group(2).strip(), enum_by_qualified, enum_by_name)
+        return {"kind": "map", "key": key, "value": value}
+
+    m = re.match(r"std::unordered_set\s*<\s*(.+?)\s*>\s*$", s)
+    if m:
+        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
+        return {"kind": "set", "inner": inner}
+
+    # 128-bit integers are bridge-specific value types sent as marker + decimal string.
+    if s in ("dcb::Int128", "Int128"):
+        return {"kind": "i128"}
+    if s in ("dcb::UInt128", "UInt128"):
+        return {"kind": "u128"}
+
     # enum references
     if enum_by_qualified and s in enum_by_qualified:
         e = enum_by_qualified[s]

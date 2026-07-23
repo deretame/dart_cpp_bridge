@@ -68,4 +68,38 @@ async_simple::coro::Lazy<std::optional<OrderStatus>> optional_status(
   }
 }
 
+async_simple::coro::Lazy<std::vector<std::int32_t>> echo_list(
+    std::vector<std::int32_t> values) {
+  co_return values;
+}
+
+async_simple::coro::Lazy<std::int32_t> sum_array(
+    std::array<std::int32_t, 4> values) {
+  std::int32_t total = 0;
+  for (auto v : values) total += v;
+  co_return total;
+}
+
+async_simple::coro::Lazy<std::int32_t> sum_scores(
+    std::unordered_map<std::string, std::int32_t> scores) {
+  std::int32_t total = 0;
+  for (const auto& [k, v] : scores) total += v;
+  co_return total;
+}
+
+async_simple::coro::Lazy<std::int32_t> sum_set(
+    std::unordered_set<std::int32_t> values) {
+  std::int32_t total = 0;
+  for (auto v : values) total += v;
+  co_return total;
+}
+
+async_simple::coro::Lazy<dcb::Int128> echo_i128(dcb::Int128 value) {
+  co_return value;
+}
+
+async_simple::coro::Lazy<dcb::UInt128> echo_u128(dcb::UInt128 value) {
+  co_return value;
+}
+
 }  // namespace demo::api

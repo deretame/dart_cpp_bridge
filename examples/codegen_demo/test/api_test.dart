@@ -95,4 +95,38 @@ void main() {
     expect(await optionalStatus(OrderStatus.created), OrderStatus.paid);
     expect(await optionalStatus(OrderStatus.shipped), OrderStatus.created);
   });
+
+  test('BRIDGE_ASYNC vector<int> echo_list', () async {
+    expect(await echoList([]), <int>[]);
+    expect(await echoList([1, 2, 3]), [1, 2, 3]);
+    expect(await echoList([-1, 0, 42]), [-1, 0, 42]);
+  });
+
+  test('BRIDGE_ASYNC array<int, 4> sum_array', () async {
+    expect(await sumArray([1, 2, 3, 4]), 10);
+    expect(await sumArray([-1, 1, -1, 1]), 0);
+  });
+
+  test('BRIDGE_ASYNC map<string, int> sum_scores', () async {
+    expect(await sumScores({}), 0);
+    expect(await sumScores({'a': 1, 'b': 2, 'c': 3}), 6);
+  });
+
+  test('BRIDGE_ASYNC set<int> sum_set', () async {
+    expect(await sumSet(<int>{}), 0);
+    expect(await sumSet({1, 2, 3}), 6);
+  });
+
+  test('BRIDGE_ASYNC Int128 echo_i128', () async {
+    final big = BigInt.parse('170141183460469231731687303715884105727');
+    expect(await echoI128(big), big);
+    expect(await echoI128(BigInt.zero), BigInt.zero);
+    expect(await echoI128(BigInt.parse('-170141183460469231731687303715884105728')), BigInt.parse('-170141183460469231731687303715884105728'));
+  });
+
+  test('BRIDGE_ASYNC UInt128 echo_u128', () async {
+    final big = BigInt.parse('340282366920938463463374607431768211455');
+    expect(await echoU128(big), big);
+    expect(await echoU128(BigInt.zero), BigInt.zero);
+  });
 }

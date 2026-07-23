@@ -13,6 +13,9 @@ void disposeBridge() => BridgeApi.instance.dispose();
 /// Process-wide runtime shutdown (main isolate / app exit only).
 void shutdownBridge() => BridgeApi.instance.shutdown();
 
+Future<int> sumScores(Map<String, int> scores) =>
+    BridgeApi.instance.sumScores(scores);
+
 Future<int?> maybeDouble(int? value) =>
     BridgeApi.instance.maybeDouble(value);
 
@@ -22,11 +25,17 @@ Future<int> add(int a, int b) =>
 int bridgeVersion() =>
     BridgeApi.instance.bridgeVersion();
 
+Future<int> sumArray(List<int> values) =>
+    BridgeApi.instance.sumArray(values);
+
 Future<int> incrementI64(int value) =>
     BridgeApi.instance.incrementI64(value);
 
 Future<OrderStatus?> optionalStatus(OrderStatus? value) =>
     BridgeApi.instance.optionalStatus(value);
+
+Future<List<int>> echoList(List<int> values) =>
+    BridgeApi.instance.echoList(values);
 
 Future<bool> negateBool(bool value) =>
     BridgeApi.instance.negateBool(value);
@@ -34,8 +43,17 @@ Future<bool> negateBool(bool value) =>
 Future<String> sleepGreeting(String name) =>
     BridgeApi.instance.sleepGreeting(name);
 
+Future<BigInt> echoU128(BigInt value) =>
+    BridgeApi.instance.echoU128(value);
+
 Future<int> incrementU32(int value) =>
     BridgeApi.instance.incrementU32(value);
+
+Future<int> sumSet(Set<int> values) =>
+    BridgeApi.instance.sumSet(values);
+
+Future<BigInt> echoI128(BigInt value) =>
+    BridgeApi.instance.echoI128(value);
 
 Future<String?> optionalString(String? value) =>
     BridgeApi.instance.optionalString(value);

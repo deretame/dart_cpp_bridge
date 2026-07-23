@@ -169,22 +169,23 @@ dart test
    - Dart 生成 `T?`，读写生成内联 `u8` tag + value。
    - 在 `examples/codegen_demo` 添加 `maybe_double(std::optional<int32_t>)` 测试：null → null，有值 → 值 × 2。
 
-3. **补齐基础类型白名单测试**（当前下一步）
+3. **补齐基础类型白名单测试** ✅
    - 目标：在 `examples/codegen_demo` 把 codegen 已支持的所有原子类型都跑通端到端。
    - 覆盖 `int32_t` / `uint32_t` / `int64_t` / `bool` / `std::string` / `enum` / `std::optional<T>`（`T` 为前述类型）。
    - 每个类型至少一个 BRIDGE_ASYNC 往返函数；记录 Dart `int` ↔ wire 有符号/无符号语义。
    - 先不进入 struct / 容器 / tuple / Stream / DartFn / 类方法。
 
-4. **结构体/数据类生成**
+4. **容器与 128 位整数生成**（当前下一步）
+   - 容器：`std::vector<T>` / `std::array<T, N>` → `List<T>`，`std::unordered_map<K, V>` → `Map<K, V>`，`std::unordered_set<T>` → `Set<T>`。
+   - 元素类型递归支持白名单内基础类型；`std::array` 长度从模板参数解析。
+   - 128 位整数：仅支持本项目的 `dcb::Int128` / `dcb::UInt128`，wire 上用固定标记位 + 长度前缀十进制字符串；Dart 侧为 `BigInt`。
+   - Dart `codec.dart` 增加泛型 `writeList/readList`、`writeSet/readSet`、`writeMap/readMap`、`writeFixedArray/readFixedArray`，让生成代码统一调用。
+   - 在 `examples/codegen_demo` 为每种容器和 128 添加往返测试。
+
+5. **结构体/数据类生成**
    - 无导出方法的 `struct` / `class` 按值编解码。
    - Dart 生成同名数据类（字段、==、hashCode 可选）。
    - 支持嵌套数据类。
-
-5. **容器生成**
-   - `std::vector<T>` / `std::array<T, N>` → `List<T>`（typed list 优化）。
-   - `std::unordered_map<K, V>` → `Map<K, V>`。
-   - `std::unordered_set<T>` → `Set<T>`。
-   - 元素类型递归支持白名单内类型。
 
 6. **元组生成**
    - `std::pair<T1, T2>` / `std::tuple<Ts...>` → Dart Record。

@@ -18,16 +18,34 @@ final class BridgeApiImpl {
 
   final DartCppBridge bridge;
 
+  static const int sumScoresId = 66895156;
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
+  static const int sumArrayId = 516316109;
   static const int incrementI64Id = 826193512;
   static const int optionalStatusId = 923880942;
+  static const int echoListId = 923919167;
   static const int negateBoolId = 1187695424;
   static const int sleepGreetingId = 1347623235;
+  static const int echoU128Id = 1349826830;
   static const int incrementU32Id = 1597460230;
+  static const int sumSetId = 1869545367;
+  static const int echoI128Id = 2053397325;
   static const int optionalStringId = 2057196713;
   static const int nextStatusId = 2129366549;
+
+  Future<int> sumScores(Map<String, int> scores) async {
+    final _payload = ByteWriter();
+    _payload.u32(scores.length);
+    scores.forEach((final _k, final _v) {
+      _payload.str(_k);
+      _payload.i32(_v);
+    });
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(sumScoresId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
 
   Future<int?> maybeDouble(int? value) async {
     final _payload = ByteWriter();
@@ -54,6 +72,17 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
+  Future<int> sumArray(List<int> values) async {
+    final _payload = ByteWriter();
+    if (values.length != 4) throw StateError('array length mismatch');
+    for (final _v in values) {
+      _payload.i32(_v);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(sumArrayId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
   Future<int> incrementI64(int value) async {
     final _payload = ByteWriter();
     _payload.i64(value);
@@ -72,6 +101,17 @@ final class BridgeApiImpl {
     return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? OrderStatus.values[_r.i32()] : null; })();
   }
 
+  Future<List<int>> echoList(List<int> values) async {
+    final _payload = ByteWriter();
+    _payload.u32(values.length);
+    for (final _v in values) {
+      _payload.i32(_v);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(echoListId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); final _n = _r.u32(); final _result = <int>[]; for (var _i = 0; _i < _n; _i++) { _result.add(_r.i32()); } return _result; })();
+  }
+
   Future<bool> negateBool(bool value) async {
     final _payload = ByteWriter();
     _payload.u8(value ? 1 : 0);
@@ -88,12 +128,39 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
+  Future<BigInt> echoU128(BigInt value) async {
+    final _payload = ByteWriter();
+    _payload.writeU128(value);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(echoU128Id, _payloadBytes);
+    return ByteReader(_bytes).readU128();
+  }
+
   Future<int> incrementU32(int value) async {
     final _payload = ByteWriter();
     _payload.u32(value);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(incrementU32Id, _payloadBytes);
     return ByteReader(_bytes).u32();
+  }
+
+  Future<int> sumSet(Set<int> values) async {
+    final _payload = ByteWriter();
+    _payload.u32(values.length);
+    for (final _v in values) {
+      _payload.i32(_v);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(sumSetId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Future<BigInt> echoI128(BigInt value) async {
+    final _payload = ByteWriter();
+    _payload.writeI128(value);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(echoI128Id, _payloadBytes);
+    return ByteReader(_bytes).readI128();
   }
 
   Future<String?> optionalString(String? value) async {

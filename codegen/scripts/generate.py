@@ -21,6 +21,14 @@ def _dart_type(t: dict[str, Any]) -> str:
         return t["name"]
     if k == "optional":
         return f"{_dart_type(t['inner'])}?"
+    if k == "vector" or k == "array":
+        return f"List<{_dart_type(t['inner'])}>"
+    if k == "set":
+        return f"Set<{_dart_type(t['inner'])}>"
+    if k == "map":
+        return f"Map<{_dart_type(t['key'])}, {_dart_type(t['value'])}>"
+    if k == "i128" or k == "u128":
+        return "BigInt"
     return {
         "i32": "int",
         "u32": "int",
@@ -40,43 +48,102 @@ def _cpp_call_expr(fn: dict[str, Any]) -> str:
     return f"{q}({args})"
 
 
-def _cpp_read_arg(a: dict[str, Any]) -> str:
-    k = a["type"].get("kind")
-    name = a["name"]
+def _cpp_type(t: dict[str, Any]) -> str:
+    k = t.get("kind")
     if k == "i32":
-        return f"const auto {name} = r.i32();"
+        return "std::int32_t"
     if k == "u32":
-        return f"const auto {name} = r.u32();"
+        return "std::uint32_t"
     if k == "i64":
-        return f"const auto {name} = r.i64();"
-    if k == "string":
-        return f"auto {name} = r.str();"
+        return "std::int64_t"
     if k == "bool":
-        return f"const auto {name} = static_cast<bool>(r.u8());"
+        return "bool"
+    if k == "string":
+        return "std::string"
     if k == "enum":
-        q = a["type"]["qualified"]
+        q = t["qualified"]
         if not q.startswith("::"):
             q = "::" + q
-        return f"const auto {name} = static_cast<{q}>(r.i32());"
+        return q
     if k == "optional":
-        inner = a["type"]["inner"]
-        ik = inner.get("kind")
-        if ik == "i32":
-            return f"const auto {name} = r.opt<std::int32_t>([&]() {{ return r.i32(); }});"
-        if ik == "u32":
-            return f"const auto {name} = r.opt<std::uint32_t>([&]() {{ return r.u32(); }});"
-        if ik == "i64":
-            return f"const auto {name} = r.opt<std::int64_t>([&]() {{ return r.i64(); }});"
-        if ik == "bool":
-            return f"const auto {name} = r.opt<bool>([&]() {{ return r.u8() != 0; }});"
-        if ik == "string":
-            return f"const auto {name} = r.opt<std::string>([&]() {{ return r.str(); }});"
-        if ik == "enum":
-            q = inner["qualified"]
-            if not q.startswith("::"):
-                q = "::" + q
-            return f"const auto {name} = r.opt<{q}>([&]() {{ return static_cast<{q}>(r.i32()); }});"
-        raise ValueError(f"unsupported optional inner type: {inner}")
+        return f"std::optional<{_cpp_type(t['inner'])}>"
+    raise ValueError(f"unsupported C++ type: {t}")
+
+
+def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
+    """Return a C++ statement that writes `expr` of type `t` using ByteWriter `w`."""
+    k = t.get("kind")
+    if k == "i32":
+        return f"w.i32({expr});"
+    if k == "u32":
+        return f"w.u32({expr});"
+    if k == "i64":
+        return f"w.i64({expr});"
+    if k == "bool":
+        return f"w.u8({expr} ? 1 : 0);"
+    if k == "string":
+        return f"w.str({expr});"
+    if k == "enum":
+        return f"w.i32(static_cast<std::int32_t>({expr}));"
+    raise ValueError(f"unsupported C++ item type: {t}")
+
+
+def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
+    """Return a C++ expression that reads one value of type `t` from ByteReader `reader`."""
+    k = t.get("kind")
+    if k == "i32":
+        return f"{reader}.i32()"
+    if k == "u32":
+        return f"{reader}.u32()"
+    if k == "i64":
+        return f"{reader}.i64()"
+    if k == "bool":
+        return f"static_cast<bool>({reader}.u8())"
+    if k == "string":
+        return f"{reader}.str()"
+    if k == "enum":
+        q = t["qualified"]
+        if not q.startswith("::"):
+            q = "::" + q
+        return f"static_cast<{q}>({reader}.i32())"
+    raise ValueError(f"unsupported C++ item type: {t}")
+
+
+def _cpp_read_arg(a: dict[str, Any]) -> str:
+    t = a["type"]
+    k = t.get("kind")
+    name = a["name"]
+    if k in ("i32", "u32", "i64", "bool", "string", "enum"):
+        return f"const auto {name} = {_cpp_read_item(t)};"
+    if k == "optional":
+        inner = t["inner"]
+        inner_t = _cpp_type(inner)
+        return f"const auto {name} = r.opt<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
+    if k == "vector":
+        inner = t["inner"]
+        inner_t = _cpp_type(inner)
+        return f"const auto {name} = r.vec<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
+    if k == "array":
+        inner = t["inner"]
+        size = t["size"]
+        inner_t = _cpp_type(inner)
+        return f"const auto {name} = r.arr<{inner_t}, {size}>([&]() {{ return {_cpp_read_item(inner)}; }});"
+    if k == "set":
+        inner = t["inner"]
+        inner_t = _cpp_type(inner)
+        return f"const auto {name} = r.set<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
+    if k == "map":
+        key_t = _cpp_type(t["key"])
+        value_t = _cpp_type(t["value"])
+        return (
+            f"const auto {name} = r.map<{key_t}, {value_t}>("
+            f"[&]() {{ return {_cpp_read_item(t['key'])}; }}, "
+            f"[&]() {{ return {_cpp_read_item(t['value'])}; }});"
+        )
+    if k == "i128":
+        return f"const auto {name} = r.i128();"
+    if k == "u128":
+        return f"const auto {name} = r.u128();"
     raise ValueError(f"unsupported arg type for codegen: {a}")
 
 
@@ -84,35 +151,73 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return ""
-    if k == "i32":
-        return f"w.i32({expr});"
-    if k == "u32":
-        return f"w.u32({expr});"
-    if k == "i64":
-        return f"w.i64({expr});"
-    if k == "string":
-        return f"w.str({expr});"
-    if k == "bool":
-        return f"w.u8({expr} ? 1 : 0);"
-    if k == "enum":
-        return f"w.i32(static_cast<std::int32_t>({expr}));"
+    if k in ("i32", "u32", "i64", "bool", "string", "enum"):
+        return _cpp_write_item(t, expr)
     if k == "optional":
         inner = t["inner"]
-        ik = inner.get("kind")
-        if ik == "i32":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.i32(v); }});"
-        if ik == "u32":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.u32(v); }});"
-        if ik == "i64":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.i64(v); }});"
-        if ik == "bool":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.u8(v ? 1 : 0); }});"
-        if ik == "string":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.str(v); }});"
-        if ik == "enum":
-            return f"w.opt({expr}, [&](const auto& v) {{ w.i32(static_cast<std::int32_t>(v)); }});"
-        raise ValueError(f"unsupported optional inner type: {inner}")
+        item = _cpp_write_item(inner, "v")
+        return f"w.opt({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "vector":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.vec({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "array":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.arr({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "set":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.set({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "map":
+        key_item = _cpp_write_item(t["key"], "k")
+        value_item = _cpp_write_item(t["value"], "v")
+        return (
+            f"w.map({expr}, "
+            f"[&](const auto& k) {{ {key_item} }}, "
+            f"[&](const auto& v) {{ {value_item} }});"
+        )
+    if k == "i128":
+        return f"w.i128({expr});"
+    if k == "u128":
+        return f"w.u128({expr});"
     raise ValueError(f"unsupported return type: {t}")
+
+
+def _dart_write_item(t: dict[str, Any], expr: str, indent: str = "") -> list[str]:
+    """Return Dart statement(s) that write `expr` of type `t` using ByteWriter `_payload`."""
+    k = t.get("kind")
+    if k == "i32":
+        return [f"{indent}_payload.i32({expr});"]
+    if k == "u32":
+        return [f"{indent}_payload.u32({expr});"]
+    if k == "i64":
+        return [f"{indent}_payload.i64({expr});"]
+    if k == "bool":
+        return [f"{indent}_payload.u8({expr} ? 1 : 0);"]
+    if k == "string":
+        return [f"{indent}_payload.str({expr});"]
+    if k == "enum":
+        return [f"{indent}_payload.i32({expr}.index);"]
+    raise ValueError(f"unsupported Dart item type: {t}")
+
+
+def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
+    """Return a Dart expression that reads one value of type `t` from ByteReader `reader`."""
+    k = t.get("kind")
+    if k == "i32":
+        return f"{reader}.i32()"
+    if k == "u32":
+        return f"{reader}.u32()"
+    if k == "i64":
+        return f"{reader}.i64()"
+    if k == "bool":
+        return f"{reader}.u8() != 0"
+    if k == "string":
+        return f"{reader}.str()"
+    if k == "enum":
+        return f"{t['name']}.values[{reader}.i32()]"
+    raise ValueError(f"unsupported Dart item type: {t}")
 
 
 def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
@@ -133,23 +238,34 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
     if k == "optional":
         inner = t["inner"]
-        ik = inner.get("kind")
-        read_value: str
-        if ik == "i32":
-            read_value = "_r.i32()"
-        elif ik == "u32":
-            read_value = "_r.u32()"
-        elif ik == "i64":
-            read_value = "_r.i64()"
-        elif ik == "bool":
-            read_value = "_r.u8() != 0"
-        elif ik == "string":
-            read_value = "_r.str()"
-        elif ik == "enum":
-            read_value = f"{inner['name']}.values[_r.i32()]"
-        else:
-            raise ValueError(f"unsupported optional inner type: {inner}")
+        read_value = _dart_read_item(inner, "_r")
         return f"(() {{ final _r = ByteReader({expr}); final _has = _r.u8() != 0; return _has ? {read_value} : null; }})()"
+    if k == "vector":
+        inner = t["inner"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, "_r")
+        return f"(() {{ final _r = ByteReader({expr}); final _n = _r.u32(); final _result = <{item_type}>[]; for (var _i = 0; _i < _n; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "array":
+        inner = t["inner"]
+        size = t["size"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, "_r")
+        return f"(() {{ final _r = ByteReader({expr}); final _result = <{item_type}>[]; for (var _i = 0; _i < {size}; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "set":
+        inner = t["inner"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, "_r")
+        return f"(() {{ final _r = ByteReader({expr}); final _n = _r.u32(); final _result = <{item_type}>{{}}; for (var _i = 0; _i < _n; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "map":
+        key_type = _dart_type(t["key"])
+        value_type = _dart_type(t["value"])
+        key_read = _dart_read_item(t["key"], "_r")
+        value_read = _dart_read_item(t["value"], "_r")
+        return f"(() {{ final _r = ByteReader({expr}); final _n = _r.u32(); final _result = <{key_type}, {value_type}>{{}}; for (var _i = 0; _i < _n; _i++) {{ _result[{key_read}] = {value_read}; }} return _result; }})()"
+    if k == "i128":
+        return f"ByteReader({expr}).readI128()"
+    if k == "u128":
+        return f"ByteReader({expr}).readU128()"
     raise ValueError(f"unsupported dart return: {t}")
 
 
@@ -159,39 +275,47 @@ def _dart_write_args(args: list[dict[str, Any]]) -> str:
     if not usable:
         return "final _payloadBytes = Uint8List(0);"
     for a in usable:
-        k = a["type"].get("kind")
+        t = a["type"]
+        k = t.get("kind")
         n = a["name"]
-        if k == "i32":
-            lines.append(f"_payload.i32({n});")
-        elif k == "u32":
-            lines.append(f"_payload.u32({n});")
-        elif k == "i64":
-            lines.append(f"_payload.i64({n});")
-        elif k == "string":
-            lines.append(f"_payload.str({n});")
-        elif k == "bool":
-            lines.append(f"_payload.u8({n} ? 1 : 0);")
-        elif k == "enum":
-            lines.append(f"_payload.i32({n}.index);")
+        if k in ("i32", "u32", "i64", "string", "bool", "enum"):
+            lines.extend(_dart_write_item(t, n))
         elif k == "optional":
-            inner = a["type"]["inner"]
-            ik = inner.get("kind")
+            inner = t["inner"]
             lines.append(f"if ({n} == null) {{ _payload.u8(0); }} else {{ _payload.u8(1);")
-            if ik == "i32":
-                lines.append(f"  _payload.i32({n});")
-            elif ik == "u32":
-                lines.append(f"  _payload.u32({n});")
-            elif ik == "i64":
-                lines.append(f"  _payload.i64({n});")
-            elif ik == "string":
-                lines.append(f"  _payload.str({n});")
-            elif ik == "bool":
-                lines.append(f"  _payload.u8({n} ? 1 : 0);")
-            elif ik == "enum":
-                lines.append(f"  _payload.i32({n}.index);")
-            else:
-                raise ValueError(f"unsupported optional inner type: {inner}")
+            lines.extend(_dart_write_item(inner, n, "  "))
             lines.append("}")
+        elif k == "vector":
+            inner = t["inner"]
+            lines.append(f"_payload.u32({n}.length);")
+            lines.append(f"for (final _v in {n}) {{")
+            lines.extend(_dart_write_item(inner, "_v", "  "))
+            lines.append("}")
+        elif k == "array":
+            inner = t["inner"]
+            size = t["size"]
+            lines.append(f"if ({n}.length != {size}) throw StateError('array length mismatch');")
+            lines.append(f"for (final _v in {n}) {{")
+            lines.extend(_dart_write_item(inner, "_v", "  "))
+            lines.append("}")
+        elif k == "set":
+            inner = t["inner"]
+            lines.append(f"_payload.u32({n}.length);")
+            lines.append(f"for (final _v in {n}) {{")
+            lines.extend(_dart_write_item(inner, "_v", "  "))
+            lines.append("}")
+        elif k == "map":
+            key_t = t["key"]
+            value_t = t["value"]
+            lines.append(f"_payload.u32({n}.length);")
+            lines.append(f"{n}.forEach((final _k, final _v) {{")
+            lines.extend(_dart_write_item(key_t, "_k", "  "))
+            lines.extend(_dart_write_item(value_t, "_v", "  "))
+            lines.append("});")
+        elif k == "i128":
+            lines.append(f"_payload.writeI128({n});")
+        elif k == "u128":
+            lines.append(f"_payload.writeU128({n});")
         else:
             raise ValueError(f"unsupported dart arg: {a}")
     lines.append("final _payloadBytes = _payload.takeBytes();")

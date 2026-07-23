@@ -42,6 +42,33 @@
   ],
   "functions": [
     {
+      "name": "sum_scores",
+      "qualified": "demo::api::sum_scores",
+      "kind": "async",
+      "method_id": 66895156,
+      "args": [
+        {
+          "name": "scores",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "i32"
+            }
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "maybe_double",
       "qualified": "demo::api::maybe_double",
       "kind": "async",
@@ -110,6 +137,31 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "sum_array",
+      "qualified": "demo::api::sum_array",
+      "kind": "async",
+      "method_id": 516316109,
+      "args": [
+        {
+          "name": "values",
+          "type": {
+            "kind": "array",
+            "inner": {
+              "kind": "i32"
+            },
+            "size": 4
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "increment_i64",
       "qualified": "demo::api::increment_i64",
       "kind": "async",
@@ -162,6 +214,33 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "echo_list",
+      "qualified": "demo::api::echo_list",
+      "kind": "async",
+      "method_id": 923919167,
+      "args": [
+        {
+          "name": "values",
+          "type": {
+            "kind": "vector",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        }
+      ],
+      "return": {
+        "kind": "vector",
+        "inner": {
+          "kind": "i32"
+        }
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "negate_bool",
       "qualified": "demo::api::negate_bool",
       "kind": "async",
@@ -204,6 +283,27 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "echo_u128",
+      "qualified": "demo::api::echo_u128",
+      "kind": "async",
+      "method_id": 1349826830,
+      "args": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "u128"
+          }
+        }
+      ],
+      "return": {
+        "kind": "u128"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "increment_u32",
       "qualified": "demo::api::increment_u32",
       "kind": "async",
@@ -218,6 +318,51 @@
       ],
       "return": {
         "kind": "u32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "sum_set",
+      "qualified": "demo::api::sum_set",
+      "kind": "async",
+      "method_id": 1869545367,
+      "args": [
+        {
+          "name": "values",
+          "type": {
+            "kind": "set",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "echo_i128",
+      "qualified": "demo::api::echo_i128",
+      "kind": "async",
+      "method_id": 2053397325,
+      "args": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "i128"
+          }
+        }
+      ],
+      "return": {
+        "kind": "i128"
       },
       "attrs": [
         "bridge::async"
