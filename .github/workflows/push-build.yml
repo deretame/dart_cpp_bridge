@@ -1,0 +1,175 @@
+name: dart_cpp_bridge CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ══════════════════════════════════════════
+  # Linux
+  # ══════════════════════════════════════════
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装 C++ 构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git
+
+      - name: 设置 Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 获取 Dart API DL 头文件
+        run: cmake -P cmake/fetch_dart_api.cmake
+
+      - name: 配置并构建主 C++ 库
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 C++ smoke 测试
+        run: ./build/dcb_smoke
+
+      - name: 运行 Dart 包测试
+        run: |
+          cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 codegen 生成 demo 绑定
+        run: |
+          cd codegen
+          ./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+
+      - name: 构建 codegen demo 原生库
+        run: |
+          cd examples/codegen_demo
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 codegen demo 测试
+        run: |
+          cd examples/codegen_demo
+          dart pub get
+          dart test
+
+  # ══════════════════════════════════════════
+  # Windows
+  # ══════════════════════════════════════════
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 设置 MSVC 环境
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: 设置 Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 获取 Dart API DL 头文件
+        run: cmake -P cmake/fetch_dart_api.cmake
+
+      - name: 配置并构建主 C++ 库
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 C++ smoke 测试
+        run: .\build\Release\dcb_smoke.exe
+
+      - name: 运行 Dart 包测试
+        run: |
+          cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 codegen 生成 demo 绑定
+        run: |
+          cd codegen
+          pwsh -ExecutionPolicy Bypass -File .\codegen.ps1 -Script scripts/run_codegen.py -- ..\examples\codegen_demo\dart_cpp_bridge.yaml
+
+      - name: 构建 codegen demo 原生库
+        run: |
+          cd examples/codegen_demo
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 codegen demo 测试
+        run: |
+          cd examples/codegen_demo
+          dart pub get
+          dart test
+
+  # ══════════════════════════════════════════
+  # macOS
+  # ══════════════════════════════════════════
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 设置 Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: 安装 C++ 构建依赖
+        run: |
+          brew install cmake || true
+
+      - name: 设置 Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 获取 Dart API DL 头文件
+        run: cmake -P cmake/fetch_dart_api.cmake
+
+      - name: 配置并构建主 C++ 库
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 C++ smoke 测试
+        run: ./build/dcb_smoke
+
+      - name: 运行 Dart 包测试
+        run: |
+          cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 codegen 生成 demo 绑定
+        run: |
+          cd codegen
+          ./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+
+      - name: 构建 codegen demo 原生库
+        run: |
+          cd examples/codegen_demo
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --parallel
+
+      - name: 运行 codegen demo 测试
+        run: |
+          cd examples/codegen_demo
+          dart pub get
+          dart test
