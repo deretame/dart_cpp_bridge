@@ -29,6 +29,8 @@ def _dart_type(t: dict[str, Any]) -> str:
         return f"Map<{_dart_type(t['key'])}, {_dart_type(t['value'])}>"
     if k == "i128" or k == "u128":
         return "BigInt"
+    if k == "dart_fn":
+        return "FutureOr<String> Function(String)"
     return {
         "i32": "int",
         "u32": "int",
@@ -144,6 +146,8 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
         return f"const auto {name} = r.i128();"
     if k == "u128":
         return f"const auto {name} = r.u128();"
+    if k == "dart_fn":
+        return f"const auto {name} = dcb::DartFnStringToString(session, gen, r.u64());"
     raise ValueError(f"unsupported arg type for codegen: {a}")
 
 
@@ -269,16 +273,23 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
     raise ValueError(f"unsupported dart return: {t}")
 
 
-def _dart_write_args(args: list[dict[str, Any]]) -> str:
+def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
+    """Return Dart payload-construction lines (excluding `_payloadBytes` and
+    stream_sink arguments, which are handled at call site).
+
+    DartFn arguments are written as `_payload.u64(_<name>Id)` in their original
+    parameter order; the caller must register the closure and assign the id
+    variable before these lines run."""
     lines = ["final _payload = ByteWriter();"]
-    usable = [a for a in args if a["type"].get("kind") != "stream_sink"]
-    if not usable:
-        return "final _payloadBytes = Uint8List(0);"
-    for a in usable:
+    for a in args:
         t = a["type"]
         k = t.get("kind")
+        if k == "stream_sink":
+            continue
         n = a["name"]
-        if k in ("i32", "u32", "i64", "string", "bool", "enum"):
+        if k == "dart_fn":
+            lines.append(f"_payload.u64(_{n}Id);")
+        elif k in ("i32", "u32", "i64", "string", "bool", "enum"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
             inner = t["inner"]
@@ -318,8 +329,7 @@ def _dart_write_args(args: list[dict[str, Any]]) -> str:
             lines.append(f"_payload.writeU128({n});")
         else:
             raise ValueError(f"unsupported dart arg: {a}")
-    lines.append("final _payloadBytes = _payload.takeBytes();")
-    return "\n    ".join(lines)
+    return lines
 
 
 def generate_cpp(ir: dict[str, Any], api_includes: list[str]) -> tuple[str, str]:
@@ -465,6 +475,7 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
 #include "wire_dispatch.hpp"
 
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
@@ -565,6 +576,7 @@ def _iter_dart_methods(ir: dict[str, Any]):
             sig_ret = "Future<void>" if ret_t == "void" else f"Future<{ret_t}>"
         else:
             sig_ret = ret_t
+        dart_fn_args = [a for a in fn["args"] if a["type"].get("kind") == "dart_fn"]
         yield {
             "fn": fn,
             "dart_name": dart_name,
@@ -573,7 +585,8 @@ def _iter_dart_methods(ir: dict[str, Any]):
             "ret_t": ret_t,
             "sig_ret": sig_ret,
             "is_async": is_async,
-            "write_args": _dart_write_args(fn["args"]),
+            "payload_lines": _dart_payload_lines(fn["args"]),
+            "dart_fn_args": dart_fn_args,
             "read_ret": _dart_read_ret(fn["return"], "_bytes"),
         }
 
@@ -586,34 +599,48 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
         dart_name = m["dart_name"]
         mid = m["fn"]["method_id"]
         id_consts.append(f"  static const int {dart_name}Id = {mid};")
-        write_args = m["write_args"]
         param_s = m["param_s"]
         ret_t = m["ret_t"]
         read_ret = m["read_ret"]
+        payload_lines = m["payload_lines"]
+        dart_fn_args = m["dart_fn_args"]
 
+        # Build payload body. DartFn callbacks must be registered before the
+        # payload is sent and unregistered after the C++ call returns.
+        body_lines: list[str] = []
+        if dart_fn_args:
+            for a in dart_fn_args:
+                body_lines.append(f"final _{a['name']}Id = bridge.registerDartFn({a['name']});")
+            body_lines.append("try {")
+            for line in payload_lines:
+                body_lines.append(f"  {line}")
+        else:
+            body_lines.extend(payload_lines)
+
+        body_lines.append("final _payloadBytes = _payload.takeBytes();")
         if not m["is_async"]:
             if ret_t == "void":
-                body = f"""  {m['sig_ret']} {dart_name}({param_s}) {{
-    {write_args}
-    bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);
-  }}"""
+                body_lines.append(f"bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
             else:
-                body = f"""  {m['sig_ret']} {dart_name}({param_s}) {{
-    {write_args}
-    final _bytes = bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);
-    return {read_ret};
-  }}"""
+                body_lines.append(f"final _bytes = bridge.invokeSyncMethod({dart_name}Id, _payloadBytes);")
+                body_lines.append(f"return {read_ret};")
         else:
             if ret_t == "void":
-                body = f"""  {m['sig_ret']} {dart_name}({param_s}) async {{
-    {write_args}
-    await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);
-  }}"""
+                body_lines.append(f"await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
             else:
-                body = f"""  {m['sig_ret']} {dart_name}({param_s}) async {{
-    {write_args}
-    final _bytes = await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);
-    return {read_ret};
+                body_lines.append(f"final _bytes = await bridge.invokeAsyncMethod({dart_name}Id, _payloadBytes);")
+                body_lines.append(f"return {read_ret};")
+
+        if dart_fn_args:
+            body_lines.append("} finally {")
+            for a in dart_fn_args:
+                body_lines.append(f"  bridge.unregisterDartFn(_{a['name']}Id);")
+            body_lines.append("}")
+
+        body_inner = "\n    ".join(body_lines)
+        is_async = m["is_async"]
+        body = f"""  {m['sig_ret']} {dart_name}({param_s}) {'async ' if is_async else ''}{{
+    {body_inner}
   }}"""
         methods.append(body)
 
@@ -634,6 +661,7 @@ enum {name} {{
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // Low-level impl (method ids + wire). Prefer importing api.dart singleton.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
@@ -671,6 +699,8 @@ def generate_dart_facade(
     forwards_s = "\n".join(forwards)
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // Public singleton facade (also used by top-level api_fn.dart).
+
+import 'dart:async';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
@@ -747,6 +777,8 @@ def generate_dart_toplevel(
     lines = [
         f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // Top-level API — call like plain functions after initBridge().
+
+import 'dart:async';
 
 import '{facade_import}';
 

@@ -13,7 +13,9 @@
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\include",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\codegen\\stubs",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\build\\_deps\\async_simple-src",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\build\\_deps\\asio-src\\asio\\include"
   ],
   "enums": [
     {
@@ -318,6 +320,33 @@
       ],
       "return": {
         "kind": "u32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "greet_dart_fn",
+      "qualified": "demo::api::greet_dart_fn",
+      "kind": "async",
+      "method_id": 1789823149,
+      "args": [
+        {
+          "name": "dart_fn",
+          "type": {
+            "kind": "dart_fn"
+          }
+        },
+        {
+          "name": "name",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "string"
       },
       "attrs": [
         "bridge::async"

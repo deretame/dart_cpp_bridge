@@ -31,13 +31,13 @@
 
 ## 2. 大整数
 
-128 位整数不在 C++ 标准内，且不同编译器扩展（如 GCC/Clang 的 `__int128`）并不跨平台。本项目**不直接支持** `__int128` / `unsigned __int128`，而是提供统一的 `Int128` / `UInt128` 类型，内部以**字符串**存储数值，避免引入额外第三方库。
+所有 128 位整数（包括 `__int128` / `unsigned __int128` 及其别名）在 wire 上**统一使用固定标记位 + 字符串**传输。本项目**不直接支持**编译器相关的 `__int128` / `unsigned __int128`，而是只提供统一的 `Int128` / `UInt128` 类型，内部以**字符串**存储数值，避免引入额外第三方库。
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
 | `Int128` / `UInt128` | `BigInt` | 本项目统一使用的 128 位整数类型，内部以字符串形式存储，wire 上使用固定标记位 + 字符串传输 |
 
-- 规则：宽度大于 64 位的整数，本项目只通过 `Int128` / `UInt128` 暴露给 Dart，映射为 `BigInt`。
+- 规则：宽度大于 64 位的整数，本项目**只允许**通过 `Int128` / `UInt128` 暴露给 Dart，映射为 `BigInt`。
 - 编码：wire 中先使用一个**固定的标记位**标识大整数，随后传输字符串；不采用定长 16 字节 little-endian 整数。
 - 原因：128 位整数不在 C++ 标准中，使用频率低，避免引入重量级三方库。
 - 建议：如果业务需要真正 128 位运算，可在 C++ 侧自行使用 `boost::multiprecision::int128_t` 或编译器扩展，与 `Int128` / `UInt128` 的字符串表示相互转换。
@@ -543,6 +543,36 @@ class Counter extends CppOpaqueInterface {
 
 以上目标完成后，第一阶段手写测试基本闭环，再进入 codegen（第二阶段）。
 
+
+## 5.5 DartFn 反向回调
+
+| C++ 类型 | Dart 类型 | 说明 |
+|----------|-----------|------|
+| `dcb::DartFnStringToString` | `FutureOr<String> Function(String)` | FRB 风格的 Dart 闭包反向调用：C++ 异步等待 Dart 返回字符串 |
+
+- 使用方式：在 API 头文件中将参数声明为 `dcb::DartFnStringToString`，例如：
+
+  ```cpp
+  BRIDGE_ASYNC
+  async_simple::coro::Lazy<std::string> greet_dart_fn(
+      dcb::DartFnStringToString dart_fn, std::string name);
+  ```
+
+- Dart 侧生成代码会：
+  1. 调用 `bridge.registerDartFn(closure)` 注册闭包，获得一个 `fn_id`；
+  2. 把 `fn_id` 按参数顺序写入请求 payload；
+  3. 调用 C++ 方法；
+  4. 在 `try / finally` 中调用 `bridge.unregisterDartFn(fn_id)`，确保闭包在调用结束后被清理。
+
+- C++ 侧生成代码会：
+  1. 从 payload 中按参数顺序读出 `fn_id`；
+  2. 构造 `dcb::DartFnStringToString(session, generation, fn_id)`；
+  3. 在业务方法中通过 `dart_fn.callAsync(arg)` 异步调用 Dart 闭包并 `co_await` 结果。
+
+- 限制：
+  - 当前只提供字符串到字符串的回调类型（`String -> FutureOr<String>`）。
+  - 同步阻塞版本 `callSync` 也可用，但如果在 `io_context` 线程上调用会阻塞事件循环，由业务代码自行决定。
+  - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
 
 ## 6. 当前白名单（实现优先级）
 

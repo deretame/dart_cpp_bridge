@@ -2,6 +2,7 @@
 #include "wire_dispatch.hpp"
 
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
@@ -283,6 +284,27 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 auto out = co_await ::demo::api::increment_u32(value);
                 ByteWriter w;
                 w.u32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 1789823149: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto dart_fn = dcb::DartFnStringToString(session, gen, r.u64());
+        const auto name = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, dart_fn, name = std::move(name)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::greet_dart_fn(dart_fn, name);
+                ByteWriter w;
+                w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

@@ -123,6 +123,42 @@ def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
     return out
 
 
+def _template_args(type_spell: str) -> list[str]:
+    """Extract top-level template arguments from a spelling like `T<A, B<C>>`.
+
+    Returns the arguments inside the outermost `<...>`, split by top-level commas.
+    """
+    start = type_spell.find("<")
+    if start < 0:
+        return []
+    depth = 1
+    i = start + 1
+    while i < len(type_spell) and depth > 0:
+        if type_spell[i] == "<":
+            depth += 1
+        elif type_spell[i] == ">":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return []
+    inside = type_spell[start + 1 : i - 1]
+    parts: list[str] = []
+    cur: list[str] = []
+    d = 0
+    for ch in inside:
+        if ch == "<":
+            d += 1
+        elif ch == ">":
+            d -= 1
+        elif ch == "," and d == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+            continue
+        cur.append(ch)
+    parts.append("".join(cur).strip())
+    return parts
+
+
 def _type_ir(
     type_spell: str,
     enum_by_qualified: dict[str, dict[str, Any]] | None = None,
@@ -133,51 +169,69 @@ def _type_ir(
     s = re.sub(r"\b(const|volatile|class|struct)\b", "", s)
     s = " ".join(s.split())
 
-    m = re.match(r"async_simple::coro::Lazy\s*<\s*(.+)\s*>$", s)
-    if m:
-        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "lazy", "inner": inner}
+    if s.startswith("async_simple::coro::Lazy"):
+        args = _template_args(s)
+        if args:
+            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            return {"kind": "lazy", "inner": inner}
 
-    m = re.match(r"StreamSink\s*<\s*(.+)\s*>$", s) or re.match(
-        r"dcb::StreamSink\s*<\s*(.+)\s*>$", s
-    )
-    if m:
-        return {
-            "kind": "stream_sink",
-            "inner": _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name),
-        }
+    if s.startswith("StreamSink") or s.startswith("dcb::StreamSink"):
+        args = _template_args(s)
+        if args:
+            return {
+                "kind": "stream_sink",
+                "inner": _type_ir(args[0], enum_by_qualified, enum_by_name),
+            }
 
-    m = re.match(r"std::optional\s*<\s*(.+)\s*>\s*$", s)
-    if m:
-        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "optional", "inner": inner}
+    if s.startswith("std::optional"):
+        args = _template_args(s)
+        if args:
+            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            return {"kind": "optional", "inner": inner}
 
-    m = re.match(r"std::vector\s*<\s*(.+?)\s*>\s*$", s)
-    if m:
-        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "vector", "inner": inner}
+    if s.startswith("std::vector"):
+        args = _template_args(s)
+        if args:
+            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            return {"kind": "vector", "inner": inner}
 
-    m = re.match(r"std::array\s*<\s*(.+?)\s*,\s*(\d+)\s*>\s*$", s)
-    if m:
-        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "array", "inner": inner, "size": int(m.group(2))}
+    if s.startswith("std::array"):
+        args = _template_args(s)
+        if len(args) >= 2:
+            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            m = re.match(r"(\d+)", args[1])
+            if m:
+                return {"kind": "array", "inner": inner, "size": int(m.group(1))}
 
-    m = re.match(r"std::unordered_map\s*<\s*(.+?)\s*,\s*(.+?)\s*>\s*$", s)
-    if m:
-        key = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        value = _type_ir(m.group(2).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "map", "key": key, "value": value}
+    if s.startswith("std::unordered_map"):
+        args = _template_args(s)
+        if len(args) >= 2:
+            key = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            value = _type_ir(args[1], enum_by_qualified, enum_by_name)
+            return {"kind": "map", "key": key, "value": value}
 
-    m = re.match(r"std::unordered_set\s*<\s*(.+?)\s*>\s*$", s)
-    if m:
-        inner = _type_ir(m.group(1).strip(), enum_by_qualified, enum_by_name)
-        return {"kind": "set", "inner": inner}
+    if s.startswith("std::unordered_set"):
+        args = _template_args(s)
+        if args:
+            inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
+            return {"kind": "set", "inner": inner}
+
+    # std::string may be spelled as std::basic_string<char, ...> when it appears
+    # inside a template instantiation.
+    if s.startswith("std::basic_string"):
+        args = _template_args(s)
+        if args and args[0] in ("char", "const char"):
+            return {"kind": "string"}
 
     # 128-bit integers are bridge-specific value types sent as marker + decimal string.
     if s in ("dcb::Int128", "Int128"):
         return {"kind": "i128"}
     if s in ("dcb::UInt128", "UInt128"):
         return {"kind": "u128"}
+
+    # FRB-style Dart callback (String -> String).
+    if s in ("dcb::DartFnStringToString", "DartFnStringToString"):
+        return {"kind": "dart_fn"}
 
     # enum references
     if enum_by_qualified and s in enum_by_qualified:
@@ -316,6 +370,25 @@ def parse_project(config_path: Path) -> dict[str, Any]:
     args = [f"-std={cfg['std']}", "-x", "c++"]
     for d in cfg["defines"]:
         args.append(f"-D{d}")
+
+    # Auto-include fetched CMake dependency headers so libclang can fully resolve
+    # templates such as std::vector / std::unordered_map. Search upwards from the
+    # config directory for an existing <repo>/build/_deps.
+    base = cfg["project_root"]
+    deps: Path | None = None
+    for ancestor in (base, *base.parents):
+        candidate = ancestor / "build" / "_deps"
+        if candidate.is_dir():
+            deps = candidate
+            break
+    if deps is not None:
+        for inc in (
+            deps / "async_simple-src",
+            deps / "asio-src" / "asio" / "include",
+        ):
+            if inc.is_dir():
+                cfg["include_paths"].append(inc)
+
     for inc in cfg["include_paths"]:
         args.append(f"-I{inc}")
 

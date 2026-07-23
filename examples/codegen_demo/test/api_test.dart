@@ -129,4 +129,18 @@ void main() {
     expect(await echoU128(big), big);
     expect(await echoU128(BigInt.zero), BigInt.zero);
   });
+
+  test('BRIDGE_ASYNC DartFn greet_dart_fn', () async {
+    expect(
+      await greetDartFn((name) => 'Dart $name', 'world'),
+      'hello, Dart world',
+    );
+    expect(
+      await greetDartFn((name) async {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        return 'async $name';
+      }, 'moon'),
+      'hello, async moon',
+    );
+  });
 }

@@ -236,13 +236,18 @@ final class DartCppBridge implements Finalizable {
     }
   }
 
-  int _registerDartFn(FutureOr<String> Function(String) fn) {
+  /// Register a Dart callback for a reverse FFI call from C++.
+  ///
+  /// The returned id must be written into the request payload. C++ will use
+  /// it to construct a `DartFnStringToString` and call back into Dart.
+  int registerDartFn(FutureOr<String> Function(String) fn) {
     final id = _nextFnId++;
     _dartFns[id] = fn;
     return id;
   }
 
-  void _unregisterDartFn(int id) {
+  /// Unregister a callback previously registered with [registerDartFn].
+  void unregisterDartFn(int id) {
     _dartFns.remove(id);
   }
 
@@ -786,7 +791,7 @@ final class DartCppBridge implements Finalizable {
     int? handle,
     FutureOr<String> Function(String) dartCallback,
   ) async {
-    final fnId = _registerDartFn(dartCallback);
+    final fnId = registerDartFn(dartCallback);
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;
@@ -802,7 +807,7 @@ final class DartCppBridge implements Finalizable {
       ));
       return ByteReader(await c.future).str();
     } finally {
-      _unregisterDartFn(fnId);
+      unregisterDartFn(fnId);
     }
   }
 } 

@@ -102,4 +102,10 @@ async_simple::coro::Lazy<dcb::UInt128> echo_u128(dcb::UInt128 value) {
   co_return value;
 }
 
+async_simple::coro::Lazy<std::string> greet_dart_fn(
+    dcb::DartFnStringToString dart_fn, std::string name) {
+  auto reply = co_await dart_fn.callAsync(name);
+  co_return std::string("hello, ") + reply;
+}
+
 }  // namespace demo::api
