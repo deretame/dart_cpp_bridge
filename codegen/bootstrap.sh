@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Download + verify pinned Python and libclang-ng into a user-level cache.
 #
 # Layout (default):
@@ -44,6 +44,14 @@ default_cache_root() {
   case "$(uname -s)" in
     Darwin*)
       echo "${HOME}/Library/Caches/dart_cpp_bridge/toolchain"
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      # On Windows shells, align with the documented PowerShell path so the same
+      # env is reused regardless of whether the user runs .ps1 or ./codegen.sh.
+      local win_root="${LOCALAPPDATA:-${USERPROFILE:?}/AppData/Local}"
+      # Convert Windows backslashes to forward slashes for MSYS path handling.
+      win_root="${win_root//\\//}"
+      echo "${win_root}/dart_cpp_bridge/toolchain"
       ;;
     *)
       echo "${XDG_CACHE_HOME:-${HOME}/.cache}/dart_cpp_bridge/toolchain"

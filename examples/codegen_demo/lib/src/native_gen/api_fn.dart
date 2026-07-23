@@ -22,8 +22,23 @@ Future<int> add(int a, int b) =>
 int bridgeVersion() =>
     BridgeApi.instance.bridgeVersion();
 
+Future<int> incrementI64(int value) =>
+    BridgeApi.instance.incrementI64(value);
+
+Future<OrderStatus?> optionalStatus(OrderStatus? value) =>
+    BridgeApi.instance.optionalStatus(value);
+
+Future<bool> negateBool(bool value) =>
+    BridgeApi.instance.negateBool(value);
+
 Future<String> sleepGreeting(String name) =>
     BridgeApi.instance.sleepGreeting(name);
+
+Future<int> incrementU32(int value) =>
+    BridgeApi.instance.incrementU32(value);
+
+Future<String?> optionalString(String? value) =>
+    BridgeApi.instance.optionalString(value);
 
 Future<OrderStatus> nextStatus(OrderStatus current) =>
     BridgeApi.instance.nextStatus(current);

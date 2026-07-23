@@ -109,6 +109,66 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 826193512: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = r.i64();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::increment_i64(value);
+                ByteWriter w;
+                w.i64(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 923880942: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = r.opt<::demo::api::OrderStatus>([&]() { return static_cast<::demo::api::OrderStatus>(r.i32()); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::optional_status(value);
+                ByteWriter w;
+                w.opt(out, [&](const auto& v) { w.i32(static_cast<std::int32_t>(v)); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 1187695424: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = static_cast<bool>(r.u8());
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::negate_bool(value);
+                ByteWriter w;
+                w.u8(out ? 1 : 0);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1347623235: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto name = r.str();
@@ -131,6 +191,46 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
             });
           }
         });
+        break;
+      }
+
+      case 1597460230: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = r.u32();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::increment_u32(value);
+                ByteWriter w;
+                w.u32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 2057196713: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = r.opt<std::string>([&]() { return r.str(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::optional_string(value);
+                ByteWriter w;
+                w.opt(out, [&](const auto& v) { w.str(v); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
         break;
       }
 

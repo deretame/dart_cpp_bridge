@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Codegen entry (Unix). Bootstraps pinned toolchain, then runs a Python script with it.
 set -euo pipefail
 
@@ -39,7 +39,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 BOOT_LOG="$(mktemp)"
-if ! bash "${CODEGEN_ROOT}/bootstrap.sh" ${FORCE_ARGS[@]+"${FORCE_ARGS[@]}"} | tee "$BOOT_LOG"; then
+# Use the same bash interpreter that runs this script to avoid picking up a
+# different bash (e.g. WSL /c/Windows/system32/bash) from PATH.
+if ! "${BASH}" "${CODEGEN_ROOT}/bootstrap.sh" ${FORCE_ARGS[@]+"${FORCE_ARGS[@]}"} | tee "$BOOT_LOG"; then
   rm -f "$BOOT_LOG"
   exit 1
 fi

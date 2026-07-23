@@ -21,7 +21,12 @@ final class BridgeApiImpl {
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
+  static const int incrementI64Id = 826193512;
+  static const int optionalStatusId = 923880942;
+  static const int negateBoolId = 1187695424;
   static const int sleepGreetingId = 1347623235;
+  static const int incrementU32Id = 1597460230;
+  static const int optionalStringId = 2057196713;
   static const int nextStatusId = 2129366549;
 
   Future<int?> maybeDouble(int? value) async {
@@ -49,12 +54,56 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
+  Future<int> incrementI64(int value) async {
+    final _payload = ByteWriter();
+    _payload.i64(value);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(incrementI64Id, _payloadBytes);
+    return ByteReader(_bytes).i64();
+  }
+
+  Future<OrderStatus?> optionalStatus(OrderStatus? value) async {
+    final _payload = ByteWriter();
+    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+      _payload.i32(value.index);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(optionalStatusId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? OrderStatus.values[_r.i32()] : null; })();
+  }
+
+  Future<bool> negateBool(bool value) async {
+    final _payload = ByteWriter();
+    _payload.u8(value ? 1 : 0);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(negateBoolId, _payloadBytes);
+    return ByteReader(_bytes).u8() != 0;
+  }
+
   Future<String> sleepGreeting(String name) async {
     final _payload = ByteWriter();
     _payload.str(name);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(sleepGreetingId, _payloadBytes);
     return ByteReader(_bytes).str();
+  }
+
+  Future<int> incrementU32(int value) async {
+    final _payload = ByteWriter();
+    _payload.u32(value);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(incrementU32Id, _payloadBytes);
+    return ByteReader(_bytes).u32();
+  }
+
+  Future<String?> optionalString(String? value) async {
+    final _payload = ByteWriter();
+    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+      _payload.str(value);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(optionalStringId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? _r.str() : null; })();
   }
 
   Future<OrderStatus> nextStatus(OrderStatus current) async {

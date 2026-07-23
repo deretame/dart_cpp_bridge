@@ -119,8 +119,10 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return expr
-    if k == "i32" or k == "u32":
+    if k == "i32":
         return f"ByteReader({expr}).i32()"
+    if k == "u32":
+        return f"ByteReader({expr}).u32()"
     if k == "i64":
         return f"ByteReader({expr}).i64()"
     if k == "string":
@@ -133,8 +135,10 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         inner = t["inner"]
         ik = inner.get("kind")
         read_value: str
-        if ik == "i32" or ik == "u32":
+        if ik == "i32":
             read_value = "_r.i32()"
+        elif ik == "u32":
+            read_value = "_r.u32()"
         elif ik == "i64":
             read_value = "_r.i64()"
         elif ik == "bool":
@@ -157,8 +161,10 @@ def _dart_write_args(args: list[dict[str, Any]]) -> str:
     for a in usable:
         k = a["type"].get("kind")
         n = a["name"]
-        if k == "i32" or k == "u32":
+        if k == "i32":
             lines.append(f"_payload.i32({n});")
+        elif k == "u32":
+            lines.append(f"_payload.u32({n});")
         elif k == "i64":
             lines.append(f"_payload.i64({n});")
         elif k == "string":
@@ -171,8 +177,10 @@ def _dart_write_args(args: list[dict[str, Any]]) -> str:
             inner = a["type"]["inner"]
             ik = inner.get("kind")
             lines.append(f"if ({n} == null) {{ _payload.u8(0); }} else {{ _payload.u8(1);")
-            if ik == "i32" or ik == "u32":
+            if ik == "i32":
                 lines.append(f"  _payload.i32({n});")
+            elif ik == "u32":
+                lines.append(f"  _payload.u32({n});")
             elif ik == "i64":
                 lines.append(f"  _payload.i64({n});")
             elif ik == "string":

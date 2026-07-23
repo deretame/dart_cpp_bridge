@@ -68,4 +68,31 @@ void main() {
     expect(await maybeDouble(5), 10);
     expect(await maybeDouble(-3), -6);
   });
+
+  test('BRIDGE_ASYNC u32 increment_u32', () async {
+    expect(await incrementU32(0), 1);
+    expect(await incrementU32(4294967290), 4294967291);
+  });
+
+  test('BRIDGE_ASYNC i64 increment_i64', () async {
+    expect(await incrementI64(0), 1);
+    expect(await incrementI64(9223372036854775800), 9223372036854775801);
+    expect(await incrementI64(-9223372036854775800), -9223372036854775799);
+  });
+
+  test('BRIDGE_ASYNC bool negate_bool', () async {
+    expect(await negateBool(true), false);
+    expect(await negateBool(false), true);
+  });
+
+  test('BRIDGE_ASYNC optional string', () async {
+    expect(await optionalString(null), isNull);
+    expect(await optionalString('hello'), 'hello!');
+  });
+
+  test('BRIDGE_ASYNC optional enum', () async {
+    expect(await optionalStatus(null), isNull);
+    expect(await optionalStatus(OrderStatus.created), OrderStatus.paid);
+    expect(await optionalStatus(OrderStatus.shipped), OrderStatus.created);
+  });
 }

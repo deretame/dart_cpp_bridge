@@ -153,6 +153,12 @@ class ByteWriter {
   /// Append raw bytes without a length prefix.
   void writeRaw(List<int> data) => _b.add(data);
 
+  /// Append little-endian `i64`.
+  void i64(int v) {
+    final bd = ByteData(8)..setInt64(0, v, Endian.little);
+    _b.add(bd.buffer.asUint8List());
+  }
+
   /// Append little-endian `i32`.
   void i32(int v) {
     final bd = ByteData(4)..setInt32(0, v, Endian.little);
@@ -290,6 +296,14 @@ class ByteReader {
   int u64() {
     _need(8);
     final v = _bd.getUint64(_pos, Endian.little);
+    _pos += 8;
+    return v;
+  }
+
+  /// Read little-endian `i64`.
+  int i64() {
+    _need(8);
+    final v = _bd.getInt64(_pos, Endian.little);
     _pos += 8;
     return v;
   }

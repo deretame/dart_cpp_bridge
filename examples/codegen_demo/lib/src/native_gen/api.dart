@@ -64,6 +64,11 @@ final class BridgeApi {
   Future<int?> maybeDouble(int? value) => _impl.maybeDouble(value);
   Future<int> add(int a, int b) => _impl.add(a, b);
   int bridgeVersion() => _impl.bridgeVersion();
+  Future<int> incrementI64(int value) => _impl.incrementI64(value);
+  Future<OrderStatus?> optionalStatus(OrderStatus? value) => _impl.optionalStatus(value);
+  Future<bool> negateBool(bool value) => _impl.negateBool(value);
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);
+  Future<int> incrementU32(int value) => _impl.incrementU32(value);
+  Future<String?> optionalString(String? value) => _impl.optionalString(value);
   Future<OrderStatus> nextStatus(OrderStatus current) => _impl.nextStatus(current);
 }
