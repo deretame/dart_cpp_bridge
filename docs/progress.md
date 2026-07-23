@@ -209,22 +209,42 @@ dart test
      - 手写 `ticks()` / `_counterIncrementStream` / `failStream` 改用新的 `openStream<int>`。
    - 测试：`examples/codegen_demo` 添加 `tick_stream(StreamSink<int>, int count, int interval_ms)` fixture 并跑通（含正常结束和取消订阅）。
 
-8. **结构体/数据类生成**
-   - 无导出方法的 `struct` / `class` 按值编解码。
-   - Dart 生成同名数据类（字段、==、hashCode 可选）。
-   - 支持嵌套数据类。
+8. **结构体/数据类生成** ⏳
+   - 设计已写入 `docs/codegen_type_mapping.md` §5.2。
+   - 实现点：
+     - `parse_api.py`：识别 `BRIDGE_EXPORT` 的 `struct` / `class`，收集 public 非静态字段；若类无导出方法则标记为 `"kind": "data_class"`。
+     - IR：每个 data_class 记录 `name`、`qualified`、`fields`（含 name + type_ir）。
+     - `_type_ir`：遇到已注册 data_class 的 qualified name 时返回 `"kind": "data_class"`。
+     - `generate.py`：
+       - C++：为每个 data_class 生成 `encode_<Name>` / `decode_<Name>`，在 wire dispatch 中内联使用。
+       - Dart：生成不可变 Dart class（字段、`const` 构造函数、`==`、`hashCode`）。
+   - Fixture：`examples/codegen_demo/native/api/point_rect.h` 新增 `Point`、`Rect` 和顶层函数 `distance(Point, Point)` / `scale(Point, double)` / `boundingBox(List<Point>)`。
+   - 测试目标：数据类作为参数、返回值、嵌套、以及 `List<data_class>` 都能端到端跑通。
 
-9. **类型白名单校验与友好报错**
-   - codegen 遇到不支持类型时给出清晰的文件、行号、类型信息。
+9. **类型白名单校验与友好报错** ⏳
+   - 在 `_type_ir` 返回 `unsupported` 时携带源文件/行号，生成阶段报错前打印清晰上下文。
+   - 数据类字段出现 Opaque 类时给出明确错误。
 
-10. **用户模板产品化**
+10. **用户模板产品化** ⏳
     - 完善 `examples/codegen_demo` 作为可复制的项目模板。
     - CMake FetchContent 接入文档化。
 
-11. **类方法导出（opaque 对象）生成**
-    - 把 Phase 1 手写的 Counter fixture 经验转化为 codegen。
-    - 生成构造函数/析构函数/实例方法/静态方法/DartFn 方法/Stream 方法。
-    - 类是最复杂的一项，放在最后。
+11. **类方法导出（opaque 对象）生成** ⏳
+    - 设计已写入 `docs/codegen_type_mapping.md` §5.3。
+    - 运行时已提供 `dcb::ObjectHandleRegistry`（per-Session）和 `dcb_drop_object`；codegen 只需调用。
+    - 实现点：
+      - `parse_api.py`：
+        - 识别带 `BRIDGE_EXPORT` 的 `class` / `struct`。
+        - 扫描类内 public 方法，按 `BRIDGE_SYNC/ASYNC/NORMAL` 分类。
+        - 识别 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（约定兜底）。
+        - 无导出方法的类归入 data_class；有导出方法的类归入 opaque_class。
+      - IR：每个 opaque_class 记录 `name`、`qualified`、`fields`（可选，当前阶段不导出字段）、`methods`。
+      - `_type_ir`：opaque 类作为参数/返回值时统一按 `"kind": "opaque_handle"` 处理。
+      - `generate.py`：
+        - C++：构造函数生成 insert 到 `ObjectHandleRegistry` 并返回 handle；实例方法 payload 首字段为 handle；析构复用 `dcb_drop_object`。
+        - Dart：生成 `class Counter extends CppOpaqueInterface`，实例方法首参数隐藏 `_handle`。
+    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 生成版 Counter，复用手写测试覆盖的 sync/async/static/DartFn/Normal/Stream 场景。
+    - 限制：当前阶段不导出 Opaque 类字段、不支持方法重载、不支持多态继承。
 
 ---
 
@@ -238,4 +258,4 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；tuple / Stream / struct / 类方法生成 未做。"
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；数据类 / Opaque 类方法生成待实现，设计文档已更新。"

@@ -184,34 +184,33 @@ encodeOpt(name, (v) => w.str(v));
 
 ## 5. 类与结构体
 
-### 5.1 导出规则
+> 状态：数据类与 Opaque 类的**运行时基础设施和第一阶段手写测试已完成**；**代码生成（第二阶段）待实现**。本节把已验证的运行时行为和计划中的生成规则写在一起，作为后续 `parse_api.py` / `generate.py` 改动的设计依据。
 
-- 标记为 `BRIDGE_EXPORT` / `DCB_EXPORT` 的 `class` 或 `struct` 才会进入 IR 生成。
-- 未标记的类/结构体即使被 API 使用，也当作普通 C++ 类型处理（不生成 Dart 类）。
-- 导出的类按用途分为两类：
-  - **数据类（data class）**：只有 public 数据字段，**没有导出成员函数**。按值编码传递，**不进入对象注册表**，因此可以跨 Isolate 自由传递和嵌套。
-  - **Opaque 类**：带有导出成员函数（标记为 `BRIDGE_SYNC` / `BRIDGE_ASYNC` 等）。通过对象句柄在 per-Session 注册表中存活，**不能跨 Isolate 共享**。
-- 数据类字段的类型必须是本白名单支持的类型，也可以是另一个数据类（递归要求：嵌套的类也必须是纯数据类）。
+### 5.1 总体分类
 
-### 5.2 字段/成员导出规则
+导出 `class` / `struct` 必须带 `BRIDGE_EXPORT` / `DCB_EXPORT`（或等价的 `[[bridge::export]]`）标记。Codegen 根据类体内容把它分成两类，**两类不能混用**：
 
-- 仅导出 **public** 的 **非静态非函数** 成员。
-- 不导出 `private` / `protected` 成员。
-- 不导出 **友元（friend）** 声明。
-- 不导出 **成员函数**（方法），即使它们是 public。
-- 如果某个字段需要导出，其类型必须是本白名单支持的类型。
+| 类型 | 判定标准 | wire 传递方式 | 是否进注册表 | 是否可跨 Isolate |
+|------|----------|---------------|--------------|------------------|
+| **数据类（data class）** | 只有 public 非静态数据字段，**没有导出成员函数** | 按值编码 | 否 | 是 |
+| **Opaque 类** | 带有至少一个导出成员函数（构造/析构/实例/静态方法） | 对象句柄 | 是（per-Session） | 否 |
 
-### 5.3 方法导出规则
+- 未标记 `BRIDGE_EXPORT` 的类/结构体即使被 API 使用，也当作普通 C++ 类型处理，不生成 Dart 类。
+- 数据类字段类型必须是白名单内类型；嵌套类型也必须是数据类。
+- Opaque 类**不允许按值传递**：参数/返回值中出现 Opaque 类时必须以指针/引用/句柄形式出现，生成代码统一按句柄处理。
 
-- 结构体/类上的**成员函数默认不导出**。
-- 如果某个成员函数需要暴露给 Dart，需要与顶层函数一样，使用 `BRIDGE_SYNC`、`BRIDGE_ASYNC`、`BRIDGE_NORMAL` 等标记。
-- 成员函数在 Dart 侧生成逻辑待定：可能是生成扩展方法，或生成在类上，需要后续设计确认。此处先记录规则，不展开实现。
+### 5.2 数据类（data class）
 
-### 5.4 编码规则（按字段顺序顺序编解码）
+#### 5.2.1 导出与字段规则
 
-类/结构体在 wire 上不额外传输字段名或类型信息，而是**按字段在 C++ 头文件中的声明顺序**逐个编码/解码每个字段。
+- 只导出 `public` 的**非静态数据成员**。
+- 不导出 `private` / `protected` 成员、友元声明、静态成员变量、成员函数。
+- 字段类型必须是本白名单支持的类型：基础类型、枚举、容器、`std::optional<T>`、`std::pair` / `std::tuple`、另一个数据类。
+- 字段名保持 C++ 原样转为 Dart 小驼峰（与函数参数命名规则一致）。
 
-**编码（C++ → wire）**：
+#### 5.2.2 编码规则
+
+数据类在 wire 上不传输字段名、类型标签或长度，而是**按 C++ 头文件中的声明顺序**逐个字段编码/解码。
 
 ```cpp
 struct BRIDGE_EXPORT Point {
@@ -220,10 +219,9 @@ struct BRIDGE_EXPORT Point {
 };
 
 // wire 布局：x (f64) + y (f64)
-// 即：w.f64(point.x); w.f64(point.y);
 ```
 
-**解码（wire → C++）**：
+解码：
 
 ```cpp
 Point p;
@@ -231,15 +229,25 @@ p.x = r.f64();
 p.y = r.f64();
 ```
 
-规则：
+嵌套数据类：
 
-- 字段顺序必须与 C++ 头文件中的声明顺序**严格一致**，否则编解码错位。
-- 每个字段的编码方式由其自身类型决定：基础类型直接写/读，复合类型（`std::optional`、容器、嵌套类）递归调用对应类型的编解码。
-- 不传输字段名，因此 C++ 和 Dart 生成代码必须基于同一份 IR 字段顺序生成。
+```cpp
+struct BRIDGE_EXPORT Rect {
+    Point topLeft;
+    Point bottomRight;
+};
 
-### 5.5 Dart 类生成形态
+// wire 布局：topLeft.x + topLeft.y + bottomRight.x + bottomRight.y
+```
 
-Dart 侧生成与 C++ 结构体字段顺序一致的普通 Dart class：
+要求：
+
+- C++ 与 Dart 生成代码必须基于同一份 IR 的字段顺序生成，顺序错位会导致 wire 解析错误。
+- 不支持循环引用；codegen 在 IR 阶段检测并报错。
+
+#### 5.2.3 Dart 生成形态
+
+为每个数据类生成不可变的 Dart 值类：
 
 ```dart
 class Point {
@@ -263,159 +271,200 @@ class Point {
 
 生成约定：
 
-- 字段类型按本白名单映射表转换（例如 `std::optional<T>` → `T?`）。
+- 字段类型按白名单映射表转换（`std::optional<T>` → `T?`，容器 → typed list 等）。
 - 不可空字段用 `required`，可空字段为可选命名参数。
 - 字段顺序与 C++ 声明顺序一致。
 - 生成 `hashCode` 和 `operator ==`（基于所有字段），方便 Dart 侧作为值类型使用。
-- 是否生成 `toString` / `copyWith` 等语法糖：当前阶段不做，后续可按需扩展。
+- `toString` / `copyWith` 等语法糖当前阶段不做。
 
-### 5.6 嵌套与递归
+#### 5.2.4 C++ 生成形态
 
-类字段类型可以是本白名单支持的任意类型，包括其他类/结构体：
-
-```cpp
-struct BRIDGE_EXPORT Point { double x; double y; };
-struct BRIDGE_EXPORT Rect { Point topLeft; Point bottomRight; };
-```
-
-wire 布局：
-
-```text
-Rect: topLeft.x (f64) + topLeft.y (f64) + bottomRight.x (f64) + bottomRight.y (f64)
-```
-
-- 不支持循环引用（`struct A { A* next; }` 或相互嵌套导致无限递归）。
-- codegen 在 IR 阶段应检测循环依赖并报错。
-
-### 5.7 映射示例
+Codegen 为每个数据类生成两个内联函数（放在 `wire_dispatch.cpp` 中，避免污染业务头文件）：
 
 ```cpp
-struct BRIDGE_EXPORT Point {
-    double x;
-    double y;
-};
+// 编码
+inline void encode_Point(ByteWriter& w, const Point& v) {
+    w.f64(v.x);
+    w.f64(v.y);
+}
 
-class BRIDGE_EXPORT Rect {
-public:
-    Point topLeft;
-    Point bottomRight;
+// 解码
+inline Point decode_Point(ByteReader& r) {
+    Point v;
+    v.x = r.f64();
+    v.y = r.f64();
+    return v;
+}
+```
+
+生成规则：
+
+- 函数名约定 `encode_<ClassName>` / `decode_<ClassName>`。
+- 嵌套数据类递归调用对应 encode/decode。
+- 这些函数仅在生成 wire 内部使用；业务代码仍然直接操作原始 C++ 类型。
+
+### 5.3 Opaque 类
+
+#### 5.3.1 导出规则
+
+- 类本身必须带 `BRIDGE_EXPORT`。
+- 导出的方法必须带通道标记：`BRIDGE_SYNC`、`BRIDGE_ASYNC`、`BRIDGE_NORMAL`。
+- 构造函数和析构函数使用特殊标记：
+  - `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（推荐）。
+  - 或按约定识别：与类同名且无返回类型的成员函数视为构造函数；`~T()` 视为析构函数。标记优先，约定兜底。
+- 不导出 `private` / `protected` 方法、友元函数、虚函数、纯虚函数、重载运算符。
+- 不导出拷贝/移动构造函数（避免按值拷贝 Opaque 对象）。
+- 静态方法与非静态方法都按同样方式标记。
+
+#### 5.3.2 对象注册表（per-Session）
+
+运行时已实现 `dcb::ObjectHandleRegistry`（`include/dart_cpp_bridge/object_handle.hpp`）：
+
+- 存储形式：`std::unordered_map<session_id, SessionStore>`，每个 `SessionStore` 内含 `local_handle → (shared_ptr<void>, DropFn)`。
+- 全局句柄：`session_id << 32 | local_handle`。
+- Session 关闭时调用 `drop_all(session_id)`，释放该 Session 的所有对象。
+- 不同 Session 的句柄空间隔离，Opaque 对象**不能跨 Isolate 共享**。
+
+Codegen 不需要自己实现注册表，只需要调用已有 API：
+
+```cpp
+// 构造对象后注册，获得全局 handle
+auto obj = std::make_shared<Counter>(initialValue);
+auto handle = dcb::ObjectHandleRegistry::instance().insert(
+    session_id,
+    obj,
+    [](std::shared_ptr<void>& p) { /* p 析构时自动调用 Counter 析构函数 */ });
+```
+
+#### 5.3.3 构造函数
+
+C++ 头文件示例：
+
+```cpp
+class BRIDGE_EXPORT Counter {
+ public:
+    BRIDGE_CONSTRUCTOR
+    Counter(std::int32_t initialValue);
+
+    BRIDGE_CONSTRUCTOR
+    static Counter zero();
 };
 ```
 
-Dart 侧生成：
+Wire 生成（`Counter(std::int32_t)`）：
+
+```cpp
+case counter_ctor_id: {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto initialValue = r.i32();
+    auto obj = std::make_shared<Counter>(initialValue);
+    const auto handle = dcb::ObjectHandleRegistry::instance().insert(
+        session_id, obj, [](std::shared_ptr<void>&) {});
+    ByteWriter w;
+    w.u64(handle);
+    post_ok(session, gen, req, method, w.raw());
+    break;
+}
+```
+
+Dart 生成：
 
 ```dart
-class Point {
-  final double x;
-  final double y;
+class Counter extends CppOpaqueInterface {
+  Counter._({required super.bridge, required super.handle});
 
-  const Point({required this.x, required this.y});
+  factory Counter({required int initialValue}) {
+    return BridgeApi.instance._counterCtor(initialValue: initialValue);
+  }
 
-  @override
-  int get hashCode => x.hashCode ^ y.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Point &&
-          runtimeType == other.runtimeType &&
-          x == other.x &&
-          y == other.y;
-}
-
-class Rect {
-  final Point topLeft;
-  final Point bottomRight;
-
-  const Rect({required this.topLeft, required this.bottomRight});
-
-  @override
-  int get hashCode => topLeft.hashCode ^ bottomRight.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Rect &&
-          runtimeType == other.runtimeType &&
-          topLeft == other.topLeft &&
-          bottomRight == other.bottomRight;
-}
-```
-
-### 5.8 参考 FRB 实现
-
-FRB 的类编解码也是按字段顺序生成：
-
-- Rust 侧：`impl SseDecode for T` 中按字段顺序逐个调用 `<FieldType>::sse_decode`，最后构造结构体。
-- Dart 侧：生成 `class T { final ... }`，并在 `sse_decode_T` 中按字段顺序逐个 decode，然后调用构造函数。
-
-本项目采用相同的顺序编解码策略，只是 C++ 侧需要 codegen 生成每个导出类的 `encode` / `decode` 函数（或直接用 `ByteReader` / `ByteWriter` 内联到 wire dispatch 中）。
-
-### 5.9 成员函数导出（P3 手写测试阶段）
-
-#### 5.9.1 为什么不能当作普通函数
-
-成员函数（method）和普通自由函数有本质区别：
-
-1. **绑定到对象实例**：方法调用必须有 `this` / `self`，不能脱离对象存在。
-2. **可修改对象状态**：`obj.increment(5)` 会改变 `obj` 的内部字段。
-3. **需要生命周期管理**：对象创建后不能立即释放，Dart 侧对象被 GC 或显式 `dispose` 时，C++ 侧才能销毁对应实例。
-4. **可能涉及线程安全/锁**：如果对象会被多线程访问，调用方法时需要加锁。
-
-因此，成员函数导出**不是**简单地把对象按值编码成方法参数，而是需要一套"对象句柄 + 注册表 + 生命周期管理"机制。
-
-#### 5.9.2 参考 FRB 的实现方式
-
-参考 Flutter Rust Bridge 生成的代码（例如 `frb_generated.rs` / `frb_generated.io.dart`），FRB 处理成员函数的核心是 **`RustOpaque<T>` / opaque 对象**。
-
-**Rust 侧**（来自 `frb_generated.rs`）：
-
-```rust
-fn wire__crate__api__http__HttpClient_base_url_impl(...) {
-    // ...
-    let api_that = <RustOpaque<HttpClient>>::sse_decode(&mut deserializer);
-    // ...
-    let api_that_guard = api_that.lockable_decode_sync_ref();
-    let output_ok = crate::api::http::HttpClient::base_url(&*api_that_guard)?;
-    // ...
-}
-```
-
-要点：
-- Dart 侧只持有一个不透明句柄（opaque handle）。
-- 方法调用时，Dart 把句柄传回 Rust。
-- Rust 根据句柄找到对象，获取引用（必要时加锁），再调用真实方法。
-- 对象生命周期由引用计数或 `NativeFinalizer` 管理。
-
-**Dart 侧**（来自 `frb_generated.io.dart`，概念示意）：
-
-```dart
-class HttpClient extends RustOpaque {
-  String baseUrl() {
-    return _apiImpl.httpClientBaseUrl(this);
+  factory Counter.zero() {
+    return BridgeApi.instance._counterZero();
   }
 }
 ```
 
-Dart 的 `HttpClient` 类只保存一个句柄，方法调用通过 FFI 转发到 Rust，Rust 再分派到真实成员函数。
+- 工厂构造（static 方法返回 Opaque 对象）本质上与普通 static 方法相同，只是 Dart 侧把它暴露为 `factory Counter.zero()`。
+- 默认构造函数：参数为空或全部带默认值的构造函数在 Dart 侧生成 `factory Counter()`。
 
-#### 5.9.3 本项目最小实现设计
+#### 5.3.4 析构函数 / 生命周期
 
-C++ 侧（运行时层）需要新增：
+- C++ 析构函数不需要单独生成 wire method；运行时提供统一的 `dcb_drop_object(handle)`。
+- Dart 侧 `CppOpaqueInterface.dispose()` 直接调用 `dcb_drop_object`。
+- `NativeFinalizer` attach 到对象上，GC 时自动调用 `dcb_drop_object`。
+- Session 关闭时注册表 `drop_all` 释放该 Session 全部对象，因此不需要 Dart 显式 dispose。
 
-1. **对象注册表**：`std::unordered_map<std::uint64_t, std::shared_ptr<void>>` 或按类型区分的注册表，存储 `std::shared_ptr<T>`。
-2. **对象句柄分配**：`std::uint64_t allocate_handle()`，单调递增。
-3. **构造函数导出**：`BRIDGE_SYNC` / `BRIDGE_ASYNC` 标记的构造函数，创建对象并返回 handle。
-4. **析构函数**：`dcb_drop_object(std::uint64_t handle)`，从注册表删除并释放对象。
-5. **方法 dispatch**：成员函数 wire 方法的 payload 包含 `handle` + 其他参数，C++ 侧根据 handle 找到对象，调用方法。
+#### 5.3.5 实例方法
 
-Dart 侧生成形态（对齐 FRB 的 `RustOpaqueInterface`）：
+实例方法在 wire payload 中第一个字段是对象 handle，后面跟着普通参数。
+
+C++ 头文件示例：
+
+```cpp
+class BRIDGE_EXPORT Counter {
+ public:
+    BRIDGE_ASYNC
+    async_simple::coro::Lazy<std::int32_t> value() const;
+
+    BRIDGE_SYNC
+    void increment(std::int32_t delta = 1);
+};
+```
+
+Wire 生成（async `value`）：
+
+```cpp
+case counter_value_id: {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto handle = r.u64();
+    auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+    if (!obj) {
+        post_err(session, gen, req, method,
+                 "Counter handle not found or already dropped");
+        break;
+    }
+    Runtime::instance().spawn_on_asio(
+        [session, gen, req, method, handle, obj]() -> async_simple::coro::Lazy<> {
+            try {
+                auto* that = static_cast<Counter*>(obj.get());
+                auto out = co_await that->value();
+                ByteWriter w;
+                w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+            } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+            }
+            co_return;
+        });
+    break;
+}
+```
+
+- Sync 实例方法直接在 dispatch 线程执行；async/normal/stream 实例方法先把 handle 解析出来，再在对应调度器上调用方法。
+- 无效 handle 统一返回 `"<Class> handle not found or already dropped"`。
+- `const` 方法当前阶段不影响 wire，仅作为文档提示。
+
+#### 5.3.6 静态方法
+
+静态方法没有 `this`，payload 中不包含 handle，与普通顶层函数生成方式相同。区别在于 Dart 侧把它挂在类上：
 
 ```dart
-// 统一由 codegen 生成的 opaque 基类。
+class Counter extends CppOpaqueInterface {
+  static int sum(int a, int b) => BridgeApi.instance._counterSum(a, b);
+}
+```
+
+静态方法可以返回基础类型、容器、数据类，也可以返回新的 Opaque 对象（返回 handle）。
+
+#### 5.3.7 Dart 生成形态
+
+```dart
 abstract base class CppOpaqueInterface implements Finalizable {
-  CppOpaqueInterface({required this._bridge, required this._handle}) {
-    _finalizer = NativeFinalizer(_bridge._b.dropObject);
+  CppOpaqueInterface({required DartCppBridge bridge, required int handle})
+      : _bridge = bridge,
+        _handle = handle {
+    _finalizer = NativeFinalizer(_bridge.bindings.dropObject);
     _attachFinalizer();
   }
 
@@ -436,115 +485,70 @@ abstract base class CppOpaqueInterface implements Finalizable {
     if (_disposed) return;
     _disposed = true;
     _finalizer.detach(this);
-    _bridge._b.dropObject
-        .asFunction<void Function(Pointer<Void>)>()(
-          Pointer.fromAddress(_handle).cast<Void>(),
-        );
+    _bridge.bindings.dropObject(Pointer.fromAddress(_handle).cast<Void>());
   }
 }
 
 class Counter extends CppOpaqueInterface {
   Counter._({required super.bridge, required super.handle});
 
-  factory Counter({required int initialValue}) {
-    return DartCppBridge.instance.createCounter(initialValue: initialValue);
-  }
+  factory Counter({required int initialValue}) =>
+      BridgeApi.instance._counterCtor(initialValue: initialValue);
 
-  Future<void> increment(int delta) => _bridge._counterIncrement(_handle, delta);
+  factory Counter.zero() => BridgeApi.instance._counterZero();
 
-  Future<int> value() => _bridge._counterGetValue(_handle);
+  Future<int> value() => BridgeApi.instance._counterValue(_handle);
 
-  int valueSync() => _bridge._counterValueSync(_handle);
+  void increment([int delta = 1]) =>
+      BridgeApi.instance._counterIncrement(_handle, delta);
 
-  static int sum(int a, int b) => DartCppBridge.instance._counterStaticSum(a, b);
+  static int sum(int a, int b) => BridgeApi.instance._counterSum(a, b);
 
   Future<String> callCallback(FutureOr<String> Function(String value) cb) =>
-      _bridge._counterCallDartFn(_handle, cb);
+      BridgeApi.instance._counterCallDartFn(_handle, cb);
 }
 ```
 
-要点：
+- `CppOpaqueInterface` 在 `dart/lib/src/bridge.dart` 或生成代码中提供；codegen 直接复用。
+- 实例方法第一个参数为 `_handle`，Dart 侧不暴露给业务。
+- 默认参数：C++ 方法带默认值时，Dart 侧生成可选位置参数（优先）或可选命名参数。
 
-- Dart 侧 opaque 类 **继承** `CppOpaqueInterface` 基类（手写测试 fixture 采用 `extends`；生成代码若需要继承其他类，可改为 `implements` 并自行重复 finalizer 逻辑）。
-- `dispose()` 和 `NativeFinalizer` 的 attach/detach 逻辑在基类中统一实现，避免每个生成类重复。
-- 构造函数在 Dart 侧生成 factory，内部调用 C++ 构造函数 wire 方法获得 handle。
+#### 5.3.8 限制
 
-#### 5.9.4 标记规则
+- 不支持 Opaque 类作为数据类字段（数据类中嵌入 Opaque 类型会在解析阶段报错）。
+- 不支持 Opaque 类按值传递（参数/返回值中 Opaque 类型统一按 handle 处理）。
+- 不支持多态继承：不能把 `class B : public A` 当作 `A` 来传参或返回。
+- 不支持抽象类、虚函数、纯虚函数、重载运算符作为导出方法。
+- 不支持方法重载（当前阶段；同名不同签名的方法需要用户手动改名，或后续通过 name mangling 支持）。
+- 默认不加对象级锁；多线程并发调用同一对象的线程安全由业务代码保证。
 
-- 只有标记了 `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 的 public 成员函数才会导出。
-- 未标记的成员函数不导出。
-- 构造函数和析构函数需要特殊标记（如 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`），或通过约定识别（如 `T()` 作为构造函数）。
-- 友元函数、private/protected 方法不导出。
+### 5.4 实现阶段划分
 
-#### 5.9.5 限制
+为降低复杂度，类/结构体生成拆成两步：
 
-- 当前阶段（P3）仍处于**手写测试阶段**，`Counter` fixture 已覆盖 async / sync / static / DartFn / Normal / Stream 成员方法，以及多实例独立、dispose 后错误等基础场景；但**代码生成尚未实现**，构造函数/析构函数的通用标记、默认参数、方法重载等也还未完成。当前首要目标是继续把手写测试跑通。
-- 导出为 Dart 类的 `class` / `struct` **必须定义在 API 头文件**（codegen 扫描的用户头文件，如 `native/api/*.h`）中，否则 codegen 不会进入 IR。
-- **不支持虚函数、纯虚函数、重载运算符**作为导出方法。
-- **不支持多态继承**：不能把 `class B : public A` 当作 `A` 来传参或返回。
-- **不支持抽象类**：导出的类必须有完整实现，不能是抽象基类。
-- **Opaque 对象（带导出成员函数的类）不支持跨 Isolate 共享**：对象句柄注册表已实现为 **per-Session**，不同 Isolate 的 Session 看不到彼此的对象。句柄编码为 `session_id << 32 | local_handle`。
-- **Opaque 对象不能按值返回**：成员函数返回 opaque 对象时必须返回 handle（Dart 侧为 `Counter` 等 opaque 类），不能按值拷贝；只有 trivially copyable 的数据类可以按值返回。
-- 但**普通数据类 / 数据结构体**（只有 public 字段、没有导出方法）仍然可以跨 Isolate 使用，因为它们按值编码传递，不依赖句柄生命周期，也**不进入对象注册表**。
-- **数据类可以嵌套其他数据类**，但嵌套的类也必须是纯数据类（只有 public 字段，没有导出方法）。codegen 在解析时应检查并拒绝在数据类中嵌入 opaque 类型。
-- 暂不支持对象的方法在 Dart 侧被多线程并发调用时的默认加锁（由业务代码自己保证线程安全）。
+1. **数据类生成**：先做 `Point` / `Rect` 的端到端测试，验证字段顺序、嵌套、与顶层函数的参数/返回值配合。
+2. **Opaque 类生成**：再做 `Counter` 生成版，覆盖构造/析构/同步/异步/静态/DartFn/Stream 方法，并复用第一阶段手写的测试场景。
 
-#### 5.9.6 待完善清单
+### 5.5 测试 fixture 规划
 
-| 序号 | 完善项 | 说明 |
-|------|--------|------|
-| 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 已实现：手写测试用 `extends` 复用 `dispose()` / `NativeFinalizer` attach/detach。 |
-| 2 | **构造函数多种形态** | 已实现并手写测试：默认构造 `Counter.defaultCtor()`、带参构造 `Counter.create(initialValue)`、工厂构造 `Counter.zero()`。copy/move 构造为 codegen 阶段限制。 |
-| 3 | **析构函数生命周期** | 已实现并手写测试：`dispose()` 手动释放 + `NativeFinalizer` 自动释放；Session 关闭时 per-Session 注册表自动 drop 所有对象。 |
-| 4 | **Sync / Async / Normal / Stream 成员方法** | 已实现并手写测试：Counter 覆盖六种调用模式。 |
-| 5 | **Static 方法** | 已实现并手写测试：`Counter.sum(a, b)`。 |
-| 6 | **方法重载** | 同名不同参数的方法需要生成不同 method_id。 |
-| 7 | **默认参数** | 已实现并手写测试：C++ `Counter::increment(delta = 1)` 映射为 Dart 可选参数 `counter.increment()` / `counter.increment(5)`。 |
-| 8 | **const 方法** | 标记为只读，不影响 wire，但可用于文档/代码提示。 |
-| 9 | **丰富参数/返回值类型** | 已实现并手写测试：Counter 成员方法支持 `List<int>`、`int?`、返回新的 opaque Counter；基本类型/枚举/容器/optional 已在顶层函数覆盖。 |
-| 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
-| 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
-| 12 | **无效句柄错误信息** | 已实现并手写测试：handle 不存在或已 drop 时返回清晰错误。 |
-| 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；跨 Isolate 句柄隔离已测；GC 自动释放由 `NativeFinalizer` 机制保证，不手写确定性测试。 |
+在 `examples/codegen_demo` 中新增：
 
-#### 5.9.7 第一阶段手写测试剩余目标
+- `native/api/point_rect.h`：
+  - `Point { double x; double y; }`
+  - `Rect { Point topLeft; Point bottomRight; }`
+  - 顶层函数 `double distance(Point a, Point b)` 验证数据类作为参数。
+  - 顶层函数 `Point scale(Point p, double factor)` 验证数据类作为返回值。
+  - 顶层函数 `Rect boundingBox(List<Point> points)` 验证 `List<data class>`。
 
-以下目标属于**第一阶段手写测试**（Phase 1），在正式启动 codegen 之前需要逐个跑通。按推荐顺序排列：
+- `native/api/counter.h`（生成版 Counter）：
+  - 构造函数 `Counter(int32_t initialValue)`。
+  - 静态方法 `Counter zero()`。
+  - 实例方法：`increment([int delta = 1])`、`value()` async、`valueSync()` sync、`sum(a, b)` static。
+  - `Normal` 方法：例如 `heavyCompute(int rounds)` 在 thread pool 执行。
+  - `Stream` 方法：例如 `tickStream(int count, int intervalMs)`。
+  - `DartFn` 方法：例如 `greetDartFn(dcb::DartFn<std::string(std::string)> cb, std::string name)`。
 
-1. **构造函数多种形态** ✅
-   - 默认构造：`Counter()`（等价于 `initialValue = 0`）。
-   - 带参构造：已有 `Counter(initialValue)`，进一步验证参数校验路径。
-   - 工厂构造（静态方法）：如 `Counter.zero()`，验证 static 方法返回 opaque 对象 handle。
-   - 拷贝/移动构造限制：验证 opaque 对象不导出 copy/move constructor，禁止隐式按值拷贝。
-
-2. **析构函数生命周期 / GC 自动释放** ✅
-   - 明确 `dispose()` 手动释放与 `NativeFinalizer` 自动释放的语义。
-   - 手写测试验证：bridge shutdown 时会关闭 Session，per-Session 注册表自动 drop 该 Session 的所有对象，旧 Counter 句柄失效。
-   - GC 自动释放依赖 Dart `NativeFinalizer`，由 `CppOpaqueInterface` 统一 attach/detach；因 Dart GC 时机不可控，不手写确定性测试，但机制已跑通。
-
-3. **无效句柄错误信息** ✅
-   - handle 不存在或已 drop 时返回清晰错误，区分“未找到”和“已释放”。
-   - 例如：`Counter handle not found or already dropped in session X`。
-
-4. **默认参数** ✅
-   - C++ 成员方法支持默认参数，Dart 侧生成显式可选参数。
-   - 示例：`Counter::increment(std::int32_t delta = 1)`，Dart 侧 `counter.increment()` 默认 `+1`，`counter.increment(5)` 指定 `+5`。
-
-5. **丰富的参数/返回值类型** ✅
-   - 扩展 Counter 成员方法，验证参数/返回值可以是：
-     - 容器：`addList(List<int>)` → `std::vector<int>`。
-     - optional：`setValue(int?)` → `std::optional<int>`。
-     - 其他 opaque 对象：`duplicate()` 返回新的 Counter handle。
-   - 基本类型、枚举、容器、optional 等已在顶层函数中覆盖。
-
-6. **跨 Isolate 句柄隔离** ✅
-   - 验证 per-Session 注册表：在 worker isolate 创建的 Counter handle，传回 main isolate 后使用会失败。
-   - 这是 per-Session 句柄设计的关键安全边界。
-
-以上目标完成后，第一阶段手写测试基本闭环，再进入 codegen（第二阶段）。
-
-
-## 5.5 DartFn 反向回调
+## 6. DartFn 反向回调
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
@@ -571,11 +575,11 @@ class Counter extends CppOpaqueInterface {
   3. 在业务方法中通过 `callback.callAsync(args...)` 异步调用 Dart 闭包并 `co_await` 结果。
 
 - 限制：
-  - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128` 等）。
+  - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128`、数据类等）。
   - 同步阻塞版本 `callSync` 也可用，但如果在 `io_context` 线程上调用会阻塞事件循环，由业务代码自行决定。
   - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
 
-## 6. 当前白名单（实现优先级）
+## 7. 当前白名单（实现优先级）
 
 下表按优先级和实现顺序记录当前计划支持的类型：
 
@@ -588,15 +592,15 @@ class Counter extends CppOpaqueInterface {
 | P1 | `std::unordered_map<K, V>` | 已手写测试 |
 | P1 | `std::unordered_set<T>` | 已手写测试 |
 | P1 | `std::pair<T1, T2>` / `std::tuple<T1, T2, ...>` → Dart Record | 已手写测试 |
-| P1 | 类/结构体（public 字段、自动导出、友元不导出） | 已手写测试 |
+| P1 | 数据类（只有 public 字段的 struct / class，按值编解码） | 已手写测试；codegen 进行中 |
 | P2 | 大整数 `Int128` / `UInt128` → `BigInt`（统一字符串存储） | 已手写测试 |
 | P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
-| P3 | 类/结构体上的方法导出（需标记） | 手写测试阶段（Counter fixture 已覆盖 async/sync/static/DartFn/Normal/Stream，codegen 尚未实现） |
+| P3 | Opaque 类方法导出（构造/析构/实例/静态方法） | 已手写测试；codegen 待实现 |
 | P3 | 嵌套复合类型（`list<struct>` 等） | 已手写测试 |
 
 ---
 
-## 7. 明确不支持（当前阶段）
+## 8. 明确不支持（当前阶段）
 
 以下类型或特性当前白名单**不包含**，codegen 遇到时应报错或忽略：
 
@@ -612,7 +616,7 @@ class Counter extends CppOpaqueInterface {
 
 ---
 
-## 8. 编码原则
+## 9. 编码原则
 
 1. **Dart 侧优先使用 typed list**：只要元素类型是固定宽度整数或浮点，就生成 `Uint8List`、`Int32List` 等 typed list，减少内存和装箱开销。
 2. **可空优先使用 `?`**：`std::optional<T>` 映射为 `T?`，而不是 `Option<T>` 包装类。
