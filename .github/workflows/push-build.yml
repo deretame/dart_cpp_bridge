@@ -51,7 +51,7 @@ jobs:
       - name: 运行 codegen 生成 demo 绑定
         run: |
           cd codegen
-          ./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+          bash codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
 
       - name: 构建 codegen demo 原生库
         run: |
@@ -104,7 +104,7 @@ jobs:
       - name: 运行 codegen 生成 demo 绑定
         run: |
           cd codegen
-          pwsh -ExecutionPolicy Bypass -File .\codegen.ps1 -Script scripts/run_codegen.py -- ..\examples\codegen_demo\dart_cpp_bridge.yaml
+          pwsh -ExecutionPolicy Bypass -File .\codegen.ps1 -Script scripts/run_codegen.py ..\examples\codegen_demo\dart_cpp_bridge.yaml
 
       - name: 构建 codegen demo 原生库
         run: |
@@ -160,7 +160,7 @@ jobs:
       - name: 运行 codegen 生成 demo 绑定
         run: |
           cd codegen
-          ./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+          bash codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
 
       - name: 构建 codegen demo 原生库
         run: |
