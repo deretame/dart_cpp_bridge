@@ -496,6 +496,40 @@ class Counter extends CppOpaqueInterface {
 | 12 | **无效句柄错误信息** | handle 不存在或已 drop 时返回清晰错误。 |
 | 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；剩余 GC 自动释放、跨 Isolate 句柄隔离等。 |
 
+#### 5.9.7 第一阶段手写测试剩余目标
+
+以下目标属于**第一阶段手写测试**（Phase 1），在正式启动 codegen 之前需要逐个跑通。按推荐顺序排列：
+
+1. **构造函数多种形态**
+   - 默认构造：`Counter()`（等价于 `initialValue = 0`）。
+   - 带参构造：已有 `Counter(initialValue)`，进一步验证参数校验路径。
+   - 工厂构造（静态方法）：如 `Counter.zero()`，验证 static 方法返回 opaque 对象 handle。
+   - 拷贝/移动构造限制：验证 opaque 对象不导出 copy/move constructor，禁止隐式按值拷贝。
+
+2. **析构函数生命周期 / GC 自动释放**
+   - 明确 `dispose()` 手动释放与 `NativeFinalizer` 自动释放的语义。
+   - 手写测试验证：Dart 侧 `Counter` 引用失效后，native 对象最终被 drop（GC 非确定性，测试为“大概率触发”版本）。
+
+3. **无效句柄错误信息**
+   - handle 不存在或已 drop 时返回清晰错误，区分“未找到”和“已释放”。
+   - 例如：`Counter handle not found or already dropped in session X`。
+
+4. **默认参数**
+   - C++ 成员方法支持默认参数，Dart 侧生成显式可选命名参数。
+   - 示例：`Counter.increment([int delta = 1])`，Dart 侧 `counter.increment()` 默认 `+1`。
+
+5. **丰富的参数/返回值类型**
+   - 扩展 Counter 或新增 fixture，验证成员方法参数/返回值可以是：
+     - 基础类型、枚举、optional、容器（list/map/set）。
+     - 其他数据类（按值传递）。
+     - 其他 opaque 对象（返回 handle）。
+
+6. **跨 Isolate 句柄隔离**
+   - 验证 per-Session 注册表：在 worker isolate 创建的 Counter handle，传回 main isolate 后使用会失败。
+   - 这是 per-Session 句柄设计的关键安全边界。
+
+以上目标完成后，第一阶段手写测试基本闭环，再进入 codegen（第二阶段）。
+
 
 ## 6. 当前白名单（实现优先级）
 
