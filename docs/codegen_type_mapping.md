@@ -2,8 +2,8 @@
 
 > 记录 dart_cpp_bridge Codegen 阶段当前计划支持的 C++ ↔ Dart 类型映射规则。用于后续实现 IR 生成、Dart 代码生成和 C++ wire 编解码时参照。
 >
-> 更新日期：2026-07-22
-> 状态：文档已整理，代码实现尚未完成。
+> 更新日期：2026-07-23
+> 状态：基础类型、容器、Option、枚举、128 位整数、DartFn 已实现并测试；tuple / Stream / struct / opaque 类方法生成待做。
 
 ---
 
@@ -548,29 +548,30 @@ class Counter extends CppOpaqueInterface {
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
-| `dcb::DartFnStringToString` | `FutureOr<String> Function(String)` | FRB 风格的 Dart 闭包反向调用：C++ 异步等待 Dart 返回字符串 |
+| `dcb::DartFn<Ret(Args...)>` | `FutureOr<Ret> Function(Args...)` | FRB 风格的 Dart 闭包反向调用：C++ 异步等待 Dart 返回结果 |
 
-- 使用方式：在 API 头文件中将参数声明为 `dcb::DartFnStringToString`，例如：
+- 使用方式：在 API 头文件中将参数声明为 `dcb::DartFn<Ret(Args...)>`，语法类似 `std::function`。例如：
 
   ```cpp
   BRIDGE_ASYNC
   async_simple::coro::Lazy<std::string> greet_dart_fn(
-      dcb::DartFnStringToString dart_fn, std::string name);
+      dcb::DartFn<std::string(std::string)> callback, std::string name);
   ```
 
 - Dart 侧生成代码会：
-  1. 调用 `bridge.registerDartFn(closure)` 注册闭包，获得一个 `fn_id`；
-  2. 把 `fn_id` 按参数顺序写入请求 payload；
-  3. 调用 C++ 方法；
-  4. 在 `try / finally` 中调用 `bridge.unregisterDartFn(fn_id)`，确保闭包在调用结束后被清理。
+  1. 按实际参数/返回值类型生成 `FutureOr<Ret> Function(Args...)`；
+  2. 调用 `bridge.registerDartFn(binaryClosure)` 注册一个二进制包装闭包，获得一个 `fn_id`；
+  3. 把 `fn_id` 按参数顺序写入请求 payload；
+  4. 调用 C++ 方法；
+  5. 在 `try / finally` 中调用 `bridge.unregisterDartFn(fn_id)`，确保闭包在调用结束后被清理。
 
 - C++ 侧生成代码会：
   1. 从 payload 中按参数顺序读出 `fn_id`；
-  2. 构造 `dcb::DartFnStringToString(session, generation, fn_id)`；
-  3. 在业务方法中通过 `dart_fn.callAsync(arg)` 异步调用 Dart 闭包并 `co_await` 结果。
+  2. 构造 `dcb::DartFn<Signature>(session, generation, fn_id, encode, decode)`，其中 `encode` / `decode` 由生成代码按 `Ret` 和 `Args...` 的类型生成；
+  3. 在业务方法中通过 `callback.callAsync(args...)` 异步调用 Dart 闭包并 `co_await` 结果。
 
 - 限制：
-  - 当前只提供字符串到字符串的回调类型（`String -> FutureOr<String>`）。
+  - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128` 等）。
   - 同步阻塞版本 `callSync` 也可用，但如果在 `io_context` 线程上调用会阻塞事件循环，由业务代码自行决定。
   - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
 

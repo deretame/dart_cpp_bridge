@@ -297,12 +297,19 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
 
       case 1789823149: {
         ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto dart_fn = dcb::DartFnStringToString(session, gen, r.u64());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
         const auto name = r.str();
         Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, dart_fn, name = std::move(name)]() -> async_simple::coro::Lazy<> {
+            [session, gen, req, method, callback, name = std::move(name)]() -> async_simple::coro::Lazy<> {
               try {
-                auto out = co_await ::demo::api::greet_dart_fn(dart_fn, name);
+                auto out = co_await ::demo::api::greet_dart_fn(callback, name);
                 ByteWriter w;
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());

@@ -230,14 +230,4 @@ void SessionRegistry::close_all() {
   }
 }
 
-async_simple::coro::Lazy<std::string> DartFnStringToString::invoke_async(
-    std::shared_ptr<Session> session, std::uint64_t generation, std::uint64_t fn_id,
-    std::string arg) {
-  ByteWriter args;
-  args.str(arg);
-  auto raw = co_await session->invoke_dart_fn_async(generation, fn_id, args.raw());
-  ByteReader r(raw.data(), raw.size());
-  co_return r.str();
-}
-
 }  // namespace dcb

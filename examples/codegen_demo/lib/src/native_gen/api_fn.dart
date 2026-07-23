@@ -51,8 +51,8 @@ Future<BigInt> echoU128(BigInt value) =>
 Future<int> incrementU32(int value) =>
     BridgeApi.instance.incrementU32(value);
 
-Future<String> greetDartFn(FutureOr<String> Function(String) dart_fn, String name) =>
-    BridgeApi.instance.greetDartFn(dart_fn, name);
+Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) =>
+    BridgeApi.instance.greetDartFn(callback, name);
 
 Future<int> sumSet(Set<int> values) =>
     BridgeApi.instance.sumSet(values);

@@ -100,6 +100,6 @@ async_simple::coro::Lazy<dcb::UInt128> echo_u128(dcb::UInt128 value);
 // async → Dart: Future<String> greetDartFn(String Function(String) callback, String name)
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> greet_dart_fn(
-    dcb::DartFnStringToString dart_fn, std::string name);
+    dcb::DartFn<std::string(std::string)> callback, std::string name);
 
 }  // namespace demo::api

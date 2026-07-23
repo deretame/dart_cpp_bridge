@@ -147,17 +147,25 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).u32();
   }
 
-  Future<String> greetDartFn(FutureOr<String> Function(String) dart_fn, String name) async {
-    final _dart_fnId = bridge.registerDartFn(dart_fn);
+  Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
     try {
       final _payload = ByteWriter();
-      _payload.u64(_dart_fnId);
+      _payload.u64(_callbackId);
       _payload.str(name);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(greetDartFnId, _payloadBytes);
     return ByteReader(_bytes).str();
     } finally {
-      bridge.unregisterDartFn(_dart_fnId);
+      bridge.unregisterDartFn(_callbackId);
     }
   }
 

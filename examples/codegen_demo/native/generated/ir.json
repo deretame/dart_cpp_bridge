@@ -333,9 +333,18 @@
       "method_id": 1789823149,
       "args": [
         {
-          "name": "dart_fn",
+          "name": "callback",
           "type": {
-            "kind": "dart_fn"
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
           }
         },
         {
@@ -451,5 +460,8 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
-  "diagnostics": []
+  "diagnostics": [
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: template parameter pack cannot have a default argument",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: template parameter pack cannot have a default argument"
+  ]
 }

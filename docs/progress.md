@@ -183,9 +183,10 @@ dart test
    - 修复了 libclang 在 Windows 上无法解析 `std::vector` / `std::unordered_map` / `std::unordered_set` 的问题：codegen 自动把 `build/_deps/async_simple-src` 与 `build/_deps/asio-src/asio/include` 加入 include 路径，使模板实例化信息完整。
 
 5. **DartFn 生成** ✅
-   - 识别 `dcb::DartFnStringToString` 参数。
-   - Dart 侧注册/注销回调，C++ 侧构造 `DartFnStringToString` 后反向调用。
+   - 支持泛型签名 `dcb::DartFn<Ret(Args...)>`（语法类似 `std::function`），例如 `dcb::DartFn<std::string(std::string)>`。
+   - Dart 侧按实际参数/返回值类型生成 `FutureOr<Ret> Function(Args...)`，注册/注销二进制回调；C++ 侧生成带 encode/decode lambda 的 `dcb::DartFn<Signature>` 后反向调用。
    - 修复生成代码中 DartFn `fn_id` 写入顺序与 C++ 读取顺序不一致的问题：现在 `fn_id` 严格按参数顺序写入 payload。
+   - 修复 MSVC 上模板参数包默认实参限制：便利构造函数改用 `requires` + `std::tuple` 比较。
    - 在 `examples/codegen_demo` 添加 `greet_dart_fn` 测试（含 sync / async 闭包）并跑通。
 
 6. **元组生成**（当前下一步）

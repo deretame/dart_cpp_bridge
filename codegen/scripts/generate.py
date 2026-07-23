@@ -30,7 +30,10 @@ def _dart_type(t: dict[str, Any]) -> str:
     if k == "i128" or k == "u128":
         return "BigInt"
     if k == "dart_fn":
-        return "FutureOr<String> Function(String)"
+        args = t.get("args", [])
+        ret = _dart_type(t["return"])
+        arg_types = ", ".join(_dart_type(a) for a in args)
+        return f"FutureOr<{ret}> Function({arg_types})"
     return {
         "i32": "int",
         "u32": "int",
@@ -69,6 +72,18 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return q
     if k == "optional":
         return f"std::optional<{_cpp_type(t['inner'])}>"
+    if k == "vector":
+        return f"std::vector<{_cpp_type(t['inner'])}>"
+    if k == "array":
+        return f"std::array<{_cpp_type(t['inner'])}, {t['size']}>"
+    if k == "set":
+        return f"std::unordered_set<{_cpp_type(t['inner'])}>"
+    if k == "map":
+        return f"std::unordered_map<{_cpp_type(t['key'])}, {_cpp_type(t['value'])}>"
+    if k == "i128":
+        return "dcb::Int128"
+    if k == "u128":
+        return "dcb::UInt128"
     raise ValueError(f"unsupported C++ type: {t}")
 
 
@@ -147,7 +162,31 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
     if k == "u128":
         return f"const auto {name} = r.u128();"
     if k == "dart_fn":
-        return f"const auto {name} = dcb::DartFnStringToString(session, gen, r.u64());"
+        sig_ret = _cpp_type(t["return"])
+        sig_args = [_cpp_type(a) for a in t.get("args", [])]
+        signature = f"{sig_ret}({', '.join(sig_args)})"
+        arg_names = [f"a{i}" for i in range(len(sig_args))]
+        arg_decls = ", ".join(
+            f"const {ty}& {an}" for ty, an in zip(sig_args, arg_names)
+        )
+        if arg_decls:
+            arg_decls = ", " + arg_decls
+        encode_body = "\n        ".join(
+            _cpp_write_item(arg_ir, an) for arg_ir, an in zip(t.get("args", []), arg_names)
+        )
+        if encode_body:
+            encode_body = "\n        " + encode_body
+        ret_kind = t["return"].get("kind")
+        if ret_kind == "void":
+            decode_body = "(void)d; (void)n;"
+        else:
+            decode_body = f"ByteReader r(d, n);\n        return {_cpp_read_item(t['return'], 'r')};"
+        return f"""const auto {name} = dcb::DartFn<{signature}>(session, gen, r.u64(),
+    [](ByteWriter& w{arg_decls}) {{{encode_body}
+    }},
+    [](const std::uint8_t* d, std::size_t n) {{
+      {decode_body}
+    }});"""
     raise ValueError(f"unsupported arg type for codegen: {a}")
 
 
@@ -188,21 +227,72 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     raise ValueError(f"unsupported return type: {t}")
 
 
-def _dart_write_item(t: dict[str, Any], expr: str, indent: str = "") -> list[str]:
-    """Return Dart statement(s) that write `expr` of type `t` using ByteWriter `_payload`."""
+def _dart_write_item(
+    t: dict[str, Any],
+    expr: str,
+    indent: str = "",
+    writer: str = "_payload",
+) -> list[str]:
+    """Return Dart statement(s) that write `expr` of type `t` using ByteWriter `writer`."""
     k = t.get("kind")
     if k == "i32":
-        return [f"{indent}_payload.i32({expr});"]
+        return [f"{indent}{writer}.i32({expr});"]
     if k == "u32":
-        return [f"{indent}_payload.u32({expr});"]
+        return [f"{indent}{writer}.u32({expr});"]
     if k == "i64":
-        return [f"{indent}_payload.i64({expr});"]
+        return [f"{indent}{writer}.i64({expr});"]
     if k == "bool":
-        return [f"{indent}_payload.u8({expr} ? 1 : 0);"]
+        return [f"{indent}{writer}.u8({expr} ? 1 : 0);"]
     if k == "string":
-        return [f"{indent}_payload.str({expr});"]
+        return [f"{indent}{writer}.str({expr});"]
     if k == "enum":
-        return [f"{indent}_payload.i32({expr}.index);"]
+        return [f"{indent}{writer}.i32({expr}.index);"]
+    if k == "i128":
+        return [f"{indent}{writer}.writeI128({expr});"]
+    if k == "u128":
+        return [f"{indent}{writer}.writeU128({expr});"]
+    if k == "optional":
+        inner = t["inner"]
+        return [
+            f"{indent}if ({expr} == null) {{ {writer}.u8(0); }} else {{ {writer}.u8(1);",
+            *_dart_write_item(inner, expr, indent + "  ", writer),
+            f"{indent}}}",
+        ]
+    if k == "vector":
+        inner = t["inner"]
+        return [
+            f"{indent}{writer}.u32({expr}.length);",
+            f"{indent}for (final _v in {expr}) {{",
+            *_dart_write_item(inner, "_v", indent + "  ", writer),
+            f"{indent}}}",
+        ]
+    if k == "array":
+        inner = t["inner"]
+        size = t["size"]
+        return [
+            f"{indent}if ({expr}.length != {size}) throw StateError('array length mismatch');",
+            f"{indent}for (final _v in {expr}) {{",
+            *_dart_write_item(inner, "_v", indent + "  ", writer),
+            f"{indent}}}",
+        ]
+    if k == "set":
+        inner = t["inner"]
+        return [
+            f"{indent}{writer}.u32({expr}.length);",
+            f"{indent}for (final _v in {expr}) {{",
+            *_dart_write_item(inner, "_v", indent + "  ", writer),
+            f"{indent}}}",
+        ]
+    if k == "map":
+        key_t = t["key"]
+        value_t = t["value"]
+        return [
+            f"{indent}{writer}.u32({expr}.length);",
+            f"{indent}{expr}.forEach((final _k, final _v) {{",
+            *_dart_write_item(key_t, "_k", indent + "  ", writer),
+            *_dart_write_item(value_t, "_v", indent + "  ", writer),
+            f"{indent}}});",
+        ]
     raise ValueError(f"unsupported Dart item type: {t}")
 
 
@@ -221,6 +311,36 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{reader}.str()"
     if k == "enum":
         return f"{t['name']}.values[{reader}.i32()]"
+    if k == "i128":
+        return f"{reader}.readI128()"
+    if k == "u128":
+        return f"{reader}.readU128()"
+    if k == "optional":
+        inner = t["inner"]
+        read_value = _dart_read_item(inner, reader)
+        return f"(({reader}.u8() != 0) ? {read_value} : null)"
+    if k == "vector":
+        inner = t["inner"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, reader)
+        return f"(() {{ final _n = {reader}.u32(); final _result = <{item_type}>[]; for (var _i = 0; _i < _n; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "array":
+        inner = t["inner"]
+        size = t["size"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, reader)
+        return f"(() {{ final _result = <{item_type}>[]; for (var _i = 0; _i < {size}; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "set":
+        inner = t["inner"]
+        item_type = _dart_type(inner)
+        item_read = _dart_read_item(inner, reader)
+        return f"(() {{ final _n = {reader}.u32(); final _result = <{item_type}>{{}}; for (var _i = 0; _i < _n; _i++) {{ _result.add({item_read}); }} return _result; }})()"
+    if k == "map":
+        key_type = _dart_type(t["key"])
+        value_type = _dart_type(t["value"])
+        key_read = _dart_read_item(t["key"], reader)
+        value_read = _dart_read_item(t["value"], reader)
+        return f"(() {{ final _n = {reader}.u32(); final _result = <{key_type}, {value_type}>{{}}; for (var _i = 0; _i < _n; _i++) {{ _result[{key_read}] = {value_read}; }} return _result; }})()"
     raise ValueError(f"unsupported Dart item type: {t}")
 
 
@@ -286,7 +406,7 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
         k = t.get("kind")
         if k == "stream_sink":
             continue
-        n = a["name"]
+        n = a["dart_name"]
         if k == "dart_fn":
             lines.append(f"_payload.u64(_{n}Id);")
         elif k in ("i32", "u32", "i64", "string", "bool", "enum"):
@@ -553,6 +673,14 @@ std::vector<std::uint8_t> dispatch_sync(const std::uint8_t* data, std::size_t le
     return hpp, cpp
 
 
+def _dart_param_name(cpp_name: str) -> str:
+    """Convert a C++ parameter/argument name to Dart camelCase."""
+    if "_" not in cpp_name:
+        return cpp_name
+    parts = cpp_name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
+
+
 def _dart_fn_name(cpp_name: str) -> str:
     if "_" not in cpp_name:
         return cpp_name
@@ -563,20 +691,23 @@ def _dart_fn_name(cpp_name: str) -> str:
 def _iter_dart_methods(ir: dict[str, Any]):
     for fn in ir["functions"]:
         dart_name = _dart_fn_name(fn["name"])
+        args = []
+        for a in fn["args"]:
+            args.append({**a, "dart_name": _dart_param_name(a["name"])})
         params = []
         call_args = []
-        for a in fn["args"]:
+        for a in args:
             if a["type"].get("kind") == "stream_sink":
                 continue
-            params.append(f"{_dart_type(a['type'])} {a['name']}")
-            call_args.append(a["name"])
+            params.append(f"{_dart_type(a['type'])} {a['dart_name']}")
+            call_args.append(a["dart_name"])
         ret_t = _dart_type(fn["return"])
         is_async = fn["kind"] != "sync"
         if is_async:
             sig_ret = "Future<void>" if ret_t == "void" else f"Future<{ret_t}>"
         else:
             sig_ret = ret_t
-        dart_fn_args = [a for a in fn["args"] if a["type"].get("kind") == "dart_fn"]
+        dart_fn_args = [a for a in args if a["type"].get("kind") == "dart_fn"]
         yield {
             "fn": fn,
             "dart_name": dart_name,
@@ -585,10 +716,40 @@ def _iter_dart_methods(ir: dict[str, Any]):
             "ret_t": ret_t,
             "sig_ret": sig_ret,
             "is_async": is_async,
-            "payload_lines": _dart_payload_lines(fn["args"]),
+            "payload_lines": _dart_payload_lines(args),
             "dart_fn_args": dart_fn_args,
             "read_ret": _dart_read_ret(fn["return"], "_bytes"),
         }
+
+
+def _dart_fn_wrapper_lines(a: dict[str, Any]) -> list[str]:
+    """Generate Dart code that wraps a typed user closure into a binary
+    callback suitable for [DartCppBridge.registerDartFn]."""
+    t = a["type"]
+    name = a["dart_name"]
+    wrapper_name = f"_{name}Wrapper"
+    args = t.get("args", [])
+    ret = t["return"]
+    lines = [
+        f"final {wrapper_name} = (Uint8List _argBytes) async {{",
+        "  final _r = ByteReader(_argBytes);",
+    ]
+    arg_names = []
+    for i, arg in enumerate(args):
+        an = f"_a{i}"
+        arg_names.append(an)
+        lines.append(f"  final {an} = {_dart_read_item(arg, '_r')};")
+    lines.append(f"  final _res = await {name}({', '.join(arg_names)});")
+    if ret.get("kind") == "void":
+        lines.add("  return Uint8List(0);")
+    else:
+        lines.append("  final _w = ByteWriter();")
+        for stmt in _dart_write_item(ret, "_res", indent="  ", writer="_w"):
+            lines.append(stmt)
+        lines.append("  return _w.takeBytes();")
+    lines.append("};")
+    lines.append(f"final _{name}Id = bridge.registerDartFn({wrapper_name});")
+    return lines
 
 
 def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") -> str:
@@ -610,7 +771,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
         body_lines: list[str] = []
         if dart_fn_args:
             for a in dart_fn_args:
-                body_lines.append(f"final _{a['name']}Id = bridge.registerDartFn({a['name']});")
+                body_lines.extend(_dart_fn_wrapper_lines(a))
             body_lines.append("try {")
             for line in payload_lines:
                 body_lines.append(f"  {line}")
@@ -634,7 +795,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
         if dart_fn_args:
             body_lines.append("} finally {")
             for a in dart_fn_args:
-                body_lines.append(f"  bridge.unregisterDartFn(_{a['name']}Id);")
+                body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
             body_lines.append("}")
 
         body_inner = "\n    ".join(body_lines)

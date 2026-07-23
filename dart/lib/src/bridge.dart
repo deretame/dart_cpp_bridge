@@ -47,7 +47,9 @@ final class DartCppBridge implements Finalizable {
   final Map<int, Completer<Uint8List>> _pending = {};
   final Map<int, StreamController<int>> _streams = {};
   /// FRB-style: callbacks passed into C++ calls, keyed by fn_id for this session.
-  final Map<int, FutureOr<String> Function(String)> _dartFns = {};
+  /// Values are binary-level callbacks: C++ sends raw arg bytes, we send back
+  /// raw result bytes. Codegen wraps typed user closures around this layer.
+  final Map<int, FutureOr<Uint8List> Function(Uint8List)> _dartFns = {};
   int _nextId = 1;
   int _nextFnId = 1;
   StreamSubscription<dynamic>? _sub;
@@ -191,15 +193,16 @@ final class DartCppBridge implements Finalizable {
     try {
       final r = ByteReader(frame.payload);
       final fnId = r.u64();
-      final arg = r.str();
+      // Everything after the fn_id is the typed argument payload.
+      final argBytes =
+          frame.payload.sublist(8); // 8 == sizeof(u64) on the wire
       final fn = _dartFns[fnId];
       if (fn == null) {
         _replyDartFn(replyId, ok: false, error: 'unknown dart fn $fnId');
         return;
       }
-      final result = await fn(arg);
-      final payload = ByteWriter()..str(result);
-      _replyDartFn(replyId, ok: true, payload: payload.takeBytes());
+      final result = await fn(argBytes) ?? Uint8List(0);
+      _replyDartFn(replyId, ok: true, payload: result);
     } catch (e) {
       _replyDartFn(replyId, ok: false, error: e.toString());
     }
@@ -238,9 +241,11 @@ final class DartCppBridge implements Finalizable {
 
   /// Register a Dart callback for a reverse FFI call from C++.
   ///
-  /// The returned id must be written into the request payload. C++ will use
-  /// it to construct a `DartFnStringToString` and call back into Dart.
-  int registerDartFn(FutureOr<String> Function(String) fn) {
+  /// [fn] is a binary-level callback: C++ sends the typed argument payload as
+  /// raw bytes, and expects raw result bytes back. Codegen wraps typed user
+  /// closures into this shape. The returned id must be written into the request
+  /// payload so C++ can construct a `DartFn<Ret(Args...)>`.
+  int registerDartFn(FutureOr<Uint8List> Function(Uint8List) fn) {
     final id = _nextFnId++;
     _dartFns[id] = fn;
     return id;
@@ -791,7 +796,13 @@ final class DartCppBridge implements Finalizable {
     int? handle,
     FutureOr<String> Function(String) dartCallback,
   ) async {
-    final fnId = registerDartFn(dartCallback);
+    final fnId = registerDartFn((final argBytes) async {
+      final r = ByteReader(argBytes);
+      final arg = r.str();
+      final res = await dartCallback(arg);
+      final w = ByteWriter()..str(res);
+      return w.takeBytes();
+    });
     final id = _allocId();
     final c = Completer<Uint8List>();
     _pending[id] = c;

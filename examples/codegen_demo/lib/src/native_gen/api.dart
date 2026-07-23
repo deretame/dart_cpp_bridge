@@ -75,7 +75,7 @@ final class BridgeApi {
   Future<String> sleepGreeting(String name) => _impl.sleepGreeting(name);
   Future<BigInt> echoU128(BigInt value) => _impl.echoU128(value);
   Future<int> incrementU32(int value) => _impl.incrementU32(value);
-  Future<String> greetDartFn(FutureOr<String> Function(String) dart_fn, String name) => _impl.greetDartFn(dart_fn, name);
+  Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) => _impl.greetDartFn(callback, name);
   Future<int> sumSet(Set<int> values) => _impl.sumSet(values);
   Future<BigInt> echoI128(BigInt value) => _impl.echoI128(value);
   Future<String?> optionalString(String? value) => _impl.optionalString(value);

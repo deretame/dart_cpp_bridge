@@ -159,6 +159,76 @@ def _template_args(type_spell: str) -> list[str]:
     return parts
 
 
+def _split_top_level(s: str, sep: str = ",") -> list[str]:
+    """Split `s` by `sep` while ignoring separators inside (), <>, []."""
+    parts: list[str] = []
+    cur: list[str] = []
+    depth_paren = 0
+    depth_angle = 0
+    depth_bracket = 0
+    for ch in s:
+        if ch == "(":
+            depth_paren += 1
+        elif ch == ")":
+            depth_paren -= 1
+        elif ch == "<":
+            depth_angle += 1
+        elif ch == ">":
+            depth_angle -= 1
+        elif ch == "[":
+            depth_bracket += 1
+        elif ch == "]":
+            depth_bracket -= 1
+        elif ch == sep and depth_paren == 0 and depth_angle == 0 and depth_bracket == 0:
+            parts.append("".join(cur).strip())
+            cur = []
+            continue
+        cur.append(ch)
+    parts.append("".join(cur).strip())
+    return parts
+
+
+def _split_function_signature(sig: str) -> tuple[str, list[str]] | None:
+    """Parse a C++ function signature like `Ret(Args...)`."""
+    s = sig.strip()
+    depth_angle = 0
+    open_idx = -1
+    for i, ch in enumerate(s):
+        if ch == "<":
+            depth_angle += 1
+        elif ch == ">":
+            depth_angle -= 1
+        elif ch == "(" and depth_angle == 0:
+            open_idx = i
+            break
+    if open_idx < 0:
+        return None
+
+    depth_paren = 0
+    depth_angle = 0
+    close_idx = -1
+    for i in range(open_idx, len(s)):
+        ch = s[i]
+        if ch == "<":
+            depth_angle += 1
+        elif ch == ">":
+            depth_angle -= 1
+        elif ch == "(":
+            depth_paren += 1
+        elif ch == ")":
+            depth_paren -= 1
+            if depth_paren == 0 and depth_angle == 0:
+                close_idx = i
+                break
+    if close_idx < 0:
+        return None
+
+    ret = s[:open_idx].strip()
+    args_str = s[open_idx + 1 : close_idx].strip()
+    args = _split_top_level(args_str, ",")
+    return ret, args
+
+
 def _type_ir(
     type_spell: str,
     enum_by_qualified: dict[str, dict[str, Any]] | None = None,
@@ -229,9 +299,29 @@ def _type_ir(
     if s in ("dcb::UInt128", "UInt128"):
         return {"kind": "u128"}
 
-    # FRB-style Dart callback (String -> String).
-    if s in ("dcb::DartFnStringToString", "DartFnStringToString"):
-        return {"kind": "dart_fn"}
+    # FRB-style Dart callback: DartFn<Ret(Args...)>.
+    if s.startswith("dcb::DartFn") or s.startswith("DartFn"):
+        args = _template_args(s)
+        if len(args) == 1:
+            parsed = _split_function_signature(args[0])
+            if parsed:
+                ret_s, arg_list = parsed
+                return {
+                    "kind": "dart_fn",
+                    "signature": args[0],
+                    "args": [
+                        _type_ir(a, enum_by_qualified, enum_by_name) for a in arg_list
+                    ],
+                    "return": _type_ir(ret_s, enum_by_qualified, enum_by_name),
+                }
+        # Legacy string-to-string alias.
+        if s in ("dcb::DartFnStringToString", "DartFnStringToString"):
+            return {
+                "kind": "dart_fn",
+                "signature": "std::string(std::string)",
+                "args": [{"kind": "string"}],
+                "return": {"kind": "string"},
+            }
 
     # enum references
     if enum_by_qualified and s in enum_by_qualified:
