@@ -285,6 +285,24 @@ void main() {
   });
 
   group('class method export (opaque object)', () {
+    test('Counter default constructor creates with value 0', () async {
+      final counter = await Counter.defaultCtor();
+      expect(await counter.value(), 0);
+      counter.dispose();
+    });
+
+    test('Counter factory constructor zero creates with value 0', () async {
+      final counter = await Counter.zero();
+      expect(await counter.value(), 0);
+      counter.dispose();
+    });
+
+    test('Counter named factory constructor works with explicit initial value', () async {
+      final counter = await Counter.create(initialValue: 10);
+      expect(await counter.value(), 10);
+      counter.dispose();
+    });
+
     test('Counter increments and retains state', () async {
       final counter = await bridge.createCounter(initialValue: 10);
       expect(await counter.value(), 10);

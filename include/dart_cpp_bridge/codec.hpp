@@ -108,6 +108,10 @@ enum class MethodId : std::uint32_t {
   kCounterSleepAndGet = 27,
   // payload: handle u64 + count i32 + interval_ms i32 — Stream method, emits values
   kCounterIncrementStream = 28,
+  // payload: empty — default constructor, returns handle u64
+  kCounterCreateDefault = 29,
+  // payload: empty — factory constructor (static method), returns handle u64
+  kCounterZero = 30,
 };
 
 class ByteWriter {

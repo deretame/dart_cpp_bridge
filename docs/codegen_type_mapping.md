@@ -483,7 +483,7 @@ class Counter extends CppOpaqueInterface {
 | 序号 | 完善项 | 说明 |
 |------|--------|------|
 | 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 已实现：手写测试用 `extends` 复用 `dispose()` / `NativeFinalizer` attach/detach。 |
-| 2 | **构造函数多种形态** | 默认构造、带参构造、拷贝/移动构造限制、工厂构造函数（静态方法）。 |
+| 2 | **构造函数多种形态** | 已实现并手写测试：默认构造 `Counter.defaultCtor()`、带参构造 `Counter.create(initialValue)`、工厂构造 `Counter.zero()`。copy/move 构造为 codegen 阶段限制。 |
 | 3 | **析构函数生命周期** | 明确 `dispose()` 手动释放 + `NativeFinalizer` 自动释放的语义。 |
 | 4 | **Sync / Async / Normal / Stream 成员方法** | 已实现并手写测试：Counter 覆盖六种调用模式。 |
 | 5 | **Static 方法** | 已实现并手写测试：`Counter.sum(a, b)`。 |
@@ -500,7 +500,7 @@ class Counter extends CppOpaqueInterface {
 
 以下目标属于**第一阶段手写测试**（Phase 1），在正式启动 codegen 之前需要逐个跑通。按推荐顺序排列：
 
-1. **构造函数多种形态**
+1. **构造函数多种形态** ✅
    - 默认构造：`Counter()`（等价于 `initialValue = 0`）。
    - 带参构造：已有 `Counter(initialValue)`，进一步验证参数校验路径。
    - 工厂构造（静态方法）：如 `Counter.zero()`，验证 static 方法返回 opaque 对象 handle。

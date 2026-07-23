@@ -558,6 +558,34 @@ final class DartCppBridge implements Finalizable {
     return Counter._(bridge: this, handle: handle);
   }
 
+  /// Default constructor: create a Counter with initial value 0.
+  Future<Counter> createCounterDefault() async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.counterCreateDefault.value,
+    ));
+    final handle = ByteReader(await c.future).u64();
+    return Counter._(bridge: this, handle: handle);
+  }
+
+  /// Factory constructor as a static method: create a Counter with value 0.
+  Future<Counter> createCounterZero() async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.counterZero.value,
+    ));
+    final handle = ByteReader(await c.future).u64();
+    return Counter._(bridge: this, handle: handle);
+  }
+
   Future<void> _counterIncrement(int handle, int delta) async {
     final payload = ByteWriter()
       ..u64(handle)
@@ -779,6 +807,21 @@ abstract base class CppOpaqueInterface implements Finalizable {
 /// Demo opaque object for hand-written class-method export test (Counter).
 final class Counter extends CppOpaqueInterface {
   Counter._({required super.bridge, required super.handle});
+
+  /// Create a Counter with [initialValue] via the bridge constructor.
+  static Future<Counter> create({int initialValue = 0}) {
+    return DartCppBridge.instance.createCounter(initialValue: initialValue);
+  }
+
+  /// Default constructor: create a Counter with initial value 0.
+  static Future<Counter> defaultCtor() {
+    return DartCppBridge.instance.createCounterDefault();
+  }
+
+  /// Factory constructor (static method style): create a Counter with value 0.
+  static Future<Counter> zero() {
+    return DartCppBridge.instance.createCounterZero();
+  }
 
   /// Increment the counter by [delta].
   Future<void> increment(int delta) async {

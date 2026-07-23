@@ -167,6 +167,16 @@ std::uint64_t counter_create(std::uint64_t session_id, std::int32_t initial_valu
       });
 }
 
+std::uint64_t counter_create_default(std::uint64_t session_id) {
+  // Default constructor: Counter() with initial value 0.
+  return counter_create(session_id, 0);
+}
+
+std::uint64_t counter_zero(std::uint64_t session_id) {
+  // Factory constructor as a static method: Counter::zero() -> handle.
+  return counter_create(session_id, 0);
+}
+
 std::int32_t counter_increment(std::uint64_t handle, std::int32_t delta) {
   auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
   if (!obj) {
@@ -703,6 +713,32 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         }
         auto sink = make_i32_sink(session.get(), req, gen, method);
         counter_increment_stream(obj, count, interval_ms, std::move(sink));
+        break;
+      }
+      case MethodId::kCounterCreateDefault: {
+        try {
+          auto handle = counter_create_default(session_id);
+          ByteWriter w;
+          w.u64(handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "unknown");
+        }
+        break;
+      }
+      case MethodId::kCounterZero: {
+        try {
+          auto handle = counter_zero(session_id);
+          ByteWriter w;
+          w.u64(handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "unknown");
+        }
         break;
       }
       case MethodId::kFailAsync: {
