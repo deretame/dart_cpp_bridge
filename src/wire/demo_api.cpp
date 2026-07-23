@@ -177,29 +177,32 @@ std::uint64_t counter_zero(std::uint64_t session_id) {
   return counter_create(session_id, 0);
 }
 
-std::int32_t counter_increment(std::uint64_t handle, std::int32_t delta) {
+namespace {
+
+std::shared_ptr<Counter> counter_checked_get(std::uint64_t handle, const char* operation) {
   auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
   if (!obj) {
-    throw std::runtime_error("Counter handle not found");
+    throw std::runtime_error(std::string("Counter handle not found or already dropped while ") + operation);
   }
+  return obj;
+}
+
+}  // namespace
+
+std::int32_t counter_increment(std::uint64_t handle, std::int32_t delta) {
+  auto obj = counter_checked_get(handle, "incrementing");
   obj->increment(delta);
   return obj->value();
 }
 
 std::int32_t counter_get_value(std::uint64_t handle) {
-  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
-  if (!obj) {
-    throw std::runtime_error("Counter handle not found");
-  }
+  auto obj = counter_checked_get(handle, "reading value");
   return obj->value();
 }
 
 std::int32_t counter_value_sync(std::uint64_t handle) {
   // Sync instance method: read the current value directly on the calling thread.
-  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
-  if (!obj) {
-    throw std::runtime_error("Counter handle not found");
-  }
+  auto obj = counter_checked_get(handle, "reading value (sync)");
   return obj->value();
 }
 
@@ -668,7 +671,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto fn_id = r.u64();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found");
+          post_err(session, gen, req, method, "Counter handle not found or already dropped");
           break;
         }
         DartFnStringToString cb(session, gen, fn_id);
@@ -695,7 +698,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto sleep_ms = r.i32();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found");
+          post_err(session, gen, req, method, "Counter handle not found or already dropped");
           break;
         }
         counter_sleep_and_get(obj, sleep_ms, session, gen, req, method);
@@ -708,7 +711,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto interval_ms = r.i32();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found");
+          post_err(session, gen, req, method, "Counter handle not found or already dropped");
           break;
         }
         auto sink = make_i32_sink(session.get(), req, gen, method);

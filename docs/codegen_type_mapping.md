@@ -493,7 +493,7 @@ class Counter extends CppOpaqueInterface {
 | 9 | **丰富参数/返回值类型** | 支持基本类型、容器、option、枚举、其他 opaque 对象作为参数或返回值。 |
 | 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
 | 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
-| 12 | **无效句柄错误信息** | handle 不存在或已 drop 时返回清晰错误。 |
+| 12 | **无效句柄错误信息** | 已实现并手写测试：handle 不存在或已 drop 时返回清晰错误。 |
 | 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；剩余 GC 自动释放、跨 Isolate 句柄隔离等。 |
 
 #### 5.9.7 第一阶段手写测试剩余目标
@@ -511,7 +511,7 @@ class Counter extends CppOpaqueInterface {
    - 手写测试验证：bridge shutdown 时会关闭 Session，per-Session 注册表自动 drop 该 Session 的所有对象，旧 Counter 句柄失效。
    - GC 自动释放依赖 Dart `NativeFinalizer`，由 `CppOpaqueInterface` 统一 attach/detach；因 Dart GC 时机不可控，不手写确定性测试，但机制已跑通。
 
-3. **无效句柄错误信息**
+3. **无效句柄错误信息** ✅
    - handle 不存在或已 drop 时返回清晰错误，区分“未找到”和“已释放”。
    - 例如：`Counter handle not found or already dropped in session X`。
 

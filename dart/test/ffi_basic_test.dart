@@ -333,8 +333,14 @@ void main() {
     test('Counter throws after dispose', () async {
       final counter = await bridge.createCounter(initialValue: 0);
       counter.dispose();
-      expect(() => counter.increment(1), throwsA(isA<StateError>()));
-      expect(() => counter.value(), throwsA(isA<StateError>()));
+      expect(
+        () => counter.increment(1),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('Counter disposed'))),
+      );
+      expect(
+        () => counter.value(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('Counter disposed'))),
+      );
     });
 
     test('Counter valueSync reads current value synchronously', () async {
@@ -382,7 +388,10 @@ void main() {
       final counter = await bridge.createCounter(initialValue: 123);
       expect(await counter.value(), 123);
       bridge.shutdown(); // closes session and drops all objects in per-Session registry
-      expect(() => counter.value(), throwsA(isA<StateError>()));
+      expect(
+        () => counter.value(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', contains('bridge disposed'))),
+      );
       // Re-init for remaining tests.
       bridge = await openBridge();
     });
