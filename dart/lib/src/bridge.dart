@@ -827,6 +827,9 @@ abstract base class CppOpaqueInterface implements Finalizable {
 final class Counter extends CppOpaqueInterface {
   Counter._({required super.bridge, required super.handle});
 
+  /// The native handle. Exposed for testing cross-isolate isolation.
+  int get handle => _handle;
+
   /// Create a Counter with [initialValue] via the bridge constructor.
   static Future<Counter> create({int initialValue = 0}) {
     return DartCppBridge.instance.createCounter(initialValue: initialValue);

@@ -494,7 +494,7 @@ class Counter extends CppOpaqueInterface {
 | 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
 | 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
 | 12 | **无效句柄错误信息** | 已实现并手写测试：handle 不存在或已 drop 时返回清晰错误。 |
-| 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；剩余 GC 自动释放、跨 Isolate 句柄隔离等。 |
+| 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；跨 Isolate 句柄隔离已测；GC 自动释放由 `NativeFinalizer` 机制保证，不手写确定性测试。 |
 
 #### 5.9.7 第一阶段手写测试剩余目标
 
@@ -526,7 +526,7 @@ class Counter extends CppOpaqueInterface {
      - 其他 opaque 对象：`duplicate()` 返回新的 Counter handle。
    - 基本类型、枚举、容器、optional 等已在顶层函数中覆盖。
 
-6. **跨 Isolate 句柄隔离**
+6. **跨 Isolate 句柄隔离** ✅
    - 验证 per-Session 注册表：在 worker isolate 创建的 Counter handle，传回 main isolate 后使用会失败。
    - 这是 per-Session 句柄设计的关键安全边界。
 

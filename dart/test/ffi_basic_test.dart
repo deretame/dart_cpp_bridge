@@ -23,6 +23,14 @@ Future<List<int>> _workerTicks(String libraryPath) {
   });
 }
 
+Future<int> _workerCounterHandle(String libraryPath) {
+  return Isolate.run(() async {
+    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    final counter = await bridge.createCounter(initialValue: 42);
+    return counter.handle;
+  });
+}
+
 void main() {
   late String libraryPath;
   late DartCppBridge bridge;
@@ -431,6 +439,20 @@ void main() {
       );
       // Re-init for remaining tests.
       bridge = await openBridge();
+    });
+
+    test('Counter handle from another isolate is rejected', () async {
+      final foreignHandle = await _workerCounterHandle(libraryPath);
+
+      final payload = (ByteWriter()..u64(foreignHandle)).takeBytes();
+      await expectLater(
+        bridge.invokeAsyncMethod(MethodId.counterGetValue.value, payload),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Counter handle not found or already dropped'),
+        )),
+      );
     });
   });
 
