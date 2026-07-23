@@ -402,11 +402,16 @@ Dart 侧生成形态（对齐 FRB 的 `RustOpaqueInterface`）：
 
 ```dart
 // 统一由 codegen 生成的 opaque 基类。
-abstract class CppOpaqueInterface implements Finalizable {
-  DartCppBridge get _bridge;
-  int get _handle;
+abstract base class CppOpaqueInterface implements Finalizable {
+  CppOpaqueInterface({required this._bridge, required this._handle}) {
+    _finalizer = NativeFinalizer(_bridge._b.dropObject);
+    _attachFinalizer();
+  }
 
-  NativeFinalizer get _finalizer => NativeFinalizer(_bridge._b.dropObject);
+  final DartCppBridge _bridge;
+  final int _handle;
+  late final NativeFinalizer _finalizer;
+  bool _disposed = false;
 
   void _attachFinalizer() {
     _finalizer.attach(
@@ -417,6 +422,8 @@ abstract class CppOpaqueInterface implements Finalizable {
   }
 
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _finalizer.detach(this);
     _bridge._b.dropObject
         .asFunction<void Function(Pointer<Void>)>()(
@@ -425,31 +432,29 @@ abstract class CppOpaqueInterface implements Finalizable {
   }
 }
 
-class Counter implements CppOpaqueInterface {
-  Counter._(this._bridge, this._handle) {
-    _attachFinalizer();
-  }
+class Counter extends CppOpaqueInterface {
+  Counter._({required super.bridge, required super.handle});
 
   factory Counter({required int initialValue}) {
     return DartCppBridge.instance.createCounter(initialValue: initialValue);
   }
 
-  @override
-  final DartCppBridge _bridge;
+  Future<void> increment(int delta) => _bridge._counterIncrement(_handle, delta);
 
-  @override
-  final int _handle;
+  Future<int> value() => _bridge._counterGetValue(_handle);
 
-  Future<void> increment(int delta) =>
-      _bridge.counterIncrement(_handle, delta);
+  int valueSync() => _bridge._counterValueSync(_handle);
 
-  Future<int> value() => _bridge.counterGetValue(_handle);
+  static int sum(int a, int b) => DartCppBridge.instance._counterStaticSum(a, b);
+
+  Future<String> callCallback(FutureOr<String> Function(String value) cb) =>
+      _bridge._counterCallDartFn(_handle, cb);
 }
 ```
 
 要点：
 
-- Dart 侧 opaque 类 **实现** `CppOpaqueInterface`（不是继承），因为 Dart 单继承有限制，用接口更灵活。
+- Dart 侧 opaque 类 **继承** `CppOpaqueInterface` 基类（手写测试 fixture 采用 `extends`；生成代码若需要继承其他类，可改为 `implements` 并自行重复 finalizer 逻辑）。
 - `dispose()` 和 `NativeFinalizer` 的 attach/detach 逻辑在基类中统一实现，避免每个生成类重复。
 - 构造函数在 Dart 侧生成 factory，内部调用 C++ 构造函数 wire 方法获得 handle。
 
@@ -462,7 +467,7 @@ class Counter implements CppOpaqueInterface {
 
 #### 5.9.5 限制
 
-- 当前阶段（P3）仍处于**手写测试阶段**，仅有一个最小 `Counter` fixture 在验证思路；构造函数多种形态、sync/static 成员方法、DartFn 回调方法等还没测试，更遑论最终 codegen 自动生成。当前首要目标是先把手写测试跑通。
+- 当前阶段（P3）仍处于**手写测试阶段**，`Counter` fixture 已覆盖 async / sync / static / DartFn / Normal / Stream 成员方法，以及多实例独立、dispose 后错误等基础场景；但**代码生成尚未实现**，构造函数/析构函数的通用标记、默认参数、方法重载等也还未完成。当前首要目标是继续把手写测试跑通。
 - 导出为 Dart 类的 `class` / `struct` **必须定义在 API 头文件**（codegen 扫描的用户头文件，如 `native/api/*.h`）中，否则 codegen 不会进入 IR。
 - **不支持虚函数、纯虚函数、重载运算符**作为导出方法。
 - **不支持多态继承**：不能把 `class B : public A` 当作 `A` 来传参或返回。
@@ -477,11 +482,11 @@ class Counter implements CppOpaqueInterface {
 
 | 序号 | 完善项 | 说明 |
 |------|--------|------|
-| 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 统一 `dispose()`、`NativeFinalizer` attach/detach，让生成类实现接口。 |
+| 1 | **Dart 侧 `CppOpaqueInterface` 基类** | 已实现：手写测试用 `extends` 复用 `dispose()` / `NativeFinalizer` attach/detach。 |
 | 2 | **构造函数多种形态** | 默认构造、带参构造、拷贝/移动构造限制、工厂构造函数（静态方法）。 |
 | 3 | **析构函数生命周期** | 明确 `dispose()` 手动释放 + `NativeFinalizer` 自动释放的语义。 |
-| 4 | **Sync / Async / Normal / Stream 成员方法** | 不同方法调用模式都支持，不是只有 async。 |
-| 5 | **Static 方法** | 不绑定对象实例，但属于类命名空间。 |
+| 4 | **Sync / Async / Normal / Stream 成员方法** | 已实现并手写测试：Counter 覆盖六种调用模式。 |
+| 5 | **Static 方法** | 已实现并手写测试：`Counter.sum(a, b)`。 |
 | 6 | **方法重载** | 同名不同参数的方法需要生成不同 method_id。 |
 | 7 | **默认参数** | C++ 默认参数在 Dart 侧生成显式可选参数。 |
 | 8 | **const 方法** | 标记为只读，不影响 wire，但可用于文档/代码提示。 |
@@ -489,7 +494,7 @@ class Counter implements CppOpaqueInterface {
 | 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
 | 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
 | 12 | **无效句柄错误信息** | handle 不存在或已 drop 时返回清晰错误。 |
-| 13 | **更多手写测试** | sync 方法、static 方法、DartFn 回调方法、多实例独立、GC 自动释放。 |
+| 13 | **更多手写测试** | async/sync/static/DartFn/Normal/Stream 多实例等已测；剩余 GC 自动释放、跨 Isolate 句柄隔离等。 |
 
 
 ## 6. 当前白名单（实现优先级）
@@ -507,7 +512,7 @@ class Counter implements CppOpaqueInterface {
 | P1 | 类/结构体（public 字段、自动导出、友元不导出） | 已手写测试 |
 | P2 | 大整数 `Int128` / `UInt128` → `BigInt`（统一字符串存储） | 已手写测试 |
 | P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
-| P3 | 类/结构体上的方法导出（需标记） | 手写测试阶段（仅 Counter fixture，大量基础设施尚未完成） |
+| P3 | 类/结构体上的方法导出（需标记） | 手写测试阶段（Counter fixture 已覆盖 async/sync/static/DartFn/Normal/Stream，codegen 尚未实现） |
 | P3 | 嵌套复合类型（`list<struct>` 等） | 已手写测试 |
 
 ---
