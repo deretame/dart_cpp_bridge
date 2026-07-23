@@ -673,17 +673,18 @@ final class DartCppBridge implements Finalizable {
   }
 } 
 
-/// Demo opaque object for hand-written class-method export test (Counter).
-final class Counter implements Finalizable {
-  Counter._({required DartCppBridge bridge, required int handle})
+/// Base class for opaque C++ objects exported to Dart.
+///
+/// Unified `dispose()` + `NativeFinalizer` attach/detach logic so generated
+/// opaque classes don't have to repeat it. For the hand-written Counter fixture
+/// we use `extends`; generated code may switch to `implements` if they need to
+/// extend another Dart class.
+abstract base class CppOpaqueInterface implements Finalizable {
+  CppOpaqueInterface({required DartCppBridge bridge, required int handle})
       : _bridge = bridge,
         _handle = handle {
     _finalizer = NativeFinalizer(_bridge._b.dropObject);
-    _finalizer.attach(
-      this,
-      Pointer.fromAddress(_handle).cast<Void>(),
-      externalSize: 64,
-    );
+    _attachFinalizer();
   }
 
   final DartCppBridge _bridge;
@@ -691,22 +692,18 @@ final class Counter implements Finalizable {
   late final NativeFinalizer _finalizer;
   bool _disposed = false;
 
+  void _attachFinalizer() {
+    _finalizer.attach(
+      this,
+      Pointer.fromAddress(_handle).cast<Void>(),
+      externalSize: 64,
+    );
+  }
+
   void _ensureAlive() {
     if (_disposed) {
-      throw StateError('Counter disposed');
+      throw StateError('${runtimeType} disposed');
     }
-  }
-
-  /// Increment the counter by [delta].
-  Future<void> increment(int delta) async {
-    _ensureAlive();
-    await _bridge._counterIncrement(_handle, delta);
-  }
-
-  /// Return the current value.
-  Future<int> value() async {
-    _ensureAlive();
-    return _bridge._counterGetValue(_handle);
   }
 
   /// Explicitly drop the native object. Optional — [NativeFinalizer] will drop
@@ -719,6 +716,23 @@ final class Counter implements Finalizable {
         .asFunction<void Function(Pointer<Void>)>()(
           Pointer.fromAddress(_handle).cast<Void>(),
         );
+  }
+}
+
+/// Demo opaque object for hand-written class-method export test (Counter).
+final class Counter extends CppOpaqueInterface {
+  Counter._({required super.bridge, required super.handle});
+
+  /// Increment the counter by [delta].
+  Future<void> increment(int delta) async {
+    _ensureAlive();
+    await _bridge._counterIncrement(_handle, delta);
+  }
+
+  /// Return the current value.
+  Future<int> value() async {
+    _ensureAlive();
+    return _bridge._counterGetValue(_handle);
   }
 }
 

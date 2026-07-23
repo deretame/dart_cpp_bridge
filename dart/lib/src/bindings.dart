@@ -56,9 +56,6 @@ typedef _DartFnReplyD = void Function(
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeD = void Function(Pointer<Void>);
 
-typedef _DropObjectC = Void Function(Uint64);
-typedef _DropObjectD = void Function(int);
-
 class NativeBindings {
   NativeBindings(this.lib)
       : initDartApi = lib.lookupFunction<_InitDartApiC, _InitDartApiD>('dcb_init_dart_api'),

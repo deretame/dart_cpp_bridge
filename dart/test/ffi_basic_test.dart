@@ -300,6 +300,24 @@ void main() {
       counter.dispose();
       counter.dispose(); // Should not throw.
     });
+
+    test('Counter instances are independent', () async {
+      final a = await bridge.createCounter(initialValue: 0);
+      final b = await bridge.createCounter(initialValue: 100);
+      await a.increment(10);
+      await b.increment(5);
+      expect(await a.value(), 10);
+      expect(await b.value(), 105);
+      a.dispose();
+      b.dispose();
+    });
+
+    test('Counter throws after dispose', () async {
+      final counter = await bridge.createCounter(initialValue: 0);
+      counter.dispose();
+      expect(() => counter.increment(1), throwsA(isA<StateError>()));
+      expect(() => counter.value(), throwsA(isA<StateError>()));
+    });
   });
 
   group('DartFn reverse call (FRB-style)', () {

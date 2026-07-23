@@ -4,19 +4,25 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace dcb {
 
-// Minimal object handle registry for exported C++ classes.
+// Per-Session object handle registry for exported C++ classes.
 // Used by generated code to keep opaque C++ objects alive across Dart FFI calls.
 //
 // Design notes:
-// - Handles are per-process in this minimal implementation. The long-term design
-//   document calls for per-Session handles (no cross-Isolate sharing), but a
-//   process-wide registry is sufficient for the hand-written Counter fixture.
+// - Handles are scoped to a Session. A full handle encodes the session id in
+//   the high 32 bits and a per-session local handle in the low 32 bits.
+// - Opaque objects cannot be shared across Isolates: a handle created in one
+//   Session is invalid in another Session's registry.
 // - Objects are stored as shared_ptr<void> with a custom drop function so the
 //   registry can hold heterogeneous types without a common base class.
+// - When a Session is closed, drop_all(session_id) releases all objects owned
+//   by that session.
+// - Pure data classes/structs are NOT registered here; they are encoded by
+//   value and can cross Isolate boundaries freely.
 class ObjectHandleRegistry {
  public:
   using Handle = std::uint64_t;
@@ -24,20 +30,36 @@ class ObjectHandleRegistry {
 
   static ObjectHandleRegistry& instance();
 
-  // Store an object and return a handle. The drop function is invoked when the
-  // handle is explicitly dropped (usually from Dart NativeFinalizer).
-  Handle insert(std::shared_ptr<void> obj, DropFn drop);
+  // Store an object for [session_id] and return a full handle. The drop
+  // function is invoked when the handle is explicitly dropped (usually from
+  // Dart NativeFinalizer) or when the session is closed.
+  Handle insert(std::uint64_t session_id, std::shared_ptr<void> obj, DropFn drop);
 
-  // Retrieve the object or nullptr if the handle is invalid/dropped.
+  // Retrieve the object for a full [handle], or nullptr if the handle is
+  // invalid, dropped, or belongs to a different session.
   std::shared_ptr<void> get(Handle handle) const;
 
-  // Drop the object associated with the handle. Idempotent.
+  // Drop the object for a full [handle]. Idempotent.
   void drop(Handle handle);
 
+  // Drop all objects belonging to [session_id]. Called when the session closes.
+  void drop_all(std::uint64_t session_id);
+
  private:
+  struct SessionStore {
+    std::mutex mu;
+    std::unordered_map<Handle, std::pair<std::shared_ptr<void>, DropFn>> objects;
+    Handle next_handle = 1;
+  };
+
+  static constexpr std::uint64_t kLocalMask = 0xFFFFFFFFULL;
+  static constexpr int kSessionShift = 32;
+
+  std::shared_ptr<SessionStore> session_store(std::uint64_t session_id);
+  std::shared_ptr<SessionStore> session_store_for_handle(Handle handle) const;
+
   mutable std::mutex mu_;
-  std::unordered_map<Handle, std::pair<std::shared_ptr<void>, DropFn>> objects_;
-  Handle next_handle_ = 1;
+  std::unordered_map<std::uint64_t, std::shared_ptr<SessionStore>> sessions_;
 };
 
 }  // namespace dcb

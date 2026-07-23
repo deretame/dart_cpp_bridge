@@ -157,9 +157,10 @@ class Counter {
   std::int32_t value_;
 };
 
-std::uint64_t counter_create(std::int32_t initial_value) {
+std::uint64_t counter_create(std::uint64_t session_id, std::int32_t initial_value) {
   auto obj = std::make_shared<Counter>(initial_value);
   return ObjectHandleRegistry::instance().insert(
+      session_id,
       std::static_pointer_cast<void>(obj),
       [](std::shared_ptr<void>&) {
         // shared_ptr destruction handles cleanup.
@@ -214,8 +215,8 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
 
 }  // namespace
 
-void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data,
-                      std::size_t len) {
+void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
+                      const std::uint8_t* data, std::size_t len) {
   const auto gen = session->generation();
 
   FrameHeader frame;
@@ -519,7 +520,7 @@ void dispatch_request(std::shared_ptr<Session> session, const std::uint8_t* data
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto initial_value = r.i32();
         try {
-          auto handle = counter_create(initial_value);
+          auto handle = counter_create(session_id, initial_value);
           ByteWriter w;
           w.u64(handle);
           post_ok(session, gen, req, method, w.raw());

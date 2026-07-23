@@ -2,6 +2,7 @@
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/channel.hpp"
+#include "dart_cpp_bridge/object_handle.hpp"
 
 #include <future>
 #include <utility>
@@ -212,6 +213,7 @@ void SessionRegistry::close(std::uint64_t id) {
   if (s) {
     s->dispose();
   }
+  ObjectHandleRegistry::instance().drop_all(id);
 }
 
 void SessionRegistry::close_all() {
@@ -224,6 +226,7 @@ void SessionRegistry::close_all() {
     if (kv.second) {
       kv.second->dispose();
     }
+    ObjectHandleRegistry::instance().drop_all(kv.first);
   }
 }
 

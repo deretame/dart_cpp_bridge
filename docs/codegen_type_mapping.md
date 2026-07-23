@@ -31,15 +31,16 @@
 
 ## 2. 大整数
 
-当 C++ 整型宽度超过 64 位时，Dart 端使用 `BigInt`：
+128 位整数不在 C++ 标准内，且不同编译器扩展（如 GCC/Clang 的 `__int128`）并不跨平台。本项目**不直接支持** `__int128` / `unsigned __int128`，而是提供统一的 `Int128` / `UInt128` 类型，内部以**字符串**存储数值，避免引入额外第三方库。
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
-| `__int128` / `unsigned __int128` | `BigInt` | 128 位整数，wire 编码建议按 16 字节 little-endian 传输 |
-| `int128_t` / `uint128_t`（若别名） | `BigInt` | 同上 |
+| `Int128` / `UInt128` | `BigInt` | 本项目统一使用的 128 位整数类型，内部以字符串形式存储，wire 上使用固定标记位 + 字符串传输 |
 
-- 规则：只要整型类型宽度大于 64 位，就映射为 `BigInt`。
-- 编码：wire 中以定长字节数组传递，Dart 侧用 `BigInt` 解析/构造。
+- 规则：宽度大于 64 位的整数，本项目只通过 `Int128` / `UInt128` 暴露给 Dart，映射为 `BigInt`。
+- 编码：wire 中先使用一个**固定的标记位**标识大整数，随后传输字符串；不采用定长 16 字节 little-endian 整数。
+- 原因：128 位整数不在 C++ 标准中，使用频率低，避免引入重量级三方库。
+- 建议：如果业务需要真正 128 位运算，可在 C++ 侧自行使用 `boost::multiprecision::int128_t` 或编译器扩展，与 `Int128` / `UInt128` 的字符串表示相互转换。
 
 ---
 
@@ -176,6 +177,10 @@ encodeOpt(name, (v) => w.str(v));
 
 - 标记为 `BRIDGE_EXPORT` / `DCB_EXPORT` 的 `class` 或 `struct` 才会进入 IR 生成。
 - 未标记的类/结构体即使被 API 使用，也当作普通 C++ 类型处理（不生成 Dart 类）。
+- 导出的类按用途分为两类：
+  - **数据类（data class）**：只有 public 数据字段，**没有导出成员函数**。按值编码传递，**不进入对象注册表**，因此可以跨 Isolate 自由传递和嵌套。
+  - **Opaque 类**：带有导出成员函数（标记为 `BRIDGE_SYNC` / `BRIDGE_ASYNC` 等）。通过对象句柄在 per-Session 注册表中存活，**不能跨 Isolate 共享**。
+- 数据类字段的类型必须是本白名单支持的类型，也可以是另一个数据类（递归要求：嵌套的类也必须是纯数据类）。
 
 ### 5.2 字段/成员导出规则
 
@@ -335,7 +340,7 @@ FRB 的类编解码也是按字段顺序生成：
 
 本项目采用相同的顺序编解码策略，只是 C++ 侧需要 codegen 生成每个导出类的 `encode` / `decode` 函数（或直接用 `ByteReader` / `ByteWriter` 内联到 wire dispatch 中）。
 
-### 5.9 成员函数导出（P3 设计）
+### 5.9 成员函数导出（P3 手写测试阶段）
 
 #### 5.9.1 为什么不能当作普通函数
 
@@ -457,14 +462,15 @@ class Counter implements CppOpaqueInterface {
 
 #### 5.9.5 限制
 
-- 当前阶段（P3）尚未实现，手写测试阶段只做了一个最小 Counter fixture。
+- 当前阶段（P3）仍处于**手写测试阶段**，仅有一个最小 `Counter` fixture 在验证思路；构造函数多种形态、sync/static 成员方法、DartFn 回调方法等还没测试，更遑论最终 codegen 自动生成。当前首要目标是先把手写测试跑通。
 - 导出为 Dart 类的 `class` / `struct` **必须定义在 API 头文件**（codegen 扫描的用户头文件，如 `native/api/*.h`）中，否则 codegen 不会进入 IR。
 - **不支持虚函数、纯虚函数、重载运算符**作为导出方法。
 - **不支持多态继承**：不能把 `class B : public A` 当作 `A` 来传参或返回。
 - **不支持抽象类**：导出的类必须有完整实现，不能是抽象基类。
-- **Opaque 对象（带导出成员函数的类）不支持跨 Isolate 共享**：因为对象句柄注册表是 per-Session 的，不同 Isolate 的 Session 看不到彼此的对象。
+- **Opaque 对象（带导出成员函数的类）不支持跨 Isolate 共享**：对象句柄注册表已实现为 **per-Session**，不同 Isolate 的 Session 看不到彼此的对象。句柄编码为 `session_id << 32 | local_handle`。
 - **Opaque 对象不能按值返回**：成员函数返回 opaque 对象时必须返回 handle（Dart 侧为 `Counter` 等 opaque 类），不能按值拷贝；只有 trivially copyable 的数据类可以按值返回。
-- 但**普通数据类 / 数据结构体**（只有 public 字段、没有导出方法）仍然可以跨 Isolate 使用，因为它们按值编码传递，不依赖句柄生命周期。
+- 但**普通数据类 / 数据结构体**（只有 public 字段、没有导出方法）仍然可以跨 Isolate 使用，因为它们按值编码传递，不依赖句柄生命周期，也**不进入对象注册表**。
+- **数据类可以嵌套其他数据类**，但嵌套的类也必须是纯数据类（只有 public 字段，没有导出方法）。codegen 在解析时应检查并拒绝在数据类中嵌入 opaque 类型。
 - 暂不支持对象的方法在 Dart 侧被多线程并发调用时的默认加锁（由业务代码自己保证线程安全）。
 
 #### 5.9.6 待完善清单
@@ -480,7 +486,7 @@ class Counter implements CppOpaqueInterface {
 | 7 | **默认参数** | C++ 默认参数在 Dart 侧生成显式可选参数。 |
 | 8 | **const 方法** | 标记为只读，不影响 wire，但可用于文档/代码提示。 |
 | 9 | **丰富参数/返回值类型** | 支持基本类型、容器、option、枚举、其他 opaque 对象作为参数或返回值。 |
-| 10 | **对象注册表改为 per-Session** | 当前手写测试是进程级，正式实现应绑定到 Session，禁止跨 Isolate。 |
+| 10 | **对象注册表改为 per-Session** | 已实现：句柄编码为 `session_id << 32 \| local_handle`，Session 关闭时自动 drop 该 Session 的对象。 |
 | 11 | **对象方法线程安全** | 明确默认不加对象级锁，业务代码保证；或可选加锁策略。 |
 | 12 | **无效句柄错误信息** | handle 不存在或已 drop 时返回清晰错误。 |
 | 13 | **更多手写测试** | sync 方法、static 方法、DartFn 回调方法、多实例独立、GC 自动释放。 |
@@ -499,9 +505,9 @@ class Counter implements CppOpaqueInterface {
 | P1 | `std::unordered_map<K, V>` | 已手写测试 |
 | P1 | `std::unordered_set<T>` | 已手写测试 |
 | P1 | 类/结构体（public 字段、自动导出、友元不导出） | 已手写测试 |
-| P2 | 大整数 `__int128` / `unsigned __int128` → `BigInt` | 已手写测试（MSVC 使用 Int128/UInt128 结构体） |
+| P2 | 大整数 `Int128` / `UInt128` → `BigInt`（统一字符串存储） | 已手写测试 |
 | P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
-| P3 | 类/结构体上的方法导出（需标记） | 待设计/待实现 |
+| P3 | 类/结构体上的方法导出（需标记） | 手写测试阶段（仅 Counter fixture，大量基础设施尚未完成） |
 | P3 | 嵌套复合类型（`list<struct>` 等） | 已手写测试 |
 
 ---
