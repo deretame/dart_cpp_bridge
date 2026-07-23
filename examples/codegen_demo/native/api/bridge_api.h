@@ -102,4 +102,14 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name);
 
+// async → Dart: Future<(int, String)> pairEcho((int, String) value)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
+    std::pair<std::int32_t, std::string> value);
+
+// async → Dart: Future<(int, String, bool)> tupleEcho((int, String, bool) value)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+    std::tuple<std::int32_t, std::string, bool> value);
+
 }  // namespace demo::api

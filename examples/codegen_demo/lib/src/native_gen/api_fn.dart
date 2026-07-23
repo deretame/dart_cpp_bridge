@@ -18,6 +18,12 @@ void shutdownBridge() => BridgeApi.instance.shutdown();
 Future<int> sumScores(Map<String, int> scores) =>
     BridgeApi.instance.sumScores(scores);
 
+Future<(int, String)> pairEcho((int, String) value) =>
+    BridgeApi.instance.pairEcho(value);
+
+Future<(int, String, bool)> tupleEcho((int, String, bool) value) =>
+    BridgeApi.instance.tupleEcho(value);
+
 Future<int?> maybeDouble(int? value) =>
     BridgeApi.instance.maybeDouble(value);
 

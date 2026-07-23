@@ -71,6 +71,86 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "pair_echo",
+      "qualified": "demo::api::pair_echo",
+      "kind": "async",
+      "method_id": 237527086,
+      "args": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "pair",
+            "elements": [
+              {
+                "kind": "i32"
+              },
+              {
+                "kind": "string"
+              }
+            ]
+          }
+        }
+      ],
+      "return": {
+        "kind": "pair",
+        "elements": [
+          {
+            "kind": "i32"
+          },
+          {
+            "kind": "string"
+          }
+        ]
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "tuple_echo",
+      "qualified": "demo::api::tuple_echo",
+      "kind": "async",
+      "method_id": 243144110,
+      "args": [
+        {
+          "name": "value",
+          "type": {
+            "kind": "tuple",
+            "elements": [
+              {
+                "kind": "i32"
+              },
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "bool"
+              }
+            ]
+          }
+        }
+      ],
+      "return": {
+        "kind": "tuple",
+        "elements": [
+          {
+            "kind": "i32"
+          },
+          {
+            "kind": "string"
+          },
+          {
+            "kind": "bool"
+          }
+        ]
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "maybe_double",
       "qualified": "demo::api::maybe_double",
       "kind": "async",
@@ -460,8 +540,5 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
-  "diagnostics": [
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: template parameter pack cannot have a default argument",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: template parameter pack cannot have a default argument"
-  ]
+  "diagnostics": []
 }

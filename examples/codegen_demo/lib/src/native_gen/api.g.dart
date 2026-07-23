@@ -20,6 +20,8 @@ final class BridgeApiImpl {
   final DartCppBridge bridge;
 
   static const int sumScoresId = 66895156;
+  static const int pairEchoId = 237527086;
+  static const int tupleEchoId = 243144110;
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
@@ -47,6 +49,25 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(sumScoresId, _payloadBytes);
     return ByteReader(_bytes).i32();
+  }
+
+  Future<(int, String)> pairEcho((int, String) value) async {
+    final _payload = ByteWriter();
+    _payload.i32(value.$1);
+    _payload.str(value.$2);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(pairEchoId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); return (_r.i32(), _r.str()); })();
+  }
+
+  Future<(int, String, bool)> tupleEcho((int, String, bool) value) async {
+    final _payload = ByteWriter();
+    _payload.i32(value.$1);
+    _payload.str(value.$2);
+    _payload.u8(value.$3 ? 1 : 0);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(tupleEchoId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); return (_r.i32(), _r.str(), _r.u8() != 0); })();
   }
 
   Future<int?> maybeDouble(int? value) async {

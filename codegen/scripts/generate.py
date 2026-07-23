@@ -34,6 +34,9 @@ def _dart_type(t: dict[str, Any]) -> str:
         ret = _dart_type(t["return"])
         arg_types = ", ".join(_dart_type(a) for a in args)
         return f"FutureOr<{ret}> Function({arg_types})"
+    if k in ("pair", "tuple"):
+        elems = ", ".join(_dart_type(e) for e in t["elements"])
+        return f"({elems})"
     return {
         "i32": "int",
         "u32": "int",
@@ -84,6 +87,12 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return "dcb::Int128"
     if k == "u128":
         return "dcb::UInt128"
+    if k == "pair":
+        elems = ", ".join(_cpp_type(e) for e in t["elements"])
+        return f"std::pair<{elems}>"
+    if k == "tuple":
+        elems = ", ".join(_cpp_type(e) for e in t["elements"])
+        return f"std::tuple<{elems}>"
     raise ValueError(f"unsupported C++ type: {t}")
 
 
@@ -102,6 +111,13 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         return f"w.str({expr});"
     if k == "enum":
         return f"w.i32(static_cast<std::int32_t>({expr}));"
+    if k in ("pair", "tuple"):
+        helper = "pair" if k == "pair" else "tuple"
+        writes = ", ".join(
+            f"[&](const auto& v) {{ {_cpp_write_item(e, 'v')} }}"
+            for e in t["elements"]
+        )
+        return f"w.{helper}({expr}, {writes});"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -123,6 +139,14 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         if not q.startswith("::"):
             q = "::" + q
         return f"static_cast<{q}>({reader}.i32())"
+    if k in ("pair", "tuple"):
+        helper = "pair" if k == "pair" else "tuple"
+        elem_types = ", ".join(_cpp_type(e) for e in t["elements"])
+        reads = ", ".join(
+            f"[&]() {{ return {_cpp_read_item(e, reader)}; }}"
+            for e in t["elements"]
+        )
+        return f"{reader}.{helper}<{elem_types}>({reads})"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -161,6 +185,15 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
         return f"const auto {name} = r.i128();"
     if k == "u128":
         return f"const auto {name} = r.u128();"
+    if k in ("pair", "tuple"):
+        helper = "pair" if k == "pair" else "tuple"
+        elem_types = ", ".join(_cpp_type(e) for e in t["elements"])
+        reads = ", ".join(
+            f"[&]() {{ return {_cpp_read_item(e)}; }}"
+            for e in t["elements"]
+        )
+        return f"const auto {name} = r.{helper}<{elem_types}>({reads});"
+
     if k == "dart_fn":
         sig_ret = _cpp_type(t["return"])
         sig_args = [_cpp_type(a) for a in t.get("args", [])]
@@ -224,6 +257,13 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
         return f"w.i128({expr});"
     if k == "u128":
         return f"w.u128({expr});"
+    if k in ("pair", "tuple"):
+        helper = "pair" if k == "pair" else "tuple"
+        writes = ", ".join(
+            f"[&](const auto& v) {{ {_cpp_write_item(e, 'v')} }}"
+            for e in t["elements"]
+        )
+        return f"w.{helper}({expr}, {writes});"
     raise ValueError(f"unsupported return type: {t}")
 
 
@@ -293,6 +333,11 @@ def _dart_write_item(
             *_dart_write_item(value_t, "_v", indent + "  ", writer),
             f"{indent}}});",
         ]
+    if k in ("pair", "tuple"):
+        lines = []
+        for i, e in enumerate(t["elements"], start=1):
+            lines.extend(_dart_write_item(e, f"{expr}.${i}", indent, writer))
+        return lines
     raise ValueError(f"unsupported Dart item type: {t}")
 
 
@@ -341,6 +386,12 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         key_read = _dart_read_item(t["key"], reader)
         value_read = _dart_read_item(t["value"], reader)
         return f"(() {{ final _n = {reader}.u32(); final _result = <{key_type}, {value_type}>{{}}; for (var _i = 0; _i < _n; _i++) {{ _result[{key_read}] = {value_read}; }} return _result; }})()"
+    if k in ("pair", "tuple"):
+        n = len(t["elements"])
+        elem_reads = ", ".join(_dart_read_item(e, "_r") for e in t["elements"])
+        if n == 1:
+            elem_reads += ","
+        return f"(() {{ final _r = {reader}; return ({elem_reads}); }})()"
     raise ValueError(f"unsupported Dart item type: {t}")
 
 
@@ -390,6 +441,12 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).readI128()"
     if k == "u128":
         return f"ByteReader({expr}).readU128()"
+    if k in ("pair", "tuple"):
+        n = len(t["elements"])
+        elem_reads = ", ".join(_dart_read_item(e, "_r") for e in t["elements"])
+        if n == 1:
+            elem_reads += ","
+        return f"(() {{ final _r = ByteReader({expr}); return ({elem_reads}); }})()"
     raise ValueError(f"unsupported dart return: {t}")
 
 
@@ -447,6 +504,8 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
             lines.append(f"_payload.writeI128({n});")
         elif k == "u128":
             lines.append(f"_payload.writeU128({n});")
+        elif k in ("pair", "tuple"):
+            lines.extend(_dart_write_item(t, n))
         else:
             raise ValueError(f"unsupported dart arg: {a}")
     return lines

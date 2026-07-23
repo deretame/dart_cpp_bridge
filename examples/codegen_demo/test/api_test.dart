@@ -143,4 +143,14 @@ void main() {
       'hello, async moon',
     );
   });
+
+  test('BRIDGE_ASYNC pair<int, string> pair_echo', () async {
+    expect(await pairEcho((1, 'hello')), (1, 'hello'));
+    expect(await pairEcho((-42, 'world')), (-42, 'world'));
+  });
+
+  test('BRIDGE_ASYNC tuple<int, string, bool> tuple_echo', () async {
+    expect(await tupleEcho((1, 'hello', true)), (1, 'hello', true));
+    expect(await tupleEcho((-42, 'world', false)), (-42, 'world', false));
+  });
 }

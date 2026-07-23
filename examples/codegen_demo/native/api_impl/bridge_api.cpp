@@ -108,4 +108,14 @@ async_simple::coro::Lazy<std::string> greet_dart_fn(
   co_return std::string("hello, ") + reply;
 }
 
+async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
+    std::pair<std::int32_t, std::string> value) {
+  co_return value;
+}
+
+async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+    std::tuple<std::int32_t, std::string, bool> value) {
+  co_return value;
+}
+
 }  // namespace demo::api

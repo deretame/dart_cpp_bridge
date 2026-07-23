@@ -64,6 +64,8 @@ final class BridgeApi {
   }
 
   Future<int> sumScores(Map<String, int> scores) => _impl.sumScores(scores);
+  Future<(int, String)> pairEcho((int, String) value) => _impl.pairEcho(value);
+  Future<(int, String, bool)> tupleEcho((int, String, bool) value) => _impl.tupleEcho(value);
   Future<int?> maybeDouble(int? value) => _impl.maybeDouble(value);
   Future<int> add(int a, int b) => _impl.add(a, b);
   int bridgeVersion() => _impl.bridgeVersion();

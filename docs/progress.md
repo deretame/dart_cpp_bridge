@@ -189,9 +189,14 @@ dart test
    - 修复 MSVC 上模板参数包默认实参限制：便利构造函数改用 `requires` + `std::tuple` 比较。
    - 在 `examples/codegen_demo` 添加 `greet_dart_fn` 测试（含 sync / async 闭包）并跑通。
 
-6. **元组生成**（当前下一步）
-   - `std::pair<T1, T2>` / `std::tuple<Ts...>` → Dart Record。
-   - wire 按位置顺序依次编解码，无长度/字段名。
+6. **元组生成** ✅
+   - 目标：`std::pair<T1, T2>` / `std::tuple<Ts...>` → Dart Record `(T1, T2)` / `(T1, T2, ...)`。
+   - wire 按位置顺序依次编解码，不传输长度或字段名（元素个数编译期确定）。
+   - 实现点：
+     - IR：新增 `"kind": "pair"` / `"tuple"`，元素类型递归进入白名单。
+     - C++ 生成：参数/返回值使用现有 `ByteWriter::pair/tuple` 和 `ByteReader::pair/tuple` 模板辅助。
+     - Dart 生成：inline 按位置逐个 write/read，类型用 Dart Record 表示。
+   - 测试：`examples/codegen_demo` 添加 `pair_echo(std::pair<int, std::string>)` 和 `tuple_echo(std::tuple<int, std::string, bool>)` 两个 BRIDGE_ASYNC 往返函数并跑通。
 
 7. **Stream 生成**
    - 识别 `StreamSink<T>` 参数，生成 Dart `Stream<T>`。

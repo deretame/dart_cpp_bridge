@@ -286,6 +286,26 @@ def _type_ir(
             inner = _type_ir(args[0], enum_by_qualified, enum_by_name)
             return {"kind": "set", "inner": inner}
 
+    if s.startswith("std::pair"):
+        args = _template_args(s)
+        if len(args) >= 2:
+            return {
+                "kind": "pair",
+                "elements": [
+                    _type_ir(a, enum_by_qualified, enum_by_name) for a in args
+                ],
+            }
+
+    if s.startswith("std::tuple"):
+        args = _template_args(s)
+        if args:
+            return {
+                "kind": "tuple",
+                "elements": [
+                    _type_ir(a, enum_by_qualified, enum_by_name) for a in args
+                ],
+            }
+
     # std::string may be spelled as std::basic_string<char, ...> when it appears
     # inside a template instantiation.
     if s.startswith("std::basic_string"):

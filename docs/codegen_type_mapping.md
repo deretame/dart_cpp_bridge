@@ -3,7 +3,7 @@
 > 记录 dart_cpp_bridge Codegen 阶段当前计划支持的 C++ ↔ Dart 类型映射规则。用于后续实现 IR 生成、Dart 代码生成和 C++ wire 编解码时参照。
 >
 > 更新日期：2026-07-23
-> 状态：基础类型、容器、Option、枚举、128 位整数、DartFn 已实现并测试；tuple / Stream / struct / opaque 类方法生成待做。
+> 状态：基础类型、容器、Option、枚举、tuple、128 位整数、DartFn 已实现并测试；Stream / struct / opaque 类方法生成待做。
 
 ---
 
