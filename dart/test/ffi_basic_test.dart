@@ -262,6 +262,23 @@ void main() {
     });
   });
 
+  group('std::pair / std::tuple ↔ Dart Record', () {
+    test('pairEcho roundtrips (int, String)', () async {
+      const input = (42, 'hello');
+      expect(await bridge.pairEcho(input), input);
+    });
+
+    test('pairEcho roundtrips negative int and non-ascii string', () async {
+      const input = (-7, '你好');
+      expect(await bridge.pairEcho(input), input);
+    });
+
+    test('tupleEcho roundtrips (int, String, bool)', () async {
+      const input = (1, 'a', true);
+      expect(await bridge.tupleEcho(input), input);
+    });
+  });
+
   group('__int128 ↔ BigInt', () {
     test('echoI128 roundtrips a large positive value', () async {
       final value = (BigInt.one << 127) - BigInt.two;

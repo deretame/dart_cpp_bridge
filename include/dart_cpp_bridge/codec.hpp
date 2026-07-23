@@ -119,6 +119,10 @@ enum class MethodId : std::uint32_t {
   kCounterSetValue = 32,
   // payload: handle u64 — returns new Counter handle with same value
   kCounterDuplicate = 33,
+  // payload: i32 + string — pair<int, string> echo test
+  kPairEcho = 34,
+  // payload: i32 + string + bool — tuple<int, string, bool> echo test
+  kTupleEcho = 35,
 };
 
 class ByteWriter {
@@ -191,6 +195,17 @@ class ByteWriter {
     for (const auto& item : v) {
       write_value(item);
     }
+  }
+
+  template <typename T1, typename T2, typename Write1, typename Write2>
+  void pair(const std::pair<T1, T2>& p, Write1 write1, Write2 write2) {
+    write1(p.first);
+    write2(p.second);
+  }
+
+  template <typename... Ts, typename... Writes>
+  void tuple(const std::tuple<Ts...>& t, Writes... writes) {
+    std::apply([&](const Ts&... args) { (writes(args), ...); }, t);
   }
 
   void u8vec(const std::vector<std::uint8_t>& v) {
@@ -317,6 +332,25 @@ class ByteReader {
     return result;
   }
 
+  template <typename T1, typename T2, typename Read1, typename Read2>
+  std::pair<T1, T2> pair(Read1 read1, Read2 read2) {
+    return {read1(), read2()};
+  }
+
+  template <typename... Ts, typename... Reads>
+  std::tuple<Ts...> tuple(Reads... reads) {
+    return tuple_impl<Ts...>(std::index_sequence_for<Ts...>{}, reads...);
+  }
+
+ private:
+  template <typename... Ts, typename... Reads, std::size_t... Is>
+  std::tuple<Ts...> tuple_impl(std::index_sequence<Is...>, Reads... reads) {
+    std::tuple<Ts...> result{};
+    ((std::get<Is>(result) = reads()), ...);
+    return result;
+  }
+
+ public:
   std::vector<std::uint8_t> u8vec() {
     auto n = u32();
     need(n);

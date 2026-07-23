@@ -508,6 +508,36 @@ final class DartCppBridge implements Finalizable {
     return ByteReader(await c.future).i32();
   }
 
+  /// Async demo: echoes a (int, String) pair.
+  Future<(int, String)> pairEcho((int, String) input) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..writePairIntString(input);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.pairEcho.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).readPairIntString();
+  }
+
+  /// Async demo: echoes a (int, String, bool) tuple.
+  Future<(int, String, bool)> tupleEcho((int, String, bool) input) async {
+    final id = _allocId();
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    final payload = ByteWriter()..writeTupleIntStringBool(input);
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: MethodId.tupleEcho.value,
+      payload: payload.takeBytes(),
+    ));
+    return ByteReader(await c.future).readTupleIntStringBool();
+  }
+
   /// Async demo: echoes a signed 128-bit integer back as BigInt.
   Future<BigInt> echoI128(BigInt value) async {
     final id = _allocId();

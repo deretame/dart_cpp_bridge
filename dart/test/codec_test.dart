@@ -63,6 +63,20 @@ void main() {
       expect(f.type, MsgType.dartFnCall);
       expect(f.requestId, 9);
     });
+
+    test('pair (int, String) roundtrip', () {
+      const input = (42, 'hello');
+      final payload = ByteWriter()..writePairIntString(input);
+      final r = ByteReader(payload.takeBytes());
+      expect(r.readPairIntString(), input);
+    });
+
+    test('tuple (int, String, bool) roundtrip', () {
+      const input = (1, 'a', true);
+      final payload = ByteWriter()..writeTupleIntStringBool(input);
+      final r = ByteReader(payload.takeBytes());
+      expect(r.readTupleIntStringBool(), input);
+    });
   });
 
   group('codec errors', () {

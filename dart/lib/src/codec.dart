@@ -116,7 +116,9 @@ enum MethodId {
   counterZero(30),
   counterAddList(31),
   counterSetValue(32),
-  counterDuplicate(33);
+  counterDuplicate(33),
+  pairEcho(34),
+  tupleEcho(35);
 
   /// Numeric method id on the wire.
   final int value;
@@ -206,6 +208,19 @@ class ByteWriter {
     for (final x in s) {
       i32(x);
     }
+  }
+
+  /// Append a pair (int, String) as i32 + string.
+  void writePairIntString((int, String) p) {
+    i32(p.$1);
+    str(p.$2);
+  }
+
+  /// Append a tuple (int, String, bool) as i32 + string + bool.
+  void writeTupleIntStringBool((int, String, bool) p) {
+    i32(p.$1);
+    str(p.$2);
+    u8(p.$3 ? 1 : 0);
   }
 
   /// Append a signed 128-bit integer as a length-prefixed decimal string.
@@ -339,6 +354,16 @@ class ByteReader {
       result.add(i32());
     }
     return result;
+  }
+
+  /// Read a pair (int, String) as i32 + string.
+  (int, String) readPairIntString() {
+    return (i32(), str());
+  }
+
+  /// Read a tuple (int, String, bool) as i32 + string + bool.
+  (int, String, bool) readTupleIntStringBool() {
+    return (i32(), str(), u8() != 0);
   }
 
   /// Read a signed 128-bit integer from a length-prefixed decimal string.

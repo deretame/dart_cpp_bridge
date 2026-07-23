@@ -120,6 +120,16 @@ async_simple::coro::Lazy<std::int32_t> set_sum(std::unordered_set<std::int32_t> 
   co_return sum;
 }
 
+async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
+    std::pair<std::int32_t, std::string> input) {
+  co_return input;
+}
+
+async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+    std::tuple<std::int32_t, std::string, bool> input) {
+  co_return input;
+}
+
 async_simple::coro::Lazy<Int128> echo_i128(Int128 v) {
   co_return v;
 }
@@ -553,6 +563,48 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 auto out = co_await set_sum(values);
                 ByteWriter w;
                 w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kPairEcho: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto input = r.pair<std::int32_t, std::string>([&r]() { return r.i32(); }, [&r]() { return r.str(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input = std::move(input)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await pair_echo(input);
+                ByteWriter w;
+                w.pair(out, [&w](std::int32_t v) { w.i32(v); }, [&w](const std::string& s) { w.str(s); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kTupleEcho: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto input = r.tuple<std::int32_t, std::string, bool>(
+            [&r]() { return r.i32(); }, [&r]() { return r.str(); }, [&r]() { return r.u8() != 0; });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input = std::move(input)]()
+            -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await tuple_echo(input);
+                ByteWriter w;
+                w.tuple(out, [&w](std::int32_t v) { w.i32(v); },
+                        [&w](const std::string& s) { w.str(s); }, [&w](bool b) { w.u8(b ? 1 : 0); });
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());

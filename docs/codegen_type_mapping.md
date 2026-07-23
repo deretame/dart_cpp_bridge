@@ -169,6 +169,17 @@ encodeOpt(name, (v) => w.str(v));
 - 编码：wire 中先传长度，再逐个传元素。
 - `T` 必须是不可变、可哈希的类型（基础类型、`enum`、字符串）。
 
+### 4.5 `std::pair<T1, T2>` / `std::tuple<T1, T2, ...>`
+
+| C++ 类型 | Dart 类型 | 说明 |
+|----------|-----------|------|
+| `std::pair<T1, T2>` | `(T1, T2)` | Dart 3 Record，位置对应 first/second |
+| `std::tuple<T1, T2, ...>` | `(T1, T2, ...)` | Dart 3 Record，按位置一一对应 |
+
+- 编码：wire 中按元素顺序依次编码，**不传输长度或字段名**（元素个数在编译期确定）。
+- 元素类型必须是本白名单支持的类型。
+- 由于 Dart Record 字段没有名字，C++ 端 `std::tuple` 也按位置映射，codegen 阶段不负责生成字段名。
+
 ---
 
 ## 5. 类与结构体
@@ -545,6 +556,7 @@ class Counter extends CppOpaqueInterface {
 | P1 | 枚举（enum / enum class） | 已手写测试 |
 | P1 | `std::unordered_map<K, V>` | 已手写测试 |
 | P1 | `std::unordered_set<T>` | 已手写测试 |
+| P1 | `std::pair<T1, T2>` / `std::tuple<T1, T2, ...>` → Dart Record | 已手写测试 |
 | P1 | 类/结构体（public 字段、自动导出、友元不导出） | 已手写测试 |
 | P2 | 大整数 `Int128` / `UInt128` → `BigInt`（统一字符串存储） | 已手写测试 |
 | P2 | Typed list 优化（`Vec<u8>` → `Uint8List` 等） | 已手写测试 |
@@ -560,7 +572,6 @@ class Counter extends CppOpaqueInterface {
 - 指针类型（`T*`、`std::unique_ptr<T>`、`std::shared_ptr<T>` 等）
 - 引用（`T&`）作为参数/返回值类型（wire 中按值传递）
 - `std::map`、`std::set`（顺序容器）
-- `std::tuple`、`std::pair`（后续可能作为 `Record` 或自定义类支持）
 - `std::variant`、`std::any`
 - 位域（bit-field）
 - 模板参数未特化的泛型类型
