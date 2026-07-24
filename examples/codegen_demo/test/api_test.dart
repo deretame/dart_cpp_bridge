@@ -282,4 +282,55 @@ void main() {
     expect(await a.value(), 2);
     expect(await b.value(), 7);
   });
+
+  test('opaque class Counter destructor is called on dispose', () async {
+    // Record baseline alive count (other tests may have leaked counters).
+    final baseline = Counter.aliveCount();
+
+    final c1 = Counter.withInitialValue(initialValue: 100);
+    final c2 = Counter();
+    expect(Counter.aliveCount(), baseline + 2);
+
+    // Dispose c1 explicitly — C++ destructor should run immediately.
+    c1.dispose();
+    expect(Counter.aliveCount(), baseline + 1);
+
+    // Dispose c2.
+    c2.dispose();
+    expect(Counter.aliveCount(), baseline);
+  });
+
+  test('opaque class Counter double dispose is safe', () {
+    final baseline = Counter.aliveCount();
+    final c = Counter.withInitialValue(initialValue: 1);
+    expect(Counter.aliveCount(), baseline + 1);
+
+    c.dispose();
+    expect(Counter.aliveCount(), baseline);
+
+    // Second dispose should be a no-op (idempotent).
+    c.dispose();
+    expect(Counter.aliveCount(), baseline);
+  });
+
+  test('opaque class Counter duplicate creates independent alive count', () async {
+    final baseline = Counter.aliveCount();
+    final original = Counter.withInitialValue(initialValue: 42);
+    expect(Counter.aliveCount(), baseline + 1);
+
+    final copy = await original.duplicate();
+    expect(Counter.aliveCount(), baseline + 2);
+
+    // They are independent objects.
+    expect(await copy.value(), 42);
+    await original.increment();
+    expect(await original.value(), 43);
+    expect(await copy.value(), 42);
+
+    original.dispose();
+    expect(Counter.aliveCount(), baseline + 1);
+
+    copy.dispose();
+    expect(Counter.aliveCount(), baseline);
+  });
 }

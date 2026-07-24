@@ -98,6 +98,7 @@ final class BridgeApi {
   int counterSum(int a, int b) => _impl.counterSum(a, b);
   Future<String> counterGreetDartFn(int handle, FutureOr<String> Function(String) callback, String name) async => _impl.counterGreetDartFn(handle, callback, name);
   Stream<int> counterTickStream(int handle, int count, int intervalMs) => _impl.counterTickStream(handle, count, intervalMs);
+  int counterAliveCount() => _impl.counterAliveCount();
 }
 
 
@@ -146,6 +147,9 @@ final class Counter extends CppOpaqueInterface {
   Stream<int> tickStream([int count = 5, int intervalMs = 10]) {
     ensureAlive();
     return BridgeApi.instance.counterTickStream(handle, count, intervalMs);
+  }
+  static int aliveCount() {
+    return BridgeApi.instance.counterAliveCount();
   }
 }
 

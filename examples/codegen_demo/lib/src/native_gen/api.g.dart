@@ -120,6 +120,7 @@ final class BridgeApiImpl {
   static const int counterSumId = 1521970656;
   static const int counterGreetDartFnId = 1190014947;
   static const int counterTickStreamId = 550621099;
+  static const int counterAliveCountId = 1338263248;
 
   Future<int> sumScores(Map<String, int> scores) async {
     final _payload = ByteWriter();
@@ -461,5 +462,12 @@ final class BridgeApiImpl {
     _payload.i32(count);
     _payload.i32(intervalMs);
     return bridge.openStream<int>(counterTickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
+  }
+
+  int counterAliveCount() {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterAliveCountId, _payloadBytes);
+    return ByteReader(_bytes).i32();
   }
 }

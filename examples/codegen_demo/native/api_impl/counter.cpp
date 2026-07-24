@@ -12,7 +12,14 @@
 namespace demo::api {
 
 Counter::Counter(std::int32_t initialValue) : value_(initialValue) {}
+
 Counter::Counter() : value_(0) {}
+
+Counter::~Counter() {
+  // Custom cleanup logic goes here (close files, free resources, etc.).
+  // This is called when the shared_ptr reference count reaches zero,
+  // triggered by Dart dispose(), NativeFinalizer, or session close.
+}
 
 async_simple::coro::Lazy<std::int32_t> Counter::value() const { co_return value_; }
 

@@ -16,7 +16,9 @@
 #include <asio/post.hpp>
 
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -39,6 +41,16 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 }
 
 }  // namespace
+
+// Per-class alive instance counters (per-session, generated for opaque classes).
+struct AliveCounter_Counter {
+  std::mutex mu;
+  std::unordered_map<std::uint64_t, std::int32_t> counts;
+  void increment(std::uint64_t sid) { std::lock_guard<std::mutex> lk(mu); counts[sid]++; }
+  void decrement(std::uint64_t sid) { std::lock_guard<std::mutex> lk(mu); auto it = counts.find(sid); if (it != counts.end() && --it->second <= 0) counts.erase(it); }
+  std::int32_t load(std::uint64_t sid) { std::lock_guard<std::mutex> lk(mu); auto it = counts.find(sid); return it != counts.end() ? it->second : 0; }
+};
+static AliveCounter_Counter g_Counter_alive_count;
 
 inline void encode_Point(ByteWriter& w, const ::demo::api::Point& v) {
   w.f64(v.x);
@@ -548,7 +560,10 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto initialValue = r.i32();
         auto obj = std::make_shared<::demo::api::Counter>(initialValue);
-        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {});
+        g_Counter_alive_count.increment(session_id);
+        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {
+          g_Counter_alive_count.decrement(session_id);
+        });
         ByteWriter w;
         w.u64(handle);
         post_ok(session, gen, req, method, w.raw());
@@ -559,7 +574,10 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         
         auto obj = std::make_shared<::demo::api::Counter>();
-        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {});
+        g_Counter_alive_count.increment(session_id);
+        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {
+          g_Counter_alive_count.decrement(session_id);
+        });
         ByteWriter w;
         w.u64(handle);
         post_ok(session, gen, req, method, w.raw());
@@ -733,7 +751,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               try {
                 auto out = co_await static_cast<::demo::api::Counter*>(obj.get())->duplicate();
                 ByteWriter w;
-                { auto __obj = std::make_shared<::demo::api::Counter>(std::move(out)); const auto __handle = dcb::ObjectHandleRegistry::instance().insert(session_id, __obj, [](std::shared_ptr<void>&) {}); w.u64(__handle); }
+                { auto __obj = std::make_shared<::demo::api::Counter>(std::move(out)); g_Counter_alive_count.increment(session_id); const auto __handle = dcb::ObjectHandleRegistry::instance().insert(session_id, __obj, [session_id](std::shared_ptr<void>&) { g_Counter_alive_count.decrement(session_id); }); w.u64(__handle); }
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
                 post_err(session, gen, req, method, e.what());
@@ -810,6 +828,18 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         static_cast<::demo::api::Counter*>(obj.get())->tickStream(std::move(sink), count, intervalMs);
         break;
       }
+
+      case 1338263248: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        
+        ByteWriter w;
+        {
+          auto out = g_Counter_alive_count.load(session_id);
+          w.i32(out);
+        }
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }
       default:
         post_err(session, gen, req, method, "unknown method");
         break;
@@ -839,7 +869,10 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto initialValue = r.i32();
     auto obj = std::make_shared<::demo::api::Counter>(initialValue);
-    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {});
+    g_Counter_alive_count.increment(session_id);
+    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {
+      g_Counter_alive_count.decrement(session_id);
+    });
     ByteWriter w;
     w.u64(handle);
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
@@ -849,7 +882,10 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     ByteReader r(frame.payload.data(), frame.payload.size());
     
     auto obj = std::make_shared<::demo::api::Counter>();
-    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [](std::shared_ptr<void>&) {});
+    g_Counter_alive_count.increment(session_id);
+    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {
+      g_Counter_alive_count.decrement(session_id);
+    });
     ByteWriter w;
     w.u64(handle);
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
@@ -881,6 +917,17 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     ByteWriter w;
     {
       auto out = ::demo::api::Counter::sum(a, b);
+      w.i32(out);
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
+
+  if (frame.method_id == 1338263248u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    
+    ByteWriter w;
+    {
+      auto out = g_Counter_alive_count.load(session_id);
       w.i32(out);
     }
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());

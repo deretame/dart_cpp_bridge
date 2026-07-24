@@ -18,6 +18,14 @@ class BRIDGE_EXPORT Counter {
   BRIDGE_CONSTRUCTOR Counter(std::int32_t initialValue);
   BRIDGE_CONSTRUCTOR Counter();
 
+  /// Destructor: marked with BRIDGE_DESTRUCTOR to document intent.
+  /// Codegen does not generate a wire method for it — destruction is
+  /// triggered by dcb_drop_object (Dart dispose / NativeFinalizer /
+  /// session close), which releases the shared_ptr and invokes this
+  /// destructor when the reference count reaches zero.
+  /// Put custom cleanup logic here (close files, free resources, etc.).
+  BRIDGE_DESTRUCTOR ~Counter();
+
   BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> value() const;
   BRIDGE_SYNC std::int32_t valueSync() const;
 
