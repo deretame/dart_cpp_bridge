@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -777,6 +778,37 @@ def collect_headers(scan_dirs: list[Path]) -> list[Path]:
     return headers
 
 
+def _clang_system_includes() -> list[str]:
+    """Return -I flags for the host C++ standard library headers.
+
+    Detects the paths that clang would search by running
+    ``clang -E -x c++ - -v``.  Returns an empty list if clang is not
+    available or detection fails.
+    """
+    try:
+        out = subprocess.check_output(
+            ["clang", "-E", "-x", "c++", "-", "-v"],
+            input=b"",
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        ).decode("utf-8", errors="replace")
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return []
+    incs: list[str] = []
+    in_inc = False
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("#include <...>"):
+            in_inc = True
+            continue
+        if line.startswith("End of search list"):
+            in_inc = False
+            continue
+        if in_inc and line.startswith("/"):
+            incs.append(f"-I{line}")
+    return incs
+
+
 def parse_project(config_path: Path) -> dict[str, Any]:
     cfg = resolve_config(config_path)
     headers = collect_headers(cfg["scan"])
@@ -807,6 +839,19 @@ def parse_project(config_path: Path) -> dict[str, Any]:
 
     for inc in cfg["include_paths"]:
         args.append(f"-I{inc}")
+
+    # libclang-ng (bundled with the codegen toolchain) ships C/C++ builtin
+    # headers that can conflict with the host standard library on Linux,
+    # causing parse errors that degrade the AST (template instantiations
+    # reported as ``int``).  Detect the host clang's include paths and use
+    # -nostdinc/-nostdinc++ to force libclang to use the host headers instead.
+    # If clang is not available or the paths cannot be detected, fall back to
+    # the bundled headers (the default behaviour).
+    clang_includes = _clang_system_includes()
+    if clang_includes:
+        args.append("-nostdinc")
+        args.append("-nostdinc++")
+        args.extend(clang_includes)
 
     index = Index.create()
     diags_out: list[str] = []
