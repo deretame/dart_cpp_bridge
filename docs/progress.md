@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-07-23
+> 更新日期：2026-07-24
 
 ---
 
@@ -17,7 +17,7 @@
 
 当前仓库是 **独立实验工程**，与 Breeze 等业务仓解耦。
 
-Dart 测试：`cd dart && dart test`（约 **82** 例，含 DartFn sync/async、数据类、Opaque 类方法导出）。  
+Dart 测试：`cd dart && dart test`（约 **82** 例，含 DartFn sync/async、数据类、Opaque 类方法导出、析构生命周期）。  
 C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、DartFn e2e 模拟 reply）。
 
 ---
@@ -238,13 +238,21 @@ dart test
         - 扫描类内 public 方法，按 `BRIDGE_SYNC/ASYNC/NORMAL` 分类。
         - 识别 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（约定兜底）。
         - 无导出方法的类归入 data_class；有导出方法的类归入 opaque_class。
+        - 自动为每个 opaque class 注入 `aliveCount()` 诊断方法到 IR（标记 `"generated": true`）。
       - IR：每个 opaque_class 记录 `name`、`qualified`、`fields`（可选，当前阶段不导出字段）、`methods`。
       - `_type_ir`：opaque 类作为参数/返回值时统一按 `"kind": "opaque_handle"` 处理。
       - `generate.py`：
         - C++：构造函数生成 insert 到 `ObjectHandleRegistry` 并返回 handle；实例方法 payload 首字段为 handle；析构复用 `dcb_drop_object`。
-        - Dart：生成 `class Counter extends CppOpaqueInterface`，实例方法首参数隐藏 `_handle`。
-    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`，覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝等场景。
-    - 测试：`examples/codegen_demo` 36 例 demo 测试全绿（含 Counter 13 例）；`dart/` 主包 82 例全绿。
+        - C++：每个 opaque class 自动生成 per-session alive 计数器（`AliveCounter_ClassName` 结构体，内含 `mutex` + `unordered_map<session_id, count>`），构造时 `increment`，DropFn 中 `decrement`。
+        - C++：`aliveCount()` 静态方法读取当前 session 的存活实例数。
+        - Dart：生成 `class Counter extends CppOpaqueInterface`，实例方法首参数隐藏 `_handle`；自动生成 `Counter.aliveCount()` 静态方法。
+    - **析构机制（对齐 FRB `RustAutoOpaque` 模式）**：
+      - `BRIDGE_DESTRUCTOR` 为 no-op 标记，不生成 wire 方法；析构统一由 `shared_ptr` 生命周期管理。
+      - Dart `dispose()` → `dcb_drop_object(handle)` → registry 移除 → `shared_ptr` 引用归零 → C++ `~ClassName()`。
+      - 若未手动 dispose，Dart GC 通过 `NativeFinalizer` 自动触发相同清理。
+      - 用户只需在 `~ClassName()` 中写自定义清理逻辑（关文件、释放资源等），无需手动管理计数。
+    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`，覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝、`BRIDGE_DESTRUCTOR` 析构标记等场景。
+    - 测试：`examples/codegen_demo` 39 例 demo 测试全绿（含 Counter 16 例，其中析构相关 3 例）；`dart/` 主包 82 例全绿。
     - 限制：当前阶段不导出 Opaque 类字段、不支持方法重载、不支持多态继承。
 
 ---
@@ -259,5 +267,5 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法 + BRIDGE_DESTRUCTOR 析构 + per-session alive 计数（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。
 
