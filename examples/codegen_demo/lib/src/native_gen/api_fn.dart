@@ -21,11 +21,20 @@ Future<int> sumScores(Map<String, int> scores) =>
 Future<double> distance(Point a, Point b) =>
     BridgeApi.instance.distance(a, b);
 
+Future<int> failNormal(String msg) =>
+    BridgeApi.instance.failNormal(msg);
+
 Future<(int, String)> pairEcho((int, String) value) =>
     BridgeApi.instance.pairEcho(value);
 
 Future<(int, String, bool)> tupleEcho((int, String, bool) value) =>
     BridgeApi.instance.tupleEcho(value);
+
+Future<int> failAsync(String msg) =>
+    BridgeApi.instance.failAsync(msg);
+
+Stream<int> failStream(String msg) =>
+    BridgeApi.instance.failStream(msg);
 
 Future<int?> maybeDouble(int? value) =>
     BridgeApi.instance.maybeDouble(value);
@@ -54,11 +63,17 @@ Future<Point> scale(Point p, double factor) =>
 Future<bool> negateBool(bool value) =>
     BridgeApi.instance.negateBool(value);
 
+int failSync(String msg) =>
+    BridgeApi.instance.failSync(msg);
+
 Future<String> sleepGreeting(String name) =>
     BridgeApi.instance.sleepGreeting(name);
 
 Future<BigInt> echoU128(BigInt value) =>
     BridgeApi.instance.echoU128(value);
+
+Future<int> failNonStd() =>
+    BridgeApi.instance.failNonStd();
 
 Future<int> incrementU32(int value) =>
     BridgeApi.instance.incrementU32(value);
@@ -68,6 +83,9 @@ Stream<int> tickStream(int count, int intervalMs) =>
 
 Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) =>
     BridgeApi.instance.greetDartFn(callback, name);
+
+List<List<List<int>>> nestedCube(int n) =>
+    BridgeApi.instance.nestedCube(n);
 
 Future<int> sumSet(Set<int> values) =>
     BridgeApi.instance.sumSet(values);

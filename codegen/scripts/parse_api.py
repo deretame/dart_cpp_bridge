@@ -168,6 +168,34 @@ def _collect_classes(
                 visit(ch, ns_stack + ([name] if name else []))
             return
 
+        # C03: template classes cannot be exported.
+        if cursor.kind == CursorKind.CLASS_TEMPLATE:
+            loc = cursor.location
+            if not loc.file:
+                return
+            if Path(loc.file.name).resolve() != Path(header_s):
+                return
+            attrs = _cursor_attrs(cursor)
+            if ATTR_EXPORT in attrs:
+                qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
+                out.append(
+                    {
+                        "name": cursor.spelling,
+                        "qualified": qname,
+                        "kind": "template_class",
+                        "fields": [],
+                        "methods": [],
+                        "header": header_s,
+                        "loc": _cursor_loc(cursor),
+                        "violations": [
+                            f"class `{qname}` at {_cursor_loc(cursor)}: "
+                            f"exported class is a template. Template classes "
+                            f"cannot be exported; use explicit non-template wrappers."
+                        ],
+                    }
+                )
+            return
+
         if cursor.kind in (CursorKind.CLASS_DECL, CursorKind.STRUCT_DECL):
             loc = cursor.location
             if not loc.file:
@@ -182,6 +210,28 @@ def _collect_classes(
             fields: list[dict[str, Any]] = []
             methods: list[dict[str, Any]] = []
             has_exported_method = False
+            violations: list[str] = []
+
+            # C01: check for virtual methods.
+            # C02: check for base classes (inheritance).
+            for ch in cursor.get_children():
+                if ch.kind == CursorKind.CXX_BASE_SPECIFIER:
+                    base_name = ch.spelling or ch.type.spelling
+                    violations.append(
+                        f"class `{qname}` at {_cursor_loc(cursor)}: "
+                        f"exported class has base class `{base_name}`. "
+                        f"Inheritance is not supported for exported classes."
+                    )
+                elif ch.kind in (CursorKind.CXX_METHOD, CursorKind.DESTRUCTOR):
+                    try:
+                        if ch.is_virtual_method():
+                            violations.append(
+                                f"class `{qname}` at {_cursor_loc(cursor)}: "
+                                f"exported class has virtual method `{ch.spelling}`. "
+                                f"Virtual dispatch is not supported across the bridge."
+                            )
+                    except Exception:
+                        pass
 
             for ch in cursor.get_children():
                 if ch.kind == CursorKind.FIELD_DECL:
@@ -191,7 +241,8 @@ def _collect_classes(
                         {
                             "name": ch.spelling,
                             "type": _type_ir(
-                                ch.type.spelling, enum_by_qualified, enum_by_name
+                                ch.type.spelling, enum_by_qualified, enum_by_name,
+                                loc=_cursor_loc(ch),
                             ),
                         }
                     )
@@ -215,6 +266,7 @@ def _collect_classes(
                                         p.type.spelling,
                                         enum_by_qualified,
                                         enum_by_name,
+                                        loc=_cursor_loc(p),
                                     ),
                                     "default_value": default_value,
                                 }
@@ -238,7 +290,8 @@ def _collect_classes(
                     ret = {"kind": "void"}
                     if ch.kind == CursorKind.CXX_METHOD:
                         ret = _type_ir(
-                            ch.result_type.spelling, enum_by_qualified, enum_by_name
+                            ch.result_type.spelling, enum_by_qualified, enum_by_name,
+                            loc=_cursor_loc(ch),
                         )
 
                     if ch.kind == CursorKind.CONSTRUCTOR or ATTR_CONSTRUCTOR in method_attrs:
@@ -298,16 +351,17 @@ def _collect_classes(
                         "generated": True,  # marker: not from user header
                     }
                 )
-            out.append(
-                {
-                    "name": cursor.spelling,
-                    "qualified": qname,
-                    "kind": kind,
-                    "fields": fields,
-                    "methods": methods,
-                    "header": header_s,
-                }
-            )
+            cls_descriptor: dict[str, Any] = {
+                "name": cursor.spelling,
+                "qualified": qname,
+                "kind": kind,
+                "fields": fields,
+                "methods": methods,
+                "header": header_s,
+            }
+            if violations:
+                cls_descriptor["violations"] = violations
+            out.append(cls_descriptor)
             return
 
         for ch in cursor.get_children():
@@ -348,25 +402,44 @@ def _resolve_class_field_types(
             plain = " ".join(s.replace("&&", " ").replace("&", " ").split())
             plain = __import__("re").sub(r"\b(const|volatile|class|struct)\b", "", plain)
             plain = " ".join(plain.split())
+            loc = t.get("loc")
             if plain in data_class_by_qualified:
                 c = data_class_by_qualified[plain]
-                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                r: dict[str, Any] = {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
             if plain in data_class_by_name:
                 c = data_class_by_name[plain]
-                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                r = {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
             name = plain.split("::")[-1]
             if name in data_class_by_name:
                 c = data_class_by_name[name]
-                return {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                r = {"kind": "data_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
             if plain in opaque_class_by_qualified:
                 c = opaque_class_by_qualified[plain]
-                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                r = {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
             if plain in opaque_class_by_name:
                 c = opaque_class_by_name[plain]
-                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                r = {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
             if name in opaque_class_by_name:
                 c = opaque_class_by_name[name]
-                return {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                r = {"kind": "opaque_class", "name": c["name"], "qualified": c["qualified"]}
+                if loc:
+                    r["loc"] = loc
+                return r
         return t
 
     for cls in classes:
@@ -510,6 +583,17 @@ def _split_function_signature(sig: str) -> tuple[str, list[str]] | None:
     return ret, args
 
 
+def _cursor_loc(cursor) -> str | None:
+    """Return a human-readable 'file:line' string for a cursor, or None."""
+    try:
+        loc = cursor.location
+        if loc.file:
+            return f"{Path(loc.file.name).name}:{loc.line}"
+    except Exception:
+        pass
+    return None
+
+
 def _type_ir(
     type_spell: str,
     enum_by_qualified: dict[str, dict[str, Any]] | None = None,
@@ -518,6 +602,7 @@ def _type_ir(
     data_class_by_name: dict[str, dict[str, Any]] | None = None,
     opaque_class_by_qualified: dict[str, dict[str, Any]] | None = None,
     opaque_class_by_name: dict[str, dict[str, Any]] | None = None,
+    loc: str | None = None,
 ) -> dict[str, Any]:
     s = " ".join(type_spell.replace("&&", " ").replace("&", " ").split())
     # strip const/class/struct
@@ -533,6 +618,7 @@ def _type_ir(
             data_class_by_name,
             opaque_class_by_qualified,
             opaque_class_by_name,
+            loc=loc,
         )
 
     if s.startswith("async_simple::coro::Lazy"):
@@ -674,7 +760,10 @@ def _type_ir(
         return {"kind": "f32"}
     if s in ("double", "f64"):
         return {"kind": "f64"}
-    return {"kind": "unsupported", "spelling": type_spell}
+    result: dict[str, Any] = {"kind": "unsupported", "spelling": type_spell}
+    if loc:
+        result["loc"] = loc
+    return result
 
 
 def _has_stream_sink(args: list[dict[str, Any]]) -> bool:
@@ -746,6 +835,7 @@ def _collect_functions(
                                 data_class_by_name,
                                 opaque_class_by_qualified,
                                 opaque_class_by_name,
+                                loc=_cursor_loc(ch),
                             ),
                         }
                     )
@@ -757,6 +847,7 @@ def _collect_functions(
                 data_class_by_name,
                 opaque_class_by_qualified,
                 opaque_class_by_name,
+                loc=_cursor_loc(cursor),
             )
             kind = _classify(attrs, ret, args)
             if kind is None:
@@ -825,6 +916,105 @@ def _clang_system_includes() -> list[str]:
         if in_inc and line.startswith("/"):
             incs.append(f"-I{line}")
     return incs
+
+
+def _validate_ir(ir: dict[str, Any]) -> list[str]:
+    """Walk the IR and collect type-whitelist violations with source context.
+
+    Returns a list of human-readable error strings. Empty list means all types
+    are within the supported whitelist.
+    """
+    errors: list[str] = []
+
+    def _check_type(t: dict[str, Any], context: str) -> None:
+        """Recursively check a type IR node for unsupported kinds."""
+        k = t.get("kind")
+        if k == "unsupported":
+            loc_s = f" at {t['loc']}" if t.get("loc") else ""
+            spelling = t.get("spelling", "?")
+            # F02 enhancement: if the unsupported type looks like a class name,
+            # suggest that it might need BRIDGE_EXPORT.
+            plain = " ".join(
+                spelling.replace("&&", " ").replace("&", " ").replace("*", " ").split()
+            )
+            bare_name = plain.split("::")[-1].strip()
+            hint = (
+                "    Hint: only types in the whitelist are allowed "
+                "(primitives, std::string, containers, std::optional, "
+                "std::pair/tuple, enums, data classes, DartFn, Int128/UInt128)."
+            )
+            if bare_name and bare_name[0].isupper() and "<" not in plain:
+                hint = (
+                    f"    Hint: class `{bare_name}` is either not marked with "
+                    f"BRIDGE_EXPORT, or is not in the whitelist.\n"
+                    f"    If it is a class you own, add BRIDGE_EXPORT to its "
+                    f"declaration. Otherwise, remove it from the exported API."
+                )
+            errors.append(
+                f"  {context}: unsupported type `{spelling}`{loc_s}\n{hint}"
+            )
+        elif k in ("vector", "array", "set", "optional"):
+            _check_type(t.get("inner", {}), context)
+        elif k == "map":
+            _check_type(t.get("key", {}), context)
+            _check_type(t.get("value", {}), context)
+        elif k in ("pair", "tuple"):
+            for i, e in enumerate(t.get("elements", [])):
+                _check_type(e, context)
+        elif k == "dart_fn":
+            for a in t.get("args", []):
+                _check_type(a, context)
+            _check_type(t.get("return", {}), context)
+        elif k == "stream_sink":
+            _check_type(t.get("inner", {}), context)
+        elif k == "lazy":
+            _check_type(t.get("inner", {}), context)
+
+    # --- Check top-level functions ---
+    for fn in ir.get("functions", []):
+        fn_ctx = f"function `{fn.get('qualified', fn.get('name', '?'))}`"
+        for a in fn.get("args", []):
+            _check_type(a["type"], f"{fn_ctx}, arg `{a['name']}`")
+        _check_type(fn.get("return", {}), f"{fn_ctx}, return type")
+
+    # --- Check classes ---
+    for cls in ir.get("classes", []):
+        cls_name = cls.get("qualified", cls.get("name", "?"))
+        cls_kind = cls.get("kind", "class")
+
+        # C01/C02/C03: report structural violations detected during collection.
+        for v in cls.get("violations", []):
+            errors.append(f"  {v}")
+
+        # Skip template classes from further field/method checks.
+        if cls_kind == "template_class":
+            continue
+
+        # Check fields
+        for f in cls.get("fields", []):
+            f_ctx = f"{cls_kind} `{cls_name}`, field `{f['name']}`"
+            _check_type(f["type"], f_ctx)
+            # data_class fields must NOT reference opaque classes
+            if cls_kind == "data_class" and f["type"].get("kind") == "opaque_class":
+                loc_s = f" at {f['type']['loc']}" if f['type'].get('loc') else ""
+                errors.append(
+                    f"  {f_ctx}: data class field cannot reference "
+                    f"opaque class `{f['type'].get('name', '?')}`{loc_s}\n"
+                    f"    Hint: opaque classes are handle-only and cannot be "
+                    f"embedded by value in a data class. Use a handle (uint64_t) "
+                    f"or restructure your API."
+                )
+
+        # Check methods
+        for m in cls.get("methods", []):
+            if m.get("generated"):
+                continue  # skip auto-injected methods like aliveCount
+            m_ctx = f"{cls_kind} `{cls_name}`, method `{m.get('name', '?')}`"
+            for a in m.get("args", []):
+                _check_type(a["type"], f"{m_ctx}, arg `{a['name']}`")
+            _check_type(m.get("return", {}), f"{m_ctx}, return type")
+
+    return errors
 
 
 def parse_project(config_path: Path) -> dict[str, Any]:
@@ -960,10 +1150,37 @@ def parse_project(config_path: Path) -> dict[str, Any]:
             )
         )
 
-    # de-dupe by qualified name
+    # de-dupe by qualified name, detecting overloads (duplicates)
     by_q: dict[str, dict[str, Any]] = {}
+    duplicates: list[str] = []
     for fn in functions:
-        by_q[fn["qualified"]] = fn
+        q = fn["qualified"]
+        if q in by_q:
+            prev = by_q[q]
+            duplicates.append(
+                f"  function `{q}`: duplicate/overloaded declaration. "
+                f"C++ function overloading is not supported (Dart does not support overloads). "
+                f"First at {prev.get('loc', '?')}, duplicate at {fn.get('loc', '?')}."
+            )
+        else:
+            by_q[q] = fn
+
+    if duplicates:
+        msg_lines = [
+            "",
+            "=" * 60,
+            "CODEGEN ERROR: duplicate function names detected",
+            "=" * 60,
+            "",
+        ]
+        msg_lines.extend(duplicates)
+        msg_lines.append("")
+        msg_lines.append(
+            f"Found {len(duplicates)} duplicate(s). "
+            f"Rename the functions to have unique names."
+        )
+        msg_lines.append("=" * 60)
+        raise SystemExit("\n".join(msg_lines))
 
     ir = {
         "version": 2,
@@ -975,6 +1192,29 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         "functions": sorted(by_q.values(), key=lambda f: f["method_id"]),
         "diagnostics": diags_out,
     }
+
+    # --- Type whitelist validation ---
+    type_errors = _validate_ir(ir)
+    if type_errors:
+        msg_lines = [
+            "",
+            "=" * 60,
+            "CODEGEN TYPE ERROR: unsupported types found in exported API",
+            "=" * 60,
+            "",
+        ]
+        msg_lines.extend(type_errors)
+        msg_lines.append("")
+        msg_lines.append(
+            f"Found {len(type_errors)} type error(s). "
+            f"Fix the highlighted declarations and re-run codegen."
+        )
+        msg_lines.append(
+            "See docs/codegen_type_mapping.md for the full whitelist."
+        )
+        msg_lines.append("=" * 60)
+        raise SystemExit("\n".join(msg_lines))
+
     return {"cfg": cfg, "ir": ir}
 
 

@@ -139,12 +139,6 @@ function Install-Wheel {
     [string]$TmpRoot
   )
   Ensure-Dir $SitePackages
-  $clangDir = Join-Path $SitePackages 'clang'
-  if (Test-Path -LiteralPath $clangDir) {
-    Remove-Item -LiteralPath $clangDir -Recurse -Force
-  }
-  Get-ChildItem -LiteralPath $SitePackages -Directory -Filter 'libclang_ng-*.dist-info' -ErrorAction SilentlyContinue |
-    Remove-Item -Recurse -Force
 
   Write-Host "  extracting wheel -> $SitePackages"
   $tmpExtract = Join-Path $TmpRoot ("wheel_extract_" + [Guid]::NewGuid().ToString('N'))
@@ -174,6 +168,8 @@ function Test-StampMatch($stamp, $expected) {
     $stamp.python_sha256 -eq $expected.python_sha256 -and
     $stamp.libclang_ng -eq $expected.libclang_ng -and
     $stamp.libclang_ng_sha256 -eq $expected.libclang_ng_sha256 -and
+    $stamp.ruamel_yaml -eq $expected.ruamel_yaml -and
+    $stamp.ruamel_yaml_sha256 -eq $expected.ruamel_yaml_sha256 -and
     $stamp.python_exe -and (Test-Path -LiteralPath $stamp.python_exe)
 }
 
@@ -188,12 +184,15 @@ Write-Host "platform: $platform"
 
 $pySpec = $lock.python.platforms.$platform
 $lcSpec = $lock.libclang_ng.platforms.$platform
+$rySpec = $lock.ruamel_yaml
 if (-not $pySpec) { throw "python platform not in versions.lock: $platform" }
 if (-not $lcSpec) { throw "libclang_ng platform not in versions.lock: $platform" }
+if (-not $rySpec) { throw "ruamel_yaml not in versions.lock" }
 
 $pySha = $pySpec.sha256.ToLowerInvariant()
 $lcSha = $lcSpec.sha256.ToLowerInvariant()
-$lockFp = (Get-Sha256Text "$platform|$pySha|$lcSha").Substring(0, 16)
+$rySha = $rySpec.sha256.ToLowerInvariant()
+$lockFp = (Get-Sha256Text "$platform|$pySha|$lcSha|$rySha").Substring(0, 16)
 $envKey = "$platform-$lockFp"
 
 $cacheRoot = Get-DefaultCacheRoot
@@ -213,6 +212,8 @@ $expectedStamp = [ordered]@{
   python_sha256      = $pySha
   libclang_ng        = [string]$lock.libclang_ng.version
   libclang_ng_sha256 = $lcSha
+  ruamel_yaml        = [string]$lock.ruamel_yaml.version
+  ruamel_yaml_sha256 = $rySha
   python_exe         = $null
   cache_root         = $cacheRoot
 }
@@ -251,14 +252,19 @@ Ensure-Dir $tmpRoot
 $pyExt = if ($pySpec.url -match '\.tar\.gz') { '.tar.gz' } else { [System.IO.Path]::GetExtension(([Uri]$pySpec.url).AbsolutePath) }
 if (-not $pyExt) { $pyExt = '.tar.gz' }
 $lcExt = '.whl'
+$ryExt = '.whl'
 $pyArchive = Join-Path $downloadDir ($pySha + $pyExt)
 $wheelPath = Join-Path $downloadDir ($lcSha + $lcExt)
+$ryWheelPath = Join-Path $downloadDir ($rySha + $ryExt)
 
 Write-Host "python $($lock.python.version)"
 Download-Verified -Url $pySpec.url -Sha256 $pySha -DestPath $pyArchive
 
 Write-Host "libclang-ng $($lock.libclang_ng.version)"
 Download-Verified -Url $lcSpec.url -Sha256 $lcSha -DestPath $wheelPath
+
+Write-Host "ruamel.yaml $($lock.ruamel_yaml.version)"
+Download-Verified -Url $rySpec.url -Sha256 $rySha -DestPath $ryWheelPath
 
 if (Test-Path -LiteralPath $pythonDir) {
   Remove-Item -LiteralPath $pythonDir -Recurse -Force
@@ -289,11 +295,17 @@ Write-Host "python exe: $pyExe"
 $site = Get-SitePackages $pyExe
 Write-Host "site-packages: $site"
 Install-Wheel -WheelPath $wheelPath -SitePackages $site -TmpRoot $tmpRoot
+Install-Wheel -WheelPath $ryWheelPath -SitePackages $site -TmpRoot $tmpRoot
 
 Write-Host "smoke: import clang.cindex"
 $smokeOut = & $pyExe -c "from clang.cindex import Index, Config; print('clang OK', Config.library_path or Config.library_file or 'bundled')" 2>&1
 foreach ($line in @($smokeOut)) { Write-Host $line }
 if ($LASTEXITCODE -ne 0) { throw "clang import smoke failed" }
+
+Write-Host "smoke: import ruamel.yaml"
+$smokeOut2 = & $pyExe -c "from ruamel.yaml import YAML; y = YAML(typ='safe'); print('ruamel.yaml OK')" 2>&1
+foreach ($line in @($smokeOut2)) { Write-Host $line }
+if ($LASTEXITCODE -ne 0) { throw "ruamel.yaml import smoke failed" }
 
 $expectedStamp.python_exe = $pyExe
 $expectedStamp | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding utf8

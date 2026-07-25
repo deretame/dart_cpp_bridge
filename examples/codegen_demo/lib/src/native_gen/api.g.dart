@@ -87,8 +87,11 @@ final class BridgeApiImpl {
 
   static const int sumScoresId = 66895156;
   static const int distanceId = 75330037;
+  static const int failNormalId = 81397966;
   static const int pairEchoId = 237527086;
   static const int tupleEchoId = 243144110;
+  static const int failAsyncId = 414051157;
+  static const int failStreamId = 444673125;
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
   static const int bridgeVersionId = 513280939;
@@ -98,11 +101,14 @@ final class BridgeApiImpl {
   static const int echoListId = 923919167;
   static const int scaleId = 1132741135;
   static const int negateBoolId = 1187695424;
+  static const int failSyncId = 1225502033;
   static const int sleepGreetingId = 1347623235;
   static const int echoU128Id = 1349826830;
+  static const int failNonStdId = 1517851511;
   static const int incrementU32Id = 1597460230;
   static const int tickStreamId = 1673543649;
   static const int greetDartFnId = 1789823149;
+  static const int nestedCubeId = 1812101563;
   static const int sumSetId = 1869545367;
   static const int boundingBoxId = 1914574156;
   static const int echoI128Id = 2053397325;
@@ -143,6 +149,14 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).f64();
   }
 
+  Future<int> failNormal(String msg) async {
+    final _payload = ByteWriter();
+    _payload.str(msg);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(failNormalId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
   Future<(int, String)> pairEcho((int, String) value) async {
     final _payload = ByteWriter();
     _payload.i32(value.$1);
@@ -160,6 +174,20 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(tupleEchoId, _payloadBytes);
     return (() { final _r = ByteReader(_bytes); return (_r.i32(), _r.str(), _r.u8() != 0); })();
+  }
+
+  Future<int> failAsync(String msg) async {
+    final _payload = ByteWriter();
+    _payload.str(msg);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(failAsyncId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
+  Stream<int> failStream(String msg) {
+    final _payload = ByteWriter();
+    _payload.str(msg);
+    return bridge.openStream<int>(failStreamId, _payload.takeBytes(), (final _r) => _r.i32());
   }
 
   Future<int?> maybeDouble(int? value) async {
@@ -245,6 +273,14 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).u8() != 0;
   }
 
+  int failSync(String msg) {
+    final _payload = ByteWriter();
+    _payload.str(msg);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(failSyncId, _payloadBytes);
+    return ByteReader(_bytes).i32();
+  }
+
   Future<String> sleepGreeting(String name) async {
     final _payload = ByteWriter();
     _payload.str(name);
@@ -259,6 +295,13 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(echoU128Id, _payloadBytes);
     return ByteReader(_bytes).readU128();
+  }
+
+  Future<int> failNonStd() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(failNonStdId, _payloadBytes);
+    return ByteReader(_bytes).i32();
   }
 
   Future<int> incrementU32(int value) async {
@@ -296,6 +339,14 @@ final class BridgeApiImpl {
     } finally {
       bridge.unregisterDartFn(_callbackId);
     }
+  }
+
+  List<List<List<int>>> nestedCube(int n) {
+    final _payload = ByteWriter();
+    _payload.i32(n);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(nestedCubeId, _payloadBytes);
+    return (() { final _r = ByteReader(_bytes); final _n = _r.u32(); final _result = <List<List<int>>>[]; for (var _i = 0; _i < _n; _i++) { _result.add((() { final _n = _r.u32(); final _result = <List<int>>[]; for (var _i = 0; _i < _n; _i++) { _result.add((() { final _n = _r.u32(); final _result = <int>[]; for (var _i = 0; _i < _n; _i++) { _result.add(_r.i32()); } return _result; })()); } return _result; })()); } return _result; })();
   }
 
   Future<int> sumSet(Set<int> values) async {

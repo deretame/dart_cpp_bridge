@@ -171,6 +171,34 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
             for e in t["elements"]
         )
         return f"w.{helper}({expr}, {writes});"
+    if k == "vector":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.vec({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "array":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.arr({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "set":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.set({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "optional":
+        inner = t["inner"]
+        item = _cpp_write_item(inner, "v")
+        return f"w.opt({expr}, [&](const auto& v) {{ {item} }});"
+    if k == "map":
+        key_item = _cpp_write_item(t["key"], "k")
+        value_item = _cpp_write_item(t["value"], "v")
+        return (
+            f"w.map({expr}, "
+            f"[&](const auto& k) {{ {key_item} }}, "
+            f"[&](const auto& v) {{ {value_item} }});"
+        )
+    if k == "i128":
+        return f"w.i128({expr});"
+    if k == "u128":
+        return f"w.u128({expr});"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -206,6 +234,37 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
             for e in t["elements"]
         )
         return f"{reader}.{helper}<{elem_types}>({reads})"
+    if k == "vector":
+        inner_type = _cpp_type(t["inner"])
+        item_read = _cpp_read_item(t["inner"], reader)
+        return f"{reader}.vec<{inner_type}>([&]() {{ return {item_read}; }})"
+    if k == "array":
+        inner_type = _cpp_type(t["inner"])
+        size = t["size"]
+        item_read = _cpp_read_item(t["inner"], reader)
+        return f"{reader}.arr<{inner_type}, {size}>([&]() {{ return {item_read}; }})"
+    if k == "set":
+        inner_type = _cpp_type(t["inner"])
+        item_read = _cpp_read_item(t["inner"], reader)
+        return f"{reader}.set<{inner_type}>([&]() {{ return {item_read}; }})"
+    if k == "optional":
+        inner_type = _cpp_type(t["inner"])
+        item_read = _cpp_read_item(t["inner"], reader)
+        return f"{reader}.opt<{inner_type}>([&]() {{ return {item_read}; }})"
+    if k == "map":
+        key_type = _cpp_type(t["key"])
+        val_type = _cpp_type(t["value"])
+        key_read = _cpp_read_item(t["key"], reader)
+        val_read = _cpp_read_item(t["value"], reader)
+        return (
+            f"{reader}.map<{key_type}, {val_type}>("
+            f"[&]() {{ return {key_read}; }}, "
+            f"[&]() {{ return {val_read}; }})"
+        )
+    if k == "i128":
+        return f"{reader}.i128()"
+    if k == "u128":
+        return f"{reader}.u128()"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -341,6 +400,7 @@ def _cpp_class_method_cases(
                 continue
 
             err_msg = f"{class_name} handle not found or already dropped"
+            fn_label = f"{class_name}::{m['name']}"
             if is_static:
                 handle_block = arg_reads
                 sync_handle_block = arg_reads
@@ -354,7 +414,7 @@ def _cpp_class_method_cases(
                 handle_block = f"""const auto handle = r.u64();
         auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
         if (!obj) {{
-          post_err(session, gen, req, method, "{err_msg}");
+          post_err(session, gen, req, method, "{fn_label}", "{err_msg}");
           break;
         }}
         {arg_reads}"""
@@ -411,6 +471,7 @@ def _cpp_class_method_cases(
                 else:
                     captures = handle_cap.rstrip(", ")
                 call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
+                fn_label = f"{class_name}::{m['name']}"
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
@@ -423,9 +484,9 @@ def _cpp_class_method_cases(
                 {write}
                 post_ok(session, gen, req, method, w.raw());
               }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "{fn_label}", e.what());
               }} catch (...) {{
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "{fn_label}", "unknown");
               }}
               co_return;
             }});
@@ -446,6 +507,7 @@ def _cpp_class_method_cases(
                 else:
                     lambda_extra = ", " + handle_cap.rstrip(", ") if handle_cap else ""
                 call_stmt = call + ";" if ret.get("kind") == "void" else f"auto out = {call};"
+                fn_label = f"{class_name}::{m['name']}"
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
@@ -461,11 +523,11 @@ def _cpp_class_method_cases(
             }});
           }} catch (const std::exception& e) {{
             asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {{
-              post_err(session, gen, req, method, msg);
+              post_err(session, gen, req, method, "{fn_label}", msg);
             }});
           }} catch (...) {{
             asio::post(*io, [session, gen, req, method]() {{
-              post_err(session, gen, req, method, "unknown");
+              post_err(session, gen, req, method, "{fn_label}", "unknown");
             }});
           }}
         }});
@@ -632,7 +694,7 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
             f"const auto {name}Handle = r.u64();\n"
             f"        auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
             f"        if (!{name}Obj) {{\n"
-            f"          post_err(session, gen, req, method, \"{t['name']} handle not found or already dropped\");\n"
+            f"          post_err(session, gen, req, method, \"dispatch\", \"{t['name']} handle not found or already dropped\");\n"
             f"          break;\n"
             f"        }}\n"
             f"        {q}& {name} = *static_cast<{q}*>({name}Obj.get());"
@@ -1254,9 +1316,9 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
                 {write}
                 post_ok(session, gen, req, method, w.raw());
               }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "{fn['name']}", e.what());
               }} catch (...) {{
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "{fn['name']}", "unknown");
               }}
               co_return;
             }});
@@ -1291,11 +1353,11 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             }});
           }} catch (const std::exception& e) {{
             asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {{
-              post_err(session, gen, req, method, msg);
+              post_err(session, gen, req, method, "{fn['name']}", msg);
             }});
           }} catch (...) {{
             asio::post(*io, [session, gen, req, method]() {{
-              post_err(session, gen, req, method, "unknown");
+              post_err(session, gen, req, method, "{fn['name']}", "unknown");
             }});
           }}
         }});
@@ -1348,6 +1410,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
@@ -1377,10 +1440,10 @@ void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t
 }}
 
 void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
-              std::uint32_t method, const std::string& msg) {{
+              std::uint32_t method, const char* fn, const std::string& msg) {{
   ByteWriter w;
   w.i32(1);
-  w.str(msg);
+  w.str(dcb::error::format(fn, msg));
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
 }}
 
@@ -1397,10 +1460,10 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   try {{
     frame = parse_frame(data, len);
   }} catch (const std::exception& e) {{
-    post_err(session, gen, 0, 0, std::string("bad frame: ") + e.what());
+    post_err(session, gen, 0, 0, "dispatch", std::string("bad frame: ") + e.what());
     return;
   }} catch (...) {{
-    post_err(session, gen, 0, 0, "bad frame");
+    post_err(session, gen, 0, 0, "dispatch", "bad frame");
     return;
   }}
 
@@ -1411,13 +1474,13 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
     switch (method) {{
 {cases_s}
       default:
-        post_err(session, gen, req, method, "unknown method");
+        post_err(session, gen, req, method, "dispatch", "unknown method");
         break;
     }}
   }} catch (const std::exception& e) {{
-    post_err(session, gen, req, method, e.what());
+    post_err(session, gen, req, method, "dispatch", e.what());
   }} catch (...) {{
-    post_err(session, gen, req, method, "unknown");
+    post_err(session, gen, req, method, "dispatch", "unknown");
   }}
 }}
 

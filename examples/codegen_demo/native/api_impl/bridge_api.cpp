@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <stdexcept>
 #include <thread>
 
 namespace demo::api {
@@ -167,6 +168,53 @@ async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points) {
     r.bottom_right.y = std::max(r.bottom_right.y, p.y);
   }
   co_return r;
+}
+
+// --- Runtime error propagation tests ---
+
+async_simple::coro::Lazy<std::int32_t> fail_async(std::string msg) {
+  throw std::runtime_error(msg.empty() ? "fail_async" : msg);
+  co_return 0;  // unreachable
+}
+
+std::int32_t fail_sync(std::string msg) {
+  throw std::runtime_error(msg.empty() ? "fail_sync" : msg);
+}
+
+std::int32_t fail_normal(std::string msg) {
+  throw std::runtime_error(msg.empty() ? "fail_normal" : msg);
+}
+
+async_simple::coro::Lazy<std::int32_t> fail_non_std() {
+  throw 42;  // non-std::exception
+  co_return 0;  // unreachable
+}
+
+void fail_stream(dcb::StreamSink<std::int32_t> sink, std::string msg) {
+  asio::post(dcb::Runtime::instance().pool(),
+             [sink = std::move(sink), msg = std::move(msg)]() mutable {
+               sink.add(1);
+               sink.add(2);
+               sink.error(msg.empty() ? "fail_stream" : msg);
+             });
+}
+
+// --- Deep nesting test ---
+
+std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n) {
+  std::vector<std::vector<std::vector<std::int32_t>>> cube;
+  for (std::int32_t i = 0; i < n; ++i) {
+    std::vector<std::vector<std::int32_t>> plane;
+    for (std::int32_t j = 0; j < n; ++j) {
+      std::vector<std::int32_t> row;
+      for (std::int32_t k = 0; k < n; ++k) {
+        row.push_back(i * 100 + j * 10 + k);
+      }
+      plane.push_back(std::move(row));
+    }
+    cube.push_back(std::move(plane));
+  }
+  return cube;
 }
 
 }  // namespace demo::api

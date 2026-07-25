@@ -141,4 +141,31 @@ async_simple::coro::Lazy<Point> scale(Point p, double factor);
 BRIDGE_ASYNC
 async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points);
 
+// --- Runtime error propagation tests (R01-R05) ---
+
+// R01: async throw → Dart Future receives StateError
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::int32_t> fail_async(std::string msg);
+
+// R02: sync throw → Dart throws StateError
+BRIDGE_SYNC
+std::int32_t fail_sync(std::string msg);
+
+// R03: normal throw → Dart Future receives StateError
+BRIDGE_NORMAL
+std::int32_t fail_normal(std::string msg);
+
+// R04: non-std exception → Dart receives "unknown"
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::int32_t> fail_non_std();
+
+// R05: stream emits data then errors
+void fail_stream(dcb::StreamSink<std::int32_t> sink, std::string msg);
+
+// --- Deep nesting test (G03) ---
+
+// G03: 3-level nested vector → Dart List<List<List<int>>>
+BRIDGE_SYNC
+std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n);
+
 }  // namespace demo::api

@@ -1,5 +1,6 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
@@ -246,10 +247,10 @@ void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t
 }
 
 void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
-              std::uint32_t method, const std::string& msg) {
+              std::uint32_t method, const char* fn, const std::string& msg) {
   ByteWriter w;
   w.i32(1);
-  w.str(msg);
+  w.str(dcb::error::format(fn, msg));
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
 }
 
@@ -261,9 +262,9 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
     w.str(out);
     post_ok(session, gen, req, method, w.raw());
   } catch (const std::exception& e) {
-    post_err(session, gen, req, method, e.what());
+    post_err(session, gen, req, method, "callDartHelloSync", e.what());
   } catch (...) {
-    post_err(session, gen, req, method, "unknown");
+    post_err(session, gen, req, method, "callDartHelloSync", "unknown");
   }
 }
 
@@ -283,11 +284,11 @@ void counter_sleep_and_get(std::shared_ptr<Counter> obj, std::int32_t sleep_ms,
       });
     } catch (const std::exception& e) {
       asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
-        post_err(session, gen, req, method, msg);
+        post_err(session, gen, req, method, "Counter::sleepAndGet", msg);
       });
     } catch (...) {
       asio::post(*io, [session, gen, req, method]() {
-        post_err(session, gen, req, method, "unknown");
+        post_err(session, gen, req, method, "Counter::sleepAndGet", "unknown");
       });
     }
   });
@@ -324,10 +325,10 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   try {
     frame = parse_frame(data, len);
   } catch (const std::exception& e) {
-    post_err(session, gen, 0, 0, std::string("bad frame: ") + e.what());
+    post_err(session, gen, 0, 0, "dispatch", std::string("bad frame: ") + e.what());
     return;
   } catch (...) {
-    post_err(session, gen, 0, 0, "bad frame");
+    post_err(session, gen, 0, 0, "dispatch", "bad frame");
     return;
   }
 
@@ -354,9 +355,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(sum);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "add", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "add", "unknown");
               }
               co_return;
             });
@@ -374,11 +375,11 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
             });
           } catch (const std::exception& e) {
             asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
-              post_err(session, gen, req, method, msg);
+              post_err(session, gen, req, method, "sleepTest", msg);
             });
           } catch (...) {
             asio::post(*io, [session, gen, req, method]() {
-              post_err(session, gen, req, method, "unknown");
+              post_err(session, gen, req, method, "sleepTest", "unknown");
             });
           }
         });
@@ -403,9 +404,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "echo", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "echo", "unknown");
               }
               co_return;
             });
@@ -423,9 +424,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.opt<std::int32_t>(out, [&w](std::int32_t v) { w.i32(v); });
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "maybeDouble", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "maybeDouble", "unknown");
               }
               co_return;
             });
@@ -443,9 +444,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "sumVec", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "sumVec", "unknown");
               }
               co_return;
             });
@@ -463,9 +464,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.u8vec(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "reverseBytes", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "reverseBytes", "unknown");
               }
               co_return;
             });
@@ -482,9 +483,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.enume(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "nextStatus", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "nextStatus", "unknown");
               }
               co_return;
             });
@@ -502,9 +503,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "sumFixedFour", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "sumFixedFour", "unknown");
               }
               co_return;
             });
@@ -524,9 +525,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "greet", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "greet", "unknown");
               }
               co_return;
             });
@@ -545,9 +546,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "scoreTotal", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "scoreTotal", "unknown");
               }
               co_return;
             });
@@ -565,9 +566,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "setSum", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "setSum", "unknown");
               }
               co_return;
             });
@@ -585,9 +586,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.pair(out, [&w](std::int32_t v) { w.i32(v); }, [&w](const std::string& s) { w.str(s); });
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "pairEcho", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "pairEcho", "unknown");
               }
               co_return;
             });
@@ -607,9 +608,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                         [&w](const std::string& s) { w.str(s); }, [&w](bool b) { w.u8(b ? 1 : 0); });
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "tupleEcho", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "tupleEcho", "unknown");
               }
               co_return;
             });
@@ -626,9 +627,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i128(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "echoI128", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "echoI128", "unknown");
               }
               co_return;
             });
@@ -651,9 +652,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "totalAges", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "totalAges", "unknown");
               }
               co_return;
             });
@@ -668,9 +669,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           w.u64(handle);
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
-          post_err(session, gen, req, method, e.what());
+          post_err(session, gen, req, method, "Counter::create", e.what());
         } catch (...) {
-          post_err(session, gen, req, method, "unknown");
+          post_err(session, gen, req, method, "Counter::create", "unknown");
         }
         break;
       }
@@ -686,9 +687,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "Counter::increment", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "Counter::increment", "unknown");
               }
               co_return;
             });
@@ -705,9 +706,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "Counter::getValue", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "Counter::getValue", "unknown");
               }
               co_return;
             });
@@ -721,9 +722,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           ByteWriter w;
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
-          post_err(session, gen, req, method, e.what());
+          post_err(session, gen, req, method, "Counter::drop", e.what());
         } catch (...) {
-          post_err(session, gen, req, method, "unknown");
+          post_err(session, gen, req, method, "Counter::drop", "unknown");
         }
         break;
       }
@@ -734,7 +735,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto fn_id = r.u64();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found or already dropped");
+          post_err(session, gen, req, method, "Counter::callDartFn", "Counter handle not found or already dropped");
           break;
         }
         DartFnStringToString cb(session, gen, fn_id);
@@ -747,9 +748,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "Counter::callDartFn", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "Counter::callDartFn", "unknown");
               }
               co_return;
             });
@@ -761,7 +762,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto sleep_ms = r.i32();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found or already dropped");
+          post_err(session, gen, req, method, "Counter::sleepAndGet", "Counter handle not found or already dropped");
           break;
         }
         counter_sleep_and_get(obj, sleep_ms, session, gen, req, method);
@@ -774,7 +775,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto interval_ms = r.i32();
         auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
         if (!obj) {
-          post_err(session, gen, req, method, "Counter handle not found or already dropped");
+          post_err(session, gen, req, method, "Counter::incrementStream", "Counter handle not found or already dropped");
           break;
         }
         auto sink = make_i32_sink(session.get(), req, gen, method);
@@ -788,9 +789,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           w.u64(handle);
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
-          post_err(session, gen, req, method, e.what());
+          post_err(session, gen, req, method, "Counter::createDefault", e.what());
         } catch (...) {
-          post_err(session, gen, req, method, "unknown");
+          post_err(session, gen, req, method, "Counter::createDefault", "unknown");
         }
         break;
       }
@@ -801,9 +802,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           w.u64(handle);
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
-          post_err(session, gen, req, method, e.what());
+          post_err(session, gen, req, method, "Counter::zero", e.what());
         } catch (...) {
-          post_err(session, gen, req, method, "unknown");
+          post_err(session, gen, req, method, "Counter::zero", "unknown");
         }
         break;
       }
@@ -821,9 +822,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(obj->value());
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "Counter::addList", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "Counter::addList", "unknown");
               }
               co_return;
             });
@@ -842,9 +843,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.i32(obj->value());
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "Counter::setValue", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "Counter::setValue", "unknown");
               }
               co_return;
             });
@@ -859,9 +860,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           w.u64(new_handle);
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
-          post_err(session, gen, req, method, e.what());
+          post_err(session, gen, req, method, "Counter::duplicate", e.what());
         } catch (...) {
-          post_err(session, gen, req, method, "unknown");
+          post_err(session, gen, req, method, "Counter::duplicate", "unknown");
         }
         break;
       }
@@ -874,9 +875,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 co_await fail_async(std::move(msg));
                 post_ok(session, gen, req, method, {});
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "failAsync", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "failAsync", "unknown");
               }
               co_return;
             });
@@ -903,9 +904,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());
               } catch (const std::exception& e) {
-                post_err(session, gen, req, method, e.what());
+                post_err(session, gen, req, method, "callDartHello", e.what());
               } catch (...) {
-                post_err(session, gen, req, method, "unknown");
+                post_err(session, gen, req, method, "callDartHello", "unknown");
               }
               co_return;
             });
@@ -921,13 +922,13 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
       default:
-        post_err(session, gen, req, method, "unknown method");
+        post_err(session, gen, req, method, "dispatch", "unknown method");
         break;
     }
   } catch (const std::exception& e) {
-    post_err(session, gen, req, method, e.what());
+    post_err(session, gen, req, method, "dispatch", e.what());
   } catch (...) {
-    post_err(session, gen, req, method, "unknown");
+    post_err(session, gen, req, method, "dispatch", "unknown");
   }
 }
 
@@ -965,12 +966,12 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t /*session_id*/, const std:
   } catch (const std::exception& e) {
     ByteWriter w;
     w.i32(1);
-    w.str(e.what());
+    w.str(dcb::error::format("dispatch_sync", e.what()));
     return make_frame(MsgType::kResponseErr, req, method, w.raw());
   } catch (...) {
     ByteWriter w;
     w.i32(1);
-    w.str("unknown");
+    w.str(dcb::error::format("dispatch_sync", "unknown"));
     return make_frame(MsgType::kResponseErr, req, method, w.raw());
   }
 }

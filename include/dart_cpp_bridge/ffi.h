@@ -53,6 +53,10 @@ DCB_API void dcb_drop_object(uint64_t handle);
 
 DCB_API void dcb_free(void* p);
 
+// Enable/disable verbose error messages (default: enabled).
+// When enabled, error messages are prefixed with "[function_name] ".
+DCB_API void dcb_set_verbose_errors(uint8_t enabled);
+
 #ifdef __cplusplus
 }
 #endif

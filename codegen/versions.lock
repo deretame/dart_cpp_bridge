@@ -33,6 +33,15 @@
       }
     }
   },
+  "ruamel_yaml": {
+    "version": "0.18.15",
+    "package": "ruamel.yaml",
+    "pypi": "https://pypi.org/project/ruamel.yaml/0.18.15/",
+    "note": "Pure-Python YAML 1.2 loader/dumper. No platform-specific wheels needed.",
+    "filename": "ruamel.yaml-0.18.15-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/d1/e5/f2a0621f1781b76a38194acae72f01e37b1941470407345b6e8653ad7640/ruamel.yaml-0.18.15-py3-none-any.whl",
+    "sha256": "148f6488d698b7a5eded5ea793a025308b25eca97208181b6a026037f391f701"
+  },
   "libclang_ng": {
     "version": "22.1.4.2",
     "package": "libclang-ng",

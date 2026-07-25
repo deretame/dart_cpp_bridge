@@ -161,11 +161,15 @@ PY_SHA="$(read_lock_field ".python.platforms[\"${PLATFORM}\"].sha256" | tr 'A-F'
 LC_VER="$(read_lock_field '.libclang_ng.version')"
 LC_URL="$(read_lock_field ".libclang_ng.platforms[\"${PLATFORM}\"].url")"
 LC_SHA="$(read_lock_field ".libclang_ng.platforms[\"${PLATFORM}\"].sha256" | tr 'A-F' 'a-f')"
+RY_VER="$(read_lock_field '.ruamel_yaml.version')"
+RY_URL="$(read_lock_field '.ruamel_yaml.url')"
+RY_SHA="$(read_lock_field '.ruamel_yaml.sha256' | tr 'A-F' 'a-f')"
 
 [[ -n "$PY_URL" && "$PY_URL" != null ]] || die "python platform not in lock: $PLATFORM"
 [[ -n "$LC_URL" && "$LC_URL" != null ]] || die "libclang_ng platform not in lock: $PLATFORM"
+[[ -n "$RY_URL" && "$RY_URL" != null ]] || die "ruamel_yaml not in lock"
 
-LOCK_FP="$(sha256_text "${PLATFORM}|${PY_SHA}|${LC_SHA}" | cut -c1-16)"
+LOCK_FP="$(sha256_text "${PLATFORM}|${PY_SHA}|${LC_SHA}|${RY_SHA}" | cut -c1-16)"
 ENV_KEY="${PLATFORM}-${LOCK_FP}"
 
 CACHE_ROOT="$(default_cache_root)"
@@ -187,6 +191,8 @@ if [[ "$FORCE" -eq 0 && -f "$STAMP_PATH" ]]; then
     ST_PYSHA="$(jq -r .python_sha256 "$STAMP_PATH")"
     ST_LC="$(jq -r .libclang_ng "$STAMP_PATH")"
     ST_LCSHA="$(jq -r .libclang_ng_sha256 "$STAMP_PATH")"
+    ST_RY="$(jq -r .ruamel_yaml "$STAMP_PATH")"
+    ST_RYSHA="$(jq -r .ruamel_yaml_sha256 "$STAMP_PATH")"
     ST_EXE="$(jq -r .python_exe "$STAMP_PATH")"
   elif command -v python3 >/dev/null 2>&1; then
     eval "$(python3 - "$STAMP_PATH" <<'PY'
@@ -199,6 +205,8 @@ print(f'ST_PY={q(s.get("python_version",""))}')
 print(f'ST_PYSHA={q(s.get("python_sha256",""))}')
 print(f'ST_LC={q(s.get("libclang_ng",""))}')
 print(f'ST_LCSHA={q(s.get("libclang_ng_sha256",""))}')
+print(f'ST_RY={q(s.get("ruamel_yaml",""))}')
+print(f'ST_RYSHA={q(s.get("ruamel_yaml_sha256",""))}')
 print(f'ST_EXE={q(s.get("python_exe",""))}')
 PY
 )"
@@ -208,6 +216,7 @@ PY
   if [[ "${ST_PLAT:-}" == "$PLATFORM" && "${ST_KEY:-}" == "$ENV_KEY" \
      && "${ST_PY:-}" == "$PY_VER" && "${ST_PYSHA:-}" == "$PY_SHA" \
      && "${ST_LC:-}" == "$LC_VER" && "${ST_LCSHA:-}" == "$LC_SHA" \
+     && "${ST_RY:-}" == "$RY_VER" && "${ST_RYSHA:-}" == "$RY_SHA" \
      && -n "${ST_EXE:-}" && -e "${ST_EXE:-}" ]]; then
     echo "toolchain ready: $ST_EXE"
     PY_EXE_JSON="${ST_EXE//\\/\\\\}"
@@ -232,12 +241,16 @@ mkdir -p "$DOWNLOAD_DIR" "$ENV_DIR" "$TMP_ROOT"
 
 PY_ARCHIVE="${DOWNLOAD_DIR}/${PY_SHA}.tar.gz"
 WHEEL_PATH="${DOWNLOAD_DIR}/${LC_SHA}.whl"
+RY_WHEEL_PATH="${DOWNLOAD_DIR}/${RY_SHA}.whl"
 
 echo "python ${PY_VER}"
 download_verified "$PY_URL" "$PY_SHA" "$PY_ARCHIVE"
 
 echo "libclang-ng ${LC_VER}"
 download_verified "$LC_URL" "$LC_SHA" "$WHEEL_PATH"
+
+echo "ruamel.yaml ${RY_VER}"
+download_verified "$RY_URL" "$RY_SHA" "$RY_WHEEL_PATH"
 
 rm -rf "$PYTHON_DIR"
 mkdir -p "$PYTHON_DIR"
@@ -296,8 +309,28 @@ mv "$TMP_WHEEL"/* "$SITE"/
 shopt -u dotglob
 rm -rf "$TMP_WHEEL"
 
+# Install ruamel.yaml wheel
+rm -rf "${SITE}/ruamel"
+rm -rf "${SITE}"/ruamel.yaml-*.dist-info
+TMP_RY="${TMP_ROOT}/ry_extract_$$"
+rm -rf "$TMP_RY"
+mkdir -p "$TMP_RY"
+echo "extracting ruamel.yaml wheel..."
+if command -v unzip >/dev/null 2>&1; then
+  unzip -q "$RY_WHEEL_PATH" -d "$TMP_RY"
+else
+  tar -xf "$RY_WHEEL_PATH" -C "$TMP_RY"
+fi
+shopt -s dotglob
+mv "$TMP_RY"/* "$SITE"/
+shopt -u dotglob
+rm -rf "$TMP_RY"
+
 echo "smoke: import clang.cindex"
 "$PY_EXE" -c "from clang.cindex import Index, Config; print('clang OK', Config.library_path or Config.library_file or 'bundled')"
+
+echo "smoke: import ruamel.yaml"
+"$PY_EXE" -c "from ruamel.yaml import YAML; y = YAML(typ='safe'); print('ruamel.yaml OK')"
 
 # Escape backslashes for JSON on Windows-ish paths if any
 PY_EXE_JSON="${PY_EXE//\\/\\\\}"
@@ -311,6 +344,8 @@ cat > "$STAMP_PATH" <<EOF
   "python_sha256": "${PY_SHA}",
   "libclang_ng": "${LC_VER}",
   "libclang_ng_sha256": "${LC_SHA}",
+  "ruamel_yaml": "${RY_VER}",
+  "ruamel_yaml_sha256": "${RY_SHA}",
   "python_exe": "${PY_EXE_JSON}",
   "cache_root": "${CACHE_JSON}"
 }

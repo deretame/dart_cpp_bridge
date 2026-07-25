@@ -1,95 +1,42 @@
-"""Minimal config loader for dart_cpp_bridge.yaml (small subset, no PyYAML)."""
+"""Config loader for dart_cpp_bridge.yaml using ruamel.yaml."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
 
-def _parse_scalar(raw: str) -> Any:
-    s = raw.strip()
-    if not s:
-        return ""
-    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
-        return s[1:-1]
-    if s in ("true", "True"):
-        return True
-    if s in ("false", "False"):
-        return False
-    if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
-        return int(s)
-    return s
+def load_yaml(path: Path) -> dict[str, Any]:
+    """Load a YAML file using ruamel.yaml (safe mode)."""
+    try:
+        from ruamel.yaml import YAML
+    except ImportError:
+        print(
+            "error: ruamel.yaml is not installed in the codegen toolchain.\n"
+            "Run bootstrap first: codegen/bootstrap.ps1 (or bootstrap.sh)",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
-
-def load_simple_yaml(path: Path) -> dict[str, Any]:
-    """Parse a tiny YAML subset: top-level keys, nested maps, and `- list` items."""
-    return _load_simple_yaml_v2(path)
-
-
-def _load_simple_yaml_v2(path: Path) -> dict[str, Any]:
+    yaml = YAML(typ="safe")
+    yaml.preserve_quotes = True  # type: ignore[assignment]
     text = path.read_text(encoding="utf-8")
-    root: dict[str, Any] = {}
-    # stack: (indent, container)
-    stack: list[tuple[int, Any]] = [(-1, root)]
-
-    lines = text.splitlines()
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        i += 1
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        content = line.strip()
-
-        while len(stack) > 1 and indent <= stack[-1][0]:
-            stack.pop()
-        parent = stack[-1][1]
-
-        if content.startswith("- "):
-            if not isinstance(parent, list):
-                raise ValueError(f"{path}: list item without list parent: {content}")
-            parent.append(_parse_scalar(content[2:].strip().split("#", 1)[0]))
-            continue
-
-        if ":" not in content:
-            raise ValueError(f"{path}: bad line: {content}")
-
-        key, _, rest = content.partition(":")
-        key = key.strip()
-        rest = rest.strip().split("#", 1)[0].strip()
-
-        if rest != "":
-            if not isinstance(parent, dict):
-                raise ValueError(f"{path}: key under non-dict")
-            parent[key] = _parse_scalar(rest)
-            continue
-
-        # look ahead for list vs map
-        j = i
-        child_kind = "map"
-        while j < len(lines):
-            peek = lines[j]
-            j += 1
-            if not peek.strip() or peek.lstrip().startswith("#"):
-                continue
-            pindent = len(peek) - len(peek.lstrip(" "))
-            if pindent <= indent:
-                break
-            child_kind = "list" if peek.strip().startswith("- ") else "map"
-            break
-
-        node: Any = [] if child_kind == "list" else {}
-        if not isinstance(parent, dict):
-            raise ValueError(f"{path}: nested under non-dict")
-        parent[key] = node
-        stack.append((indent, node))
-
-    return root
+    try:
+        data = yaml.load(text)
+    except Exception as e:
+        print(f"error: failed to parse YAML file {path}: {e}", file=sys.stderr)
+        raise SystemExit(1)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        print(f"error: {path}: top-level YAML must be a mapping", file=sys.stderr)
+        raise SystemExit(1)
+    return dict(data)
 
 
 def resolve_config(config_path: Path) -> dict[str, Any]:
-    cfg = load_simple_yaml(config_path)
+    cfg = load_yaml(config_path)
     base = config_path.parent.resolve()
     cpp_root = Path(cfg.get("cpp_root", "."))
     if not cpp_root.is_absolute():

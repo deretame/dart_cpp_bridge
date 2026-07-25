@@ -56,6 +56,9 @@ typedef _DartFnReplyD = void Function(
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeD = void Function(Pointer<Void>);
 
+typedef _SetVerboseErrorsC = Void Function(Uint8);
+typedef _SetVerboseErrorsD = void Function(int);
+
 class NativeBindings {
   NativeBindings(this.lib)
       : initDartApi = lib.lookupFunction<_InitDartApiC, _InitDartApiD>('dcb_init_dart_api'),
@@ -70,6 +73,9 @@ class NativeBindings {
         streamClose = lib.lookupFunction<_StreamCloseC, _StreamCloseD>('dcb_stream_close'),
         dartFnReply = lib.lookupFunction<_DartFnReplyC, _DartFnReplyD>('dcb_dart_fn_reply'),
         free = lib.lookupFunction<_FreeC, _FreeD>('dcb_free'),
+        setVerboseErrors = lib.lookupFunction<_SetVerboseErrorsC, _SetVerboseErrorsD>(
+          'dcb_set_verbose_errors',
+        ),
         dropObject = lib.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
           'dcb_drop_object',
         );
@@ -85,6 +91,7 @@ class NativeBindings {
   final _StreamCloseD streamClose;
   final _DartFnReplyD dartFnReply;
   final _FreeD free;
+  final _SetVerboseErrorsD setVerboseErrors;
   final Pointer<NativeFunction<Void Function(Pointer<Void>)>> dropObject;
 
   static DynamicLibrary openDefault({String? path}) {

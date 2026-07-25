@@ -121,7 +121,10 @@ void main() {
     final big = BigInt.parse('170141183460469231731687303715884105727');
     expect(await echoI128(big), big);
     expect(await echoI128(BigInt.zero), BigInt.zero);
-    expect(await echoI128(BigInt.parse('-170141183460469231731687303715884105728')), BigInt.parse('-170141183460469231731687303715884105728'));
+    expect(
+      await echoI128(BigInt.parse('-170141183460469231731687303715884105728')),
+      BigInt.parse('-170141183460469231731687303715884105728'),
+    );
   });
 
   test('BRIDGE_ASYNC UInt128 echo_u128', () async {
@@ -313,24 +316,128 @@ void main() {
     expect(Counter.aliveCount(), baseline);
   });
 
-  test('opaque class Counter duplicate creates independent alive count', () async {
-    final baseline = Counter.aliveCount();
-    final original = Counter.withInitialValue(initialValue: 42);
-    expect(Counter.aliveCount(), baseline + 1);
+  test(
+    'opaque class Counter duplicate creates independent alive count',
+    () async {
+      final baseline = Counter.aliveCount();
+      final original = Counter.withInitialValue(initialValue: 42);
+      expect(Counter.aliveCount(), baseline + 1);
 
-    final copy = await original.duplicate();
-    expect(Counter.aliveCount(), baseline + 2);
+      final copy = await original.duplicate();
+      expect(Counter.aliveCount(), baseline + 2);
 
-    // They are independent objects.
-    expect(await copy.value(), 42);
-    await original.increment();
-    expect(await original.value(), 43);
-    expect(await copy.value(), 42);
+      // They are independent objects.
+      expect(await copy.value(), 42);
+      await original.increment();
+      expect(await original.value(), 43);
+      expect(await copy.value(), 42);
 
-    original.dispose();
-    expect(Counter.aliveCount(), baseline + 1);
+      original.dispose();
+      expect(Counter.aliveCount(), baseline + 1);
 
-    copy.dispose();
-    expect(Counter.aliveCount(), baseline);
+      copy.dispose();
+      expect(Counter.aliveCount(), baseline);
+    },
+  );
+
+  // --- Runtime error propagation tests (R01-R06) ---
+
+  group('runtime error propagation', () {
+    test('R01: async throw surfaces as StateError', () async {
+      await expectLater(
+        failAsync('boom-async'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('boom-async'),
+          ),
+        ),
+      );
+    });
+
+    test('R02: sync throw surfaces as StateError', () {
+      expect(
+        () => failSync('boom-sync'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('boom-sync'),
+          ),
+        ),
+      );
+    });
+
+    test('R03: normal throw surfaces as StateError', () async {
+      await expectLater(
+        failNormal('boom-normal'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('boom-normal'),
+          ),
+        ),
+      );
+    });
+
+    test('R04: non-std exception surfaces as unknown', () async {
+      await expectLater(
+        failNonStd(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('unknown'),
+          ),
+        ),
+      );
+    });
+
+    test('R05: stream emits data then error', () async {
+      final values = <int>[];
+      Object? err;
+      try {
+        await for (final v in failStream('boom-stream')) {
+          values.add(v);
+        }
+      } catch (e) {
+        err = e;
+      }
+      expect(values, [1, 2]);
+      expect(err, isA<StateError>());
+      expect((err! as StateError).message, contains('boom-stream'));
+    });
+
+    test('R06: session recovers after exception', () async {
+      // Trigger an exception first.
+      await expectLater(failAsync('temp-error'), throwsA(isA<StateError>()));
+      // Session should still work normally.
+      expect(await add(10, 20), 30);
+      expect(bridgeVersion(), 42);
+    });
+  });
+
+  // --- Deep nesting test (G03) ---
+
+  group('deep nesting containers', () {
+    test('G03: 3-level nested vector roundtrip', () {
+      final cube = nestedCube(2);
+      expect(cube.length, 2);
+      expect(cube[0].length, 2);
+      expect(cube[0][0].length, 2);
+      // cube[i][j][k] = i*100 + j*10 + k
+      expect(cube[0][0][0], 0);
+      expect(cube[0][0][1], 1);
+      expect(cube[0][1][0], 10);
+      expect(cube[1][0][0], 100);
+      expect(cube[1][1][1], 111);
+    });
+
+    test('G03: nested cube with n=0', () {
+      final cube = nestedCube(0);
+      expect(cube, isEmpty);
+    });
   });
 }

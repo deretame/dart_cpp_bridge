@@ -1,8 +1,36 @@
+# =============================================================================
+# dart_cpp_bridge codegen_demo — 可复制的项目模板
+# =============================================================================
+#
+# 本 CMakeLists 演示如何构建一个使用 dart_cpp_bridge codegen 的动态库。
+#
+# 接入方式：
+#   A) Monorepo（当前方式）：设置 DCB_ROOT 指向 dart_cpp_bridge 仓库根，
+#      复用已下载的 asio/async-simple（build/_deps）。
+#   B) 外部项目（FetchContent，Phase 3 产品化后推荐）：
+#
+#      include(FetchContent)
+#      FetchContent_Declare(
+#        dart_cpp_bridge
+#        GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
+#        GIT_TAG        main  # 或钉死 tag/commit
+#      )
+#      FetchContent_MakeAvailable(dart_cpp_bridge)
+#      target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
+#      # dart_cpp_bridge 目标已 PUBLIC 暴露 asio + async-simple
+#
+# 自定义清单：
+#   - 修改 target 名（dcb_codegen_demo → 你的库名）
+#   - 修改源文件列表（native/api_impl/*.cpp）
+#   - 修改 DCB_ROOT 或改用 FetchContent
+# =============================================================================
+
 cmake_minimum_required(VERSION 3.20)
 project(dcb_codegen_demo LANGUAGES C CXX)
 
-# Prefer already-fetched deps from the monorepo main build (no second git clone).
-# Override: -DDCB_DEPS_DIR=...
+# --- 依赖解析 ---
+# 优先复用 monorepo 主工程已下载的 asio/async-simple（避免二次 git clone）。
+# 外部项目可设置 -DDCB_DEPS_DIR=... 或改用 FetchContent（见上方说明）。
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +93,8 @@ if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
   message(FATAL_ERROR "Missing third_party/dart_api under repo root")
 endif()
 
+# --- 生成物检查 ---
+# 如果尚未跑 codegen，给出明确提示。
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/native/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
@@ -73,6 +103,9 @@ if(NOT EXISTS "${GEN_WIRE}")
     "${CMAKE_CURRENT_SOURCE_DIR}/dart_cpp_bridge.yaml")
 endif()
 
+# --- 动态库 target ---
+# 源文件 = 桥运行时 + FFI 入口 + 生成的 wire + 用户业务实现。
+# 复制本模板后：把 native/api_impl/*.cpp 改为你的实现文件。
 add_library(dcb_codegen_demo SHARED
   ${DCB_ROOT}/src/runtime/runtime.cpp
   ${DCB_ROOT}/src/runtime/object_handle.cpp
@@ -83,6 +116,8 @@ add_library(dcb_codegen_demo SHARED
   native/api_impl/counter.cpp
 )
 
+# --- Include 路径 ---
+# 复制本模板后：确保 DCB_ROOT/include 和 native/generated 在路径中。
 target_include_directories(dcb_codegen_demo
   PRIVATE
     ${DCB_ROOT}/include
@@ -92,6 +127,7 @@ target_include_directories(dcb_codegen_demo
     ${CMAKE_CURRENT_SOURCE_DIR}/native/generated
 )
 
+# --- 编译选项 ---
 target_compile_definitions(dcb_codegen_demo PRIVATE DART_CPP_BRIDGE_BUILD)
 target_link_libraries(dcb_codegen_demo PUBLIC asio_iface async_simple_iface)
 

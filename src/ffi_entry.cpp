@@ -1,6 +1,7 @@
 #include "dart_cpp_bridge/ffi.h"
 
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
@@ -164,5 +165,9 @@ DCB_API void dcb_drop_object(uint64_t handle) {
 }
 
 DCB_API void dcb_free(void* p) { std::free(p); }
+
+DCB_API void dcb_set_verbose_errors(uint8_t enabled) {
+  dcb::error::verbose().store(enabled != 0, std::memory_order_relaxed);
+}
 
 }  // extern "C"

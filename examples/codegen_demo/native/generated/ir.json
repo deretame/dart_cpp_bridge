@@ -235,7 +235,8 @@
           "return": {
             "kind": "opaque_class",
             "name": "Counter",
-            "qualified": "demo::api::Counter"
+            "qualified": "demo::api::Counter",
+            "loc": "counter.h:38"
           }
         },
         {
@@ -402,7 +403,8 @@
           "type": {
             "kind": "data_class",
             "name": "Point",
-            "qualified": "demo::api::Point"
+            "qualified": "demo::api::Point",
+            "loc": "bridge_api.h:30"
           }
         },
         {
@@ -410,7 +412,8 @@
           "type": {
             "kind": "data_class",
             "name": "Point",
-            "qualified": "demo::api::Point"
+            "qualified": "demo::api::Point",
+            "loc": "bridge_api.h:31"
           }
         }
       ],
@@ -474,6 +477,27 @@
       },
       "attrs": [
         "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "fail_normal",
+      "qualified": "demo::api::fail_normal",
+      "kind": "normal",
+      "method_id": 81397966,
+      "args": [
+        {
+          "name": "msg",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::normal"
       ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
@@ -555,6 +579,55 @@
       "attrs": [
         "bridge::async"
       ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "fail_async",
+      "qualified": "demo::api::fail_async",
+      "kind": "async",
+      "method_id": 414051157,
+      "args": [
+        {
+          "name": "msg",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "fail_stream",
+      "qualified": "demo::api::fail_stream",
+      "kind": "stream",
+      "method_id": 444673125,
+      "args": [
+        {
+          "name": "sink",
+          "type": {
+            "kind": "stream_sink",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        },
+        {
+          "name": "msg",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "void"
+      },
+      "attrs": [],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
@@ -782,6 +855,27 @@
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "fail_sync",
+      "qualified": "demo::api::fail_sync",
+      "kind": "sync",
+      "method_id": 1225502033,
+      "args": [
+        {
+          "name": "msg",
+          "type": {
+            "kind": "string"
+          }
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "sleep_greeting",
       "qualified": "demo::api::sleep_greeting",
       "kind": "normal",
@@ -817,6 +911,20 @@
       ],
       "return": {
         "kind": "u128"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "fail_non_std",
+      "qualified": "demo::api::fail_non_std",
+      "kind": "async",
+      "method_id": 1517851511,
+      "args": [],
+      "return": {
+        "kind": "i32"
       },
       "attrs": [
         "bridge::async"
@@ -911,6 +1019,36 @@
       },
       "attrs": [
         "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "nested_cube",
+      "qualified": "demo::api::nested_cube",
+      "kind": "sync",
+      "method_id": 1812101563,
+      "args": [
+        {
+          "name": "n",
+          "type": {
+            "kind": "i32"
+          }
+        }
+      ],
+      "return": {
+        "kind": "vector",
+        "inner": {
+          "kind": "vector",
+          "inner": {
+            "kind": "vector",
+            "inner": {
+              "kind": "i32"
+            }
+          }
+        }
+      },
+      "attrs": [
+        "bridge::sync"
       ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },

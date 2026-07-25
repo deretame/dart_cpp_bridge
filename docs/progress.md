@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-07-24
+> 更新日期：2026-07-25
 
 ---
 
@@ -11,7 +11,7 @@
 | 阶段 | 状态 | 说明 |
 |------|------|------|
 | **Phase 1** 手写骨架 | **基本完成** | Runtime / Session / 四通道 / DartFn io 真挂起 / Dart 包 / 测试 |
-| **Phase 2** Codegen | 进行中 | 工具链 + scan/标记 + SYNC/ASYNC/NORMAL + Dart 三层；见 `examples/codegen_demo` |
+| **Phase 2** Codegen | **完成** | 工具链 + scan/标记 + SYNC/ASYNC/NORMAL + Dart 三层 + 类型校验 + 模板；见 `examples/codegen_demo` |
 | **Phase 3** Native Assets + 生产 | 未开始 | hook 只编链接；错误表、压测等 |
 | **Phase 4** 业务接入 | 未开始 | 不替换任何已有 FRB 生产桥 |
 
@@ -221,13 +221,17 @@ dart test
    - Fixture：`examples/codegen_demo/native/api/point_rect.h` 新增 `Point`、`Rect` 和顶层函数 `distance(Point, Point)` / `scale(Point, double)` / `boundingBox(List<Point>)`。
    - 测试：`examples/codegen_demo` 36 例 demo 测试全绿，数据类作为参数、返回值、嵌套以及 `List<data_class>` 均已端到端跑通。
 
-9. **类型白名单校验与友好报错** ⏳
-   - 在 `_type_ir` 返回 `unsupported` 时携带源文件/行号，生成阶段报错前打印清晰上下文。
-   - 数据类字段出现 Opaque 类时给出明确错误。
+9. **类型白名单校验与友好报错** ✅
+   - `_type_ir` 返回 `unsupported` 时携带源文件/行号（`loc` 字段）。
+   - `parse_project` 在 IR 组装后执行 `_validate_ir` 验证 pass，递归检查所有函数参数/返回值、类字段/方法中的不支持类型。
+   - 报错格式：清晰的 `=` 分隔框 + 上下文（函数名/字段名 + file:line）+ Hint 提示 + 白名单文档引用。
+   - 数据类字段出现 Opaque 类时给出明确错误（opaque 类为 handle-only，不能按值嵌入 data class）。
+   - 验证不通过时 `SystemExit` 终止 codegen，不会生成错误代码。
 
-10. **用户模板产品化** ⏳
-    - 完善 `examples/codegen_demo` 作为可复制的项目模板。
-    - CMake FetchContent 接入文档化。
+10. **用户模板产品化** ✅
+    - `examples/codegen_demo/README.md` 重写为可复制的项目模板：Quick Start、配置说明、自定义清单、FetchContent 接入示例。
+    - `CMakeLists.txt` 添加完整的模板注释头（接入方式 A/B、自定义清单）和分段注释。
+    - CMake FetchContent 接入已文档化（Phase 3 产品化前的过渡说明）。
 
 11. **类方法导出（opaque 对象）生成** ✅
     - 设计已写入 `docs/codegen_type_mapping.md` §5.3。
@@ -267,5 +271,5 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法 + BRIDGE_DESTRUCTOR 析构 + per-session alive 计数（C++ wire + Dart 三层），fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法 + BRIDGE_DESTRUCTOR 析构 + per-session alive 计数（C++ wire + Dart 三层）+ 类型白名单校验友好报错 + 用户模板产品化，fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。Phase 2 完成。**
 

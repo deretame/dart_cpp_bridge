@@ -152,6 +152,14 @@ final class DartCppBridge implements Finalizable {
     _b.shutdown();
   }
 
+  /// Enable or disable verbose error messages (default: enabled).
+  ///
+  /// When enabled, C++ error messages are prefixed with `[function_name] ` to
+  /// identify which native function threw. This is a process-wide setting.
+  void setVerboseErrors(bool enabled) {
+    _b.setVerboseErrors(enabled ? 1 : 0);
+  }
+
   int _allocId() => _nextId++;
 
   void _onMessage(dynamic msg) {
