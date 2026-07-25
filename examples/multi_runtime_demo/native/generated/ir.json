@@ -1,0 +1,188 @@
+{
+  "version": 2,
+  "config": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\dart_cpp_bridge.yaml",
+  "headers": [
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+  ],
+  "clang_args": [
+    "-std=c++20",
+    "-x",
+    "c++",
+    "-DBRIDGE_CODEGEN",
+    "-DDART_CPP_BRIDGE_CODEGEN",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+  ],
+  "enums": [],
+  "classes": [],
+  "functions": [
+    {
+      "name": "stop_workers",
+      "qualified": "multi_rt::api::stop_workers",
+      "kind": "async",
+      "method_id": 489867174,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "start_workers",
+      "qualified": "multi_rt::api::start_workers",
+      "kind": "async",
+      "method_id": 802585972,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "ping_worker",
+      "qualified": "multi_rt::api::ping_worker",
+      "kind": "async",
+      "method_id": 812353966,
+      "args": [
+        {
+          "name": "payload",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "process_message",
+      "qualified": "multi_rt::api::process_message",
+      "kind": "async",
+      "method_id": 1706202089,
+      "args": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "pipeline",
+      "qualified": "multi_rt::api::pipeline",
+      "kind": "async",
+      "method_id": 1761426519,
+      "args": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "fan_out",
+      "qualified": "multi_rt::api::fan_out",
+      "kind": "async",
+      "method_id": 2046595992,
+      "args": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "pair",
+        "elements": [
+          {
+            "kind": "string"
+          },
+          {
+            "kind": "string"
+          }
+        ]
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "worker_stream",
+      "qualified": "multi_rt::api::worker_stream",
+      "kind": "stream",
+      "method_id": 2109241176,
+      "args": [
+        {
+          "name": "sink",
+          "type": {
+            "kind": "stream_sink",
+            "inner": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "count",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "5"
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "50"
+        }
+      ],
+      "return": {
+        "kind": "void"
+      },
+      "attrs": [],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    }
+  ],
+  "diagnostics": [
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: 'async_simple/Executor.h' file not found",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: 'async_simple/Executor.h' file not found",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: 'async_simple/Executor.h' file not found"
+  ]
+}
