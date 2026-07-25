@@ -427,7 +427,7 @@ output_dir: /nonexistent/readonly/path
 ```bash
 # 使用 pinned Python 运行全部测试
 cd codegen
-.\codegen.ps1 -Script tests/run_tests.py
+dart run bin/codegen.dart tests/run_tests.py
 
 # 或直接：
 $env:DCB_PYTHON = "C:\Users\...\python.exe"

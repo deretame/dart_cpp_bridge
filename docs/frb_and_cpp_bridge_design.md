@@ -998,7 +998,8 @@ native_bridge/                 # 或拆成 runtime 库 + examples 仓库
 │   └── ffi_entry.cc
 ├── codegen/                   # 仅手动
 │   ├── versions.lock          # Python + libclang：版本 / URL / hash
-│   ├── bootstrap.ps1/.sh      # 校验 hash → 必要时重下 → 调解析（不用本机 python）
+│   ├── bin/codegen.dart       # Dart CLI：校验 hash → 必要时重下 → 调解析（不用本机 python）
+│   ├── lib/src/               # 平台检测、lock 解析、bootstrap 逻辑
 │   ├── parse_libclang.py
 │   └── templates/             # 生成物模板
 ├── examples/                  # 用户起步模板（CMake + 示例 API + 说明）

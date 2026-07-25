@@ -144,7 +144,8 @@ dart test
 
 # Codegen demo
 cd codegen
-.\codegen.ps1 -Script scripts/run_codegen.py -- ..\examples\codegen_demo\dart_cpp_bridge.yaml
+dart pub get
+dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
 cd ..\examples\codegen_demo
 cmake -S . -B build && cmake --build build --config Release
 dart test

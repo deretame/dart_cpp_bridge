@@ -41,18 +41,12 @@
 
 ### 入口
 
-```powershell
-cd codegen
-.\codegen.ps1                                              # 默认 smoke_toolchain
-.\codegen.ps1 -Force                                       # 重建 env
-.\codegen.ps1 -Script scripts/run_codegen.py -- <yaml路径>
-```
-
 ```bash
 cd codegen
-chmod +x codegen.sh bootstrap.sh
-./codegen.sh
-./codegen.sh scripts/run_codegen.py /path/to/dart_cpp_bridge.yaml
+dart pub get
+dart run bin/codegen.dart                          # 默认 smoke_toolchain
+dart run bin/codegen.dart --force                  # 重建 env
+dart run bin/codegen.dart scripts/run_codegen.py /path/to/dart_cpp_bridge.yaml
 ```
 
 ---
@@ -148,10 +142,12 @@ shutdownBridge(); // 仅进程退出
 
 ## 4. 脚本一览
 
-| 脚本 | 作用 |
+| 文件 | 作用 |
 |------|------|
-| `bootstrap.ps1` / `.sh` | 下载校验工具链 |
-| `codegen.ps1` / `.sh` | 入口（bootstrap + 跑 Python） |
+| `bin/codegen.dart` | CLI 入口（bootstrap + 跑 Python） |
+| `lib/src/platform.dart` | OS/架构检测、cache 路径 |
+| `lib/src/lock_file.dart` | versions.lock 解析 |
+| `lib/src/bootstrap.dart` | 下载/校验/解压/冒烟 |
 | `scripts/smoke_toolchain.py` | 工具链冒烟 |
 | `scripts/config_util.py` | 读简易 yaml |
 | `scripts/parse_api.py` | 扫头 → IR |

@@ -72,10 +72,11 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 │   │   └── dart_cpp_bridge.dart
 │   ├── test/                  # FFI + codec tests
 │   └── example/example.dart
-├── codegen/                   # Codegen toolchain (manual, not in build hook)
+├── codegen/                   # Codegen toolchain (Dart CLI, manual, not in build hook)
+│   ├── pubspec.yaml           # dcb_codegen pub package
+│   ├── bin/codegen.dart       # CLI entry: bootstrap + run Python script
+│   ├── lib/src/               # platform detection, lock parsing, bootstrap logic
 │   ├── versions.lock          # Pinned Python + libclang-ng URLs/hashes
-│   ├── bootstrap.ps1/.sh      # Download/verify toolchain into user cache
-│   ├── codegen.ps1/.sh        # Entry: bootstrap + run Python script
 │   ├── scripts/               # parse/generate Python scripts
 │   └── stubs/                 # Stub headers for codegen parsing
 ├── third_party/dart_api/      # Dart API DL C headers (downloaded)
@@ -147,9 +148,8 @@ cmake --build build --config Release
 
 # 2. Run codegen for the demo fixture
 cd codegen
-./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
-# or on Windows:
-# .\codegen.ps1 -Script scripts/run_codegen.py -- ..\examples\codegen_demo\dart_cpp_bridge.yaml
+dart pub get
+dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
 
 # 3. Build the demo library
 cd ../examples/codegen_demo

@@ -111,14 +111,10 @@ std::string sleep_greeting(std::string name);
 
 ## 3. 跑 Codegen
 
-```powershell
-cd <repo>\codegen
-.\codegen.ps1 -Script scripts/run_codegen.py -- ..\examples\codegen_demo\dart_cpp_bridge.yaml
-```
-
 ```bash
-cd codegen
-./codegen.sh scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+cd <repo>/codegen
+dart pub get
+dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
 ```
 
 首次会下载固定 Python + libclang-ng 到用户 cache（见 codegen README）。
