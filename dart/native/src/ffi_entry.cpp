@@ -1,6 +1,7 @@
 #include "dart_cpp_bridge/ffi.h"
 
 #include "dart_cpp_bridge/codec.hpp"
+#include "dart_cpp_bridge/dispatch.hpp"
 #include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
@@ -13,15 +14,40 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace dcb {
-namespace demo {
-void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
-                      const std::uint8_t* data, std::size_t len);
-std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
-}  // namespace demo
+namespace {
+struct DispatchState {
+  DispatchRequestFn request = nullptr;
+  DispatchSyncFn sync = nullptr;
+};
+DispatchState& dispatch_state() {
+  static DispatchState s;
+  return s;
+}
+}  // namespace
+
+void set_dispatch(DispatchRequestFn async_fn, DispatchSyncFn sync_fn) {
+  auto& s = dispatch_state();
+  s.request = async_fn;
+  s.sync = sync_fn;
+}
+
+DispatchRequestFn dispatch_request_fn() {
+  auto fn = dispatch_state().request;
+  if (!fn) throw std::runtime_error("dcb: dispatch not registered");
+  return fn;
+}
+
+DispatchSyncFn dispatch_sync_fn() {
+  auto fn = dispatch_state().sync;
+  if (!fn) throw std::runtime_error("dcb: dispatch not registered");
+  return fn;
+}
+
 }  // namespace dcb
 
 namespace {
@@ -111,7 +137,7 @@ DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t
     if (!dcb::SessionRegistry::instance().get(session_id)) {
       throw std::runtime_error("invalid session");
     }
-    auto out = dcb::demo::dispatch_sync(session_id, req, req_len);
+    auto out = dcb::dispatch_sync_fn()(session_id, req, req_len);
     return dup_bytes(out, out_len);
   } catch (const std::exception& e) {
     if (error_out) {
@@ -134,7 +160,7 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
   std::vector<std::uint8_t> copy(req, req + req_len);
   dcb::Runtime::instance().spawn_on_asio(
       [session = std::move(session), copy = std::move(copy), session_id]() -> async_simple::coro::Lazy<> {
-        dcb::demo::dispatch_request(session, session_id, copy.data(), copy.size());
+        dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
         co_return;
       });
 }

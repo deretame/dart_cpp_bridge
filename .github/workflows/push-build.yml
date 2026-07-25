@@ -32,19 +32,28 @@ jobs:
           sdk: stable
 
       - name: 获取 Dart API DL 头文件
-        run: cmake -P cmake/fetch_dart_api.cmake
+        run: cmake -P dart/fetch_dart_api.cmake
 
-      - name: 配置并构建主 C++ 库
+      - name: 配置基础库依赖
+        run: cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: 构建 base_demo（DLL + smoke）
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release --parallel
+          cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build examples/base_demo/build --config Release --parallel
 
       - name: 运行 C++ smoke 测试
-        run: ./build/dcb_smoke
+        run: ./examples/base_demo/build/dcb_smoke
 
       - name: 运行 Dart 包测试
         run: |
           cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 base_demo Dart 测试
+        run: |
+          cd examples/base_demo
           dart pub get
           dart test
 
@@ -86,19 +95,28 @@ jobs:
           sdk: stable
 
       - name: 获取 Dart API DL 头文件
-        run: cmake -P cmake/fetch_dart_api.cmake
+        run: cmake -P dart/fetch_dart_api.cmake
 
-      - name: 配置并构建主 C++ 库
+      - name: 配置基础库依赖
+        run: cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: 构建 base_demo（DLL + smoke）
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release --parallel
+          cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build examples/base_demo/build --config Release --parallel
 
       - name: 运行 C++ smoke 测试
-        run: .\build\Release\dcb_smoke.exe
+        run: .\examples\base_demo\build\Release\dcb_smoke.exe
 
       - name: 运行 Dart 包测试
         run: |
           cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 base_demo Dart 测试
+        run: |
+          cd examples/base_demo
           dart pub get
           dart test
 
@@ -143,19 +161,28 @@ jobs:
           sdk: stable
 
       - name: 获取 Dart API DL 头文件
-        run: cmake -P cmake/fetch_dart_api.cmake
+        run: cmake -P dart/fetch_dart_api.cmake
 
-      - name: 配置并构建主 C++ 库
+      - name: 配置基础库依赖
+        run: cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: 构建 base_demo（DLL + smoke）
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release --parallel
+          cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build examples/base_demo/build --config Release --parallel
 
       - name: 运行 C++ smoke 测试
-        run: ./build/dcb_smoke
+        run: ./examples/base_demo/build/dcb_smoke
 
       - name: 运行 Dart 包测试
         run: |
           cd dart
+          dart pub get
+          dart test
+
+      - name: 运行 base_demo Dart 测试
+        run: |
+          cd examples/base_demo
           dart pub get
           dart test
 

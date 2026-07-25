@@ -36,7 +36,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../dart/native")
 if(NOT DCB_DEPS_DIR)
   set(DCB_DEPS_DIR "${DCB_ROOT}/build/_deps")
 endif()
@@ -90,7 +90,7 @@ endif()
 
 set(DCB_DART_API_DIR ${DCB_ROOT}/third_party/dart_api)
 if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
-  message(FATAL_ERROR "Missing third_party/dart_api under repo root")
+  message(FATAL_ERROR "Missing third_party/dart_api. Run: cmake -P ../../dart/fetch_dart_api.cmake")
 endif()
 
 # --- 生成物检查 ---

@@ -6,8 +6,6 @@
 
 > **Dev / early preview** (`0.1.0-dev.2`). Native library is **not** built by this package yet (no build hooks). You must compile the C++ dynamic library yourself from the monorepo.
 
-See also [`example/example.dart`](example/example.dart).
-
 ## Full documentation
 
 This package is developed inside a monorepo. **Do not maintain a second long README here** — use the repo docs:
@@ -22,7 +20,7 @@ This package is developed inside a monorepo. **Do not maintain a second long REA
 ## What this package is
 
 - Dart FFI bindings + session / Completer / Stream / DartFn plumbing
-- Companion to the C++ runtime in the same repo (`include/`, `src/`)
+- Companion to the C++ runtime in the same repo (`native/include/`, `native/src/`)
 - Requires **Dart ≥ 3.10**
 
 ## Minimal usage
@@ -34,8 +32,8 @@ Future<void> main() async {
   final b = await DartCppBridge.init(
     libraryPath: 'path/to/dart_cpp_bridge.dll', // .so / .dylib on other OS
   );
-  print(b.bridgeVersion());
-  print(await b.add(40, 2));
+  // Use invokeSyncMethod / invokeAsyncMethod / openStream with your
+  // generated or hand-written method ids and codec payloads.
   b.shutdown(); // main isolate only, on process exit
 }
 ```

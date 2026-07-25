@@ -59,71 +59,7 @@ enum class MsgType : std::uint8_t {
   kDartFnCall = 7,
 };
 
-enum class MethodId : std::uint32_t {
-  kBridgeVersion = 1,
-  kAdd = 2,
-  kSleepTest = 3,
-  kTicks = 4,
-  kEcho = 5,
-  kFailAsync = 6,
-  kFailStream = 7,
-  // payload: fn_id u64 — DartFn async wait on io (co_await)
-  kCallDartHello = 8,
-  // payload: fn_id u64 — DartFn sync block current thread (no offload babysitting)
-  kCallDartHelloSync = 9,
-  // payload: opt_i32 — async optional test
-  kMaybeDouble = 10,
-  // payload: list_i32 — async vector test
-  kSumVec = 11,
-  // payload: u8vec — async typed list test
-  kReverseBytes = 12,
-  // payload: i32 enum — async enum test
-  kNextStatus = 13,
-  // payload: 4 × i32 — async fixed array test
-  kSumFixedFour = 14,
-  // payload: string + i32 — async struct test
-  kGreet = 15,
-  // payload: map<string, i32> — async map test
-  kScoreTotal = 16,
-  // payload: set<i32> — async set test
-  kSetSum = 17,
-  // payload: i128 string — async 128-bit integer echo test
-  kNextI128 = 18,
-  // payload: list<Person> — async nested struct list test
-  kTotalAges = 19,
-  // payload: initial_value i32 — create Counter, returns handle u64
-  kCounterCreate = 20,
-  // payload: handle u64 + delta i32 — increment Counter
-  kCounterIncrement = 21,
-  // payload: handle u64 — returns i32 value
-  kCounterGetValue = 22,
-  // payload: handle u64 — drop Counter (also used by NativeFinalizer via dcb_drop_object)
-  kCounterDrop = 23,
-  // payload: handle u64 — sync return i32 value
-  kCounterValueSync = 24,
-  // payload: a i32 + b i32 — sync static method return a + b
-  kCounterStaticSum = 25,
-  // payload: handle u64 + fn_id u64 — call Dart callback with current value string
-  kCounterCallDartFn = 26,
-  // payload: handle u64 + sleep_ms i32 — Normal method, returns current value after sleep
-  kCounterSleepAndGet = 27,
-  // payload: handle u64 + count i32 + interval_ms i32 — Stream method, emits values
-  kCounterIncrementStream = 28,
-  // payload: empty — default constructor, returns handle u64
-  kCounterCreateDefault = 29,
-  // payload: empty — factory constructor (static method), returns handle u64
-  kCounterZero = 30,
-  // payload: handle u64 + list_i32 — add each value to Counter
-  kCounterAddList = 31,
-  // payload: handle u64 + opt_i32 — set value if present
-  kCounterSetValue = 32,
-  // payload: handle u64 — returns new Counter handle with same value
-  kCounterDuplicate = 33,
-  // payload: i32 + string — pair<int, string> echo test
-  kPairEcho = 34,
-  // payload: i32 + string + bool — tuple<int, string, bool> echo test
-  kTupleEcho = 35,
-};
+
 
 class ByteWriter {
  public:

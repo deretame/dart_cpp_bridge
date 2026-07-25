@@ -1,5 +1,6 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/dispatch.hpp"
 #include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
@@ -23,6 +24,44 @@
 
 namespace dcb {
 namespace demo {
+
+enum class MethodId : std::uint32_t {
+  kBridgeVersion = 1,
+  kAdd = 2,
+  kSleepTest = 3,
+  kTicks = 4,
+  kEcho = 5,
+  kFailAsync = 6,
+  kFailStream = 7,
+  kCallDartHello = 8,
+  kCallDartHelloSync = 9,
+  kMaybeDouble = 10,
+  kSumVec = 11,
+  kReverseBytes = 12,
+  kNextStatus = 13,
+  kSumFixedFour = 14,
+  kGreet = 15,
+  kScoreTotal = 16,
+  kSetSum = 17,
+  kNextI128 = 18,
+  kTotalAges = 19,
+  kCounterCreate = 20,
+  kCounterIncrement = 21,
+  kCounterGetValue = 22,
+  kCounterDrop = 23,
+  kCounterValueSync = 24,
+  kCounterStaticSum = 25,
+  kCounterCallDartFn = 26,
+  kCounterSleepAndGet = 27,
+  kCounterIncrementStream = 28,
+  kCounterCreateDefault = 29,
+  kCounterZero = 30,
+  kCounterAddList = 31,
+  kCounterSetValue = 32,
+  kCounterDuplicate = 33,
+  kPairEcho = 34,
+  kTupleEcho = 35,
+};
 
 std::int32_t bridge_version() { return 1; }
 
@@ -978,3 +1017,13 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t /*session_id*/, const std:
 
 }  // namespace demo
 }  // namespace dcb
+
+// Auto-register dispatch at DLL load time (only when building the shared lib).
+#ifdef DCB_REGISTER_DISPATCH
+namespace {
+const bool _dcb_registered = [] {
+  dcb::set_dispatch(&dcb::demo::dispatch_request, &dcb::demo::dispatch_sync);
+  return true;
+}();
+}  // namespace
+#endif

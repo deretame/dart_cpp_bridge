@@ -16,6 +16,7 @@ library;
 import 'dart:io';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+import 'package:dcb_base_demo/demo_bridge.dart';
 
 Future<void> main(List<String> args) async {
   final path = Platform.environment['DCB_LIBRARY_PATH'] ??
@@ -39,10 +40,10 @@ Future<void> main(List<String> args) async {
 
 String _defaultLibraryPath() {
   if (Platform.isWindows) {
-    return '../build/Release/dart_cpp_bridge.dll';
+    return 'build/Release/dart_cpp_bridge.dll';
   }
   if (Platform.isMacOS) {
-    return '../build/libdart_cpp_bridge.dylib';
+    return 'build/libdart_cpp_bridge.dylib';
   }
-  return '../build/libdart_cpp_bridge.so';
+  return 'build/libdart_cpp_bridge.so';
 }

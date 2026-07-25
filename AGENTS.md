@@ -42,29 +42,31 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 
 ```text
 .
-├── CMakeLists.txt              # Main C++ shared library (dart_cpp_bridge)
-├── cmake/fetch_dart_api.cmake  # Download Dart API DL headers
 ├── README.md / README.zh-CN.md
 ├── docs/
 │   ├── frb_and_cpp_bridge_design.md   # Design decisions (Chinese)
 │   ├── progress.md                    # Implementation progress
 │   └── known_issues.md                # Resolved/known tech debt
-├── include/dart_cpp_bridge/   # Public C++ headers
-│   ├── runtime.hpp            # Singleton Runtime, spawn_on_asio
-│   ├── session.hpp            # Session, SessionRegistry, DartFnReply
-│   ├── channel.hpp            # co::mpsc / co::oneshot coroutine channels
-│   ├── dart_fn.hpp            # DartFnStringToString (sync/async reverse call)
-│   ├── stream_sink.hpp        # StreamSink<T>
-│   ├── codec.hpp              # Wire frame + ByteReader/Writer
-│   ├── ffi.h                  # C ABI exported by the shared library
-│   ├── asio_executor.hpp      # AsioExecutor for async-simple
-│   └── annotate.h             # BRIDGE_* / DCB_* codegen markers
-├── src/
-│   ├── runtime/runtime.cpp    # Runtime impl, Session impl, DartFn invoke
-│   ├── wire/demo_api.cpp      # Hand-written demo wire dispatch
-│   └── ffi_entry.cpp          # C ABI exports (dcb_init_dart_api, etc.)
-├── dart/                      # Dart package (pub package root)
+├── dart/                      # Dart package (pub package root) + native library
 │   ├── pubspec.yaml
+│   ├── fetch_dart_api.cmake   # Download Dart API DL headers
+│   ├── native/                # C++ native library (base runtime only)
+│   │   ├── CMakeLists.txt     # Static lib + FetchContent deps (asio/async-simple)
+│   │   ├── include/dart_cpp_bridge/   # Public C++ headers
+│   │   │   ├── runtime.hpp    # Singleton Runtime, spawn_on_asio
+│   │   │   ├── session.hpp    # Session, SessionRegistry, DartFnReply
+│   │   │   ├── channel.hpp    # co::mpsc / co::oneshot coroutine channels
+│   │   │   ├── dart_fn.hpp    # DartFnStringToString (sync/async reverse call)
+│   │   │   ├── stream_sink.hpp # StreamSink<T>
+│   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
+│   │   │   ├── ffi.h          # C ABI exported by the shared library
+│   │   │   ├── asio_executor.hpp # AsioExecutor for async-simple
+│   │   │   └── annotate.h     # BRIDGE_* / DCB_* codegen markers
+│   │   ├── src/
+│   │   │   ├── runtime/runtime.cpp  # Runtime impl, Session impl, DartFn invoke
+│   │   │   ├── runtime/object_handle.cpp # Object handle registry
+│   │   │   └── ffi_entry.cpp        # C ABI exports (dcb_init_dart_api, etc.)
+│   │   └── third_party/dart_api/    # Dart API DL C headers (downloaded, gitignored)
 │   ├── lib/                   # dart_cpp_bridge package
 │   │   ├── src/bridge.dart    # DartCppBridge class
 │   │   ├── src/bindings.dart  # FFI bindings
@@ -79,16 +81,17 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 │   ├── versions.lock          # Pinned Python + libclang-ng URLs/hashes
 │   ├── scripts/               # parse/generate Python scripts
 │   └── stubs/                 # Stub headers for codegen parsing
-├── third_party/dart_api/      # Dart API DL C headers (downloaded)
 └── examples/
-    ├── phase1_demo/           # C++ smoke test (no Dart VM)
-    │   └── smoke_main.cpp
+    ├── base_demo/             # Hand-written wire dispatch demo + C++ smoke test
+    │   ├── demo_api.cpp       # Hand-written demo wire dispatch
+    │   ├── smoke_main.cpp     # C++ smoke test (no Dart VM)
+    │   └── CMakeLists.txt     # Builds dart_cpp_bridge.dll + dcb_smoke
     └── codegen_demo/          # Phase 2 fixture
         ├── dart_cpp_bridge.yaml
         ├── native/api/bridge_api.h
         ├── native/api_impl/bridge_api.cpp
         ├── native/generated/  # Generated wire_dispatch.* + ir.json
-        ├── lib/             # Generated Dart API + manual export
+        ├── lib/               # Generated Dart API + manual export
         ├── test/
         └── CMakeLists.txt
 ```
@@ -103,19 +106,22 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 - Git (for FetchContent)
 - Network for first C++ build (Asio/async-simple) and codegen toolchain
 
-### C++ main library
+### C++ base library + base_demo
 
 ```bash
 # 1. Fetch Dart API DL headers (one-time unless deleted)
-cmake -P cmake/fetch_dart_api.cmake
+cmake -P dart/fetch_dart_api.cmake
 
-# 2. Configure & build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+# 2. Configure base library deps (asio/async-simple)
+cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
-# 3. Smoke test (no Dart VM)
-./build/dcb_smoke                 # Linux/macOS path varies
-./build/Release/dcb_smoke.exe       # Windows multi-config
+# 3. Build base_demo (DLL + smoke test)
+cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
+cmake --build examples/base_demo/build --config Release
+
+# 4. Smoke test (no Dart VM)
+./examples/base_demo/build/dcb_smoke                 # Linux/macOS
+./examples/base_demo/build/Release/dcb_smoke.exe     # Windows
 ```
 
 ### Dart package
@@ -142,9 +148,8 @@ DCB_LIBRARY_PATH=/path/to/libdart_cpp_bridge.so dart test
 ### Codegen demo fixture
 
 ```bash
-# 1. Build main library first (reuses _deps for asio/async-simple)
-cmake -S . -B build
-cmake --build build --config Release
+# 1. Configure base library deps (reuses _deps for asio/async-simple)
+cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
 # 2. Run codegen for the demo fixture
 cd codegen
@@ -165,16 +170,16 @@ dart test
 
 ### C++ side
 
-- **Public headers** (`include/dart_cpp_bridge/`): the runtime surface. Business code and generated wire include these.
-- **Runtime** (`src/runtime/runtime.cpp`): process-wide `Runtime`, per-isolate `Session`, `SessionRegistry`, `DartFnStringToString` async implementation.
-- **Wire** (`src/wire/demo_api.cpp` or generated `wire_dispatch.cpp`): frame dispatch, method routing, codec, scheduling. This is the only place that knows about `request_id`, `method_id`, and port posting.
-- **FFI entry** (`src/ffi_entry.cpp`): C ABI exports used by Dart. This is the dynamic-library boundary.
+- **Public headers** (`dart/native/include/dart_cpp_bridge/`): the runtime surface. Business code and generated wire include these.
+- **Runtime** (`dart/native/src/runtime/runtime.cpp`): process-wide `Runtime`, per-isolate `Session`, `SessionRegistry`, `DartFnStringToString` async implementation.
+- **Wire** (`examples/base_demo/demo_api.cpp` or generated `wire_dispatch.cpp`): frame dispatch, method routing, codec, scheduling. This is the only place that knows about `request_id`, `method_id`, and port posting.
+- **FFI entry** (`dart/native/src/ffi_entry.cpp`): C ABI exports used by Dart. This is the dynamic-library boundary.
 
 ### Dart side
 
 - `dart/lib/src/bridge.dart`: high-level `DartCppBridge` class — session lifecycle, `invokeSyncMethod`, `invokeAsyncMethod`, `ticks`, `callDartHello`, etc.
 - `dart/lib/src/bindings.dart`: raw FFI bindings to `dcb_*` C functions.
-- `dart/lib/src/codec.dart`: frame encoding/decoding mirror of `include/dart_cpp_bridge/codec.hpp`.
+- `dart/lib/src/codec.dart`: frame encoding/decoding mirror of `dart/native/include/dart_cpp_bridge/codec.hpp`.
 
 ### Generated code (Phase 2 codegen)
 
@@ -190,7 +195,7 @@ C++ side emits `native/generated/wire_dispatch.hpp|.cpp` and `ir.json`. Business
 
 ## Wire protocol
 
-Little-endian binary frame (`include/dart_cpp_bridge/codec.hpp` and `dart/lib/src/codec.dart`):
+Little-endian binary frame (`dart/native/include/dart_cpp_bridge/codec.hpp` and `dart/lib/src/codec.dart`):
 
 ```text
 magic       u32   0x31424344 ('DCB1')
@@ -261,7 +266,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ### Adding tests
 
-- C++: add to `examples/phase1_demo/smoke_main.cpp` or create a new test runner linked against `src/runtime` sources.
+- C++: add to `examples/base_demo/smoke_main.cpp` or create a new test runner linked against `dart/native/src/runtime` sources.
 - Dart: add `*_test.dart` under `dart/test/` or `examples/codegen_demo/test/`.
 
 ## Security considerations

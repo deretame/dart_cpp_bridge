@@ -3,6 +3,7 @@
 
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/dispatch.hpp"
 #include "dart_cpp_bridge/error_config.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
@@ -1090,3 +1091,11 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 
 }  // namespace demo
 }  // namespace dcb
+
+// Auto-register dispatch at DLL load time.
+namespace {
+const bool _dcb_registered = [] {
+  dcb::set_dispatch(&dcb::demo::dispatch_request, &dcb::demo::dispatch_sync);
+  return true;
+}();
+}  // namespace

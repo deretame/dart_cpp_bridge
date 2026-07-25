@@ -28,6 +28,12 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 }  // namespace dcb::demo
 
+// Demo method ids (same as demo_api.cpp).
+enum class MethodId : std::uint32_t {
+  kBridgeVersion = 1,
+  kAdd = 2,
+};
+
 namespace {
 
 struct DartFnSimCtx {

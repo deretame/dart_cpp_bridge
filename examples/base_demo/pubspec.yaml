@@ -1,0 +1,17 @@
+name: dcb_base_demo
+description: >
+  Hand-written wire dispatch demo for dart_cpp_bridge.
+  Contains C++ smoke test, Dart FFI integration tests, and example.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  dart_cpp_bridge:
+    path: ../../dart
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

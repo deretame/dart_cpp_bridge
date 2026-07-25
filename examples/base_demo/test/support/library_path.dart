@@ -1,10 +1,10 @@
 import 'dart:io';
 
-/// Resolve native library path for tests.
+/// Resolve native library path for base_demo tests.
 ///
 /// Order:
 /// 1. env `DCB_LIBRARY_PATH` or `--dart-define=DCB_LIBRARY_PATH=...`
-/// 2. Common build outputs from `Directory.current` (run tests from `dart/`)
+/// 2. Common build outputs relative to `examples/base_demo/`
 String resolveNativeLibraryPath() {
   const fromDefine = String.fromEnvironment('DCB_LIBRARY_PATH');
   if (fromDefine.isNotEmpty) {
@@ -16,28 +16,30 @@ String resolveNativeLibraryPath() {
     return fromEnv;
   }
 
-  // `dart test` from package dir => current is `.../dart`
-  // repo root is parent of package dir.
+  // `dart test` from examples/base_demo/ => cwd is `.../examples/base_demo`
   final cwd = Directory.current;
   final roots = <Directory>[
     cwd,
     cwd.parent,
-    if (cwd.parent.path.endsWith('dart')) cwd.parent.parent,
+    cwd.parent.parent,
   ];
 
   final names = <String>[
     if (Platform.isWindows) ...[
       'build/Release/dart_cpp_bridge.dll',
       'build/Debug/dart_cpp_bridge.dll',
-      'build/dart_cpp_bridge.dll',
+      'examples/base_demo/build/Release/dart_cpp_bridge.dll',
+      'examples/base_demo/build/Debug/dart_cpp_bridge.dll',
     ],
     if (Platform.isLinux) ...[
       'build/libdart_cpp_bridge.so',
       'build/Release/libdart_cpp_bridge.so',
+      'examples/base_demo/build/libdart_cpp_bridge.so',
     ],
     if (Platform.isMacOS) ...[
       'build/libdart_cpp_bridge.dylib',
       'build/Release/libdart_cpp_bridge.dylib',
+      'examples/base_demo/build/libdart_cpp_bridge.dylib',
     ],
   ];
 
@@ -53,7 +55,7 @@ String resolveNativeLibraryPath() {
   }
 
   throw StateError(
-    'Native library not found. Build the C++ library first, or set DCB_LIBRARY_PATH.\n'
+    'Native library not found. Build examples/base_demo first, or set DCB_LIBRARY_PATH.\n'
     'cwd=${cwd.path}\n'
     'Tried:\n${tried.map((e) => '  - $e').join('\n')}',
   );

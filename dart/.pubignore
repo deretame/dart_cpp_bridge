@@ -1,5 +1,6 @@
-# Keep the published tarball small; tests are not required on pub.dev
-# (example/ is kept so pub.dev awards the example score)
+# Keep the published tarball small.
 .dart_tool/
 test/
+native/
+fetch_dart_api.cmake
 pubspec.lock

@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+import 'package:dcb_base_demo/demo_bridge.dart';
 import 'package:test/test.dart';
 
 import 'support/library_path.dart';

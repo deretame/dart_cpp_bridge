@@ -43,87 +43,6 @@ enum MsgType {
   }
 }
 
-/// Demo / hand-written method ids (Phase 1; codegen will replace later).
-enum MethodId {
-  /// Sync: protocol version as `i32`.
-  bridgeVersion(1),
-
-  /// Async: `i32 + i32 → i32`.
-  add(2),
-
-  /// Normal (pool): returns a done string after sleep.
-  sleepTest(3),
-
-  /// Stream of tick indices.
-  ticks(4),
-
-  /// Async echo of a UTF-8 string.
-  echo(5),
-
-  /// Async that always fails (tests).
-  failAsync(6),
-
-  /// Stream that emits then errors (tests).
-  failStream(7),
-
-  /// DartFn reverse call; C++ awaits on io.
-  callDartHello(8),
-
-  /// DartFn reverse call; C++ blocks current native thread.
-  callDartHelloSync(9),
-
-  /// Async optional i32 -> optional i32 test.
-  maybeDouble(10),
-
-  /// Async list i32 -> i32 sum test.
-  sumVec(11),
-
-  /// Async Uint8List -> Uint8List reverse test.
-  reverseBytes(12),
-
-  /// Async enum -> enum next test.
-  nextStatus(13),
-
-  /// Async fixed array (4 × i32) -> i32 sum test.
-  sumFixedFour(14),
-
-  /// Async struct Person -> string greet test.
-  greet(15),
-
-  /// Async map<string, i32> -> i32 total test.
-  scoreTotal(16),
-
-  /// Async set<i32> -> i32 sum test.
-  setSum(17),
-
-  /// Async i128 -> i128 test.
-  nextI128(18),
-
-  /// Async list<Person> -> i32 total ages test.
-  totalAges(19),
-
-  /// Counter class method export test.
-  counterCreate(20),
-  counterIncrement(21),
-  counterGetValue(22),
-  counterDrop(23),
-  counterValueSync(24),
-  counterStaticSum(25),
-  counterCallDartFn(26),
-  counterSleepAndGet(27),
-  counterIncrementStream(28),
-  counterCreateDefault(29),
-  counterZero(30),
-  counterAddList(31),
-  counterSetValue(32),
-  counterDuplicate(33),
-  pairEcho(34),
-  tupleEcho(35);
-
-  /// Numeric method id on the wire.
-  final int value;
-  const MethodId(this.value);
-}
 
 /// Little-endian binary writer used for frames and payloads.
 class ByteWriter {
@@ -177,72 +96,7 @@ class ByteWriter {
     _b.add(bd.buffer.asUint8List());
   }
 
-  /// Append a nullable `i32` (1-byte presence tag + value if non-null).
-  void writeOptI32(int? v) {
-    if (v == null) {
-      u8(0);
-    } else {
-      u8(1);
-      i32(v);
-    }
-  }
-
-  /// Append a length-prefixed list of `i32`.
-  void writeListI32(List<int> v) {
-    u32(v.length);
-    for (final x in v) {
-      i32(x);
-    }
-  }
-
-  /// Append a length-prefixed raw byte buffer as `Uint8List`.
-  void writeUint8List(Uint8List v) {
-    u32(v.length);
-    bytes(v);
-  }
-
-  /// Append an enum value as `i32` (underlying value / index).
-  void writeEnum(int v) => i32(v);
-
-  /// Append a fixed-length array of `i32` (without length prefix).
-  void writeFixedArrayI32(List<int> v) {
-    for (final x in v) {
-      i32(x);
-    }
-  }
-
-  /// Append a length-prefixed map<string, i32>.
-  void writeMapStringToI32(Map<String, int> m) {
-    u32(m.length);
-    m.forEach((k, v) {
-      str(k);
-      i32(v);
-    });
-  }
-
-  /// Append a length-prefixed set<i32>.
-  void writeSetI32(Set<int> s) {
-    u32(s.length);
-    for (final x in s) {
-      i32(x);
-    }
-  }
-
-  /// Append a pair (int, String) as i32 + string.
-  void writePairIntString((int, String) p) {
-    i32(p.$1);
-    str(p.$2);
-  }
-
-  /// Append a tuple (int, String, bool) as i32 + string + bool.
-  void writeTupleIntStringBool((int, String, bool) p) {
-    i32(p.$1);
-    str(p.$2);
-    u8(p.$3 ? 1 : 0);
-  }
-
   /// Append a signed 128-bit integer as a length-prefixed decimal string.
-  /// Dart is responsible for BigInt <-> string conversion.
   void writeI128(BigInt v) {
     str(v.toString());
   }
@@ -344,70 +198,6 @@ class ByteReader {
     return v;
   }
 
-  /// Read a nullable `i32` (1-byte presence tag + value if non-null).
-  int? readOptI32() {
-    final hasValue = u8() != 0;
-    if (!hasValue) return null;
-    return i32();
-  }
-
-  /// Read a length-prefixed list of `i32`.
-  List<int> readListI32() {
-    final n = u32();
-    final result = <int>[];
-    for (var i = 0; i < n; i++) {
-      result.add(i32());
-    }
-    return result;
-  }
-
-  /// Read a length-prefixed raw byte buffer as `Uint8List`.
-  Uint8List readUint8List() {
-    final n = u32();
-    _need(n);
-    final result = Uint8List.fromList(data.sublist(_pos, _pos + n));
-    _pos += n;
-    return result;
-  }
-
-  /// Read an enum value as `i32` (underlying value / index).
-  int readEnum() => i32();
-
-  /// Read a fixed-length array of `i32` (without length prefix).
-  List<int> readFixedArrayI32(int n) {
-    return List.generate(n, (_) => i32());
-  }
-
-  /// Read a length-prefixed map<string, i32>.
-  Map<String, int> readMapStringToI32() {
-    final n = u32();
-    final result = <String, int>{};
-    for (var i = 0; i < n; i++) {
-      result[str()] = i32();
-    }
-    return result;
-  }
-
-  /// Read a length-prefixed set<i32>.
-  Set<int> readSetI32() {
-    final n = u32();
-    final result = <int>{};
-    for (var i = 0; i < n; i++) {
-      result.add(i32());
-    }
-    return result;
-  }
-
-  /// Read a pair (int, String) as i32 + string.
-  (int, String) readPairIntString() {
-    return (i32(), str());
-  }
-
-  /// Read a tuple (int, String, bool) as i32 + string + bool.
-  (int, String, bool) readTupleIntStringBool() {
-    return (i32(), str(), u8() != 0);
-  }
-
   /// Read a signed 128-bit integer from a length-prefixed decimal string.
   BigInt readI128() {
     return BigInt.parse(str());
@@ -471,7 +261,7 @@ class Frame {
   /// Multiplexing id (request / stream / DartFn reply).
   final int requestId;
 
-  /// [MethodId] value (or 0 when not applicable).
+  /// Method id value (or 0 when not applicable).
   final int methodId;
 
   /// Payload bytes after the fixed header.

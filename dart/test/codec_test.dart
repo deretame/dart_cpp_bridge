@@ -9,12 +9,12 @@ void main() {
       final raw = makeFrame(
         type: MsgType.request,
         requestId: 42,
-        methodId: MethodId.add.value,
+        methodId: 2,
       );
       final f = parseFrame(raw);
       expect(f.type, MsgType.request);
       expect(f.requestId, 42);
-      expect(f.methodId, MethodId.add.value);
+      expect(f.methodId, 2);
       expect(f.payload, isEmpty);
     });
 
@@ -40,7 +40,7 @@ void main() {
       final raw = makeFrame(
         type: MsgType.responseOk,
         requestId: 3,
-        methodId: MethodId.echo.value,
+        methodId: 5,
         payload: payload.takeBytes(),
       );
       final f = parseFrame(raw);
@@ -66,16 +66,21 @@ void main() {
 
     test('pair (int, String) roundtrip', () {
       const input = (42, 'hello');
-      final payload = ByteWriter()..writePairIntString(input);
+      final payload = ByteWriter()
+        ..i32(input.$1)
+        ..str(input.$2);
       final r = ByteReader(payload.takeBytes());
-      expect(r.readPairIntString(), input);
+      expect((r.i32(), r.str()), input);
     });
 
     test('tuple (int, String, bool) roundtrip', () {
       const input = (1, 'a', true);
-      final payload = ByteWriter()..writeTupleIntStringBool(input);
+      final payload = ByteWriter()
+        ..i32(input.$1)
+        ..str(input.$2)
+        ..u8(input.$3 ? 1 : 0);
       final r = ByteReader(payload.takeBytes());
-      expect(r.readTupleIntStringBool(), input);
+      expect((r.i32(), r.str(), r.u8() != 0), input);
     });
   });
 
