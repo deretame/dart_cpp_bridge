@@ -438,7 +438,8 @@
             "value": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -461,7 +462,8 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point"
-          }
+          },
+          "default_value": null
         },
         {
           "name": "b",
@@ -469,7 +471,8 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -490,7 +493,8 @@
           "name": "msg",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -519,7 +523,8 @@
                 "kind": "string"
               }
             ]
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -559,7 +564,8 @@
                 "kind": "bool"
               }
             ]
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -591,7 +597,8 @@
           "name": "msg",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -615,19 +622,56 @@
             "inner": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         },
         {
           "name": "msg",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
         "kind": "void"
       },
       "attrs": [],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "download_with_progress",
+      "qualified": "demo::api::download_with_progress",
+      "kind": "async",
+      "method_id": 463555789,
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        },
+        {
+          "name": "progress",
+          "type": {
+            "kind": "optional",
+            "inner": {
+              "kind": "stream_sink",
+              "inner": {
+                "kind": "i32"
+              }
+            }
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
@@ -643,7 +687,8 @@
             "inner": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -667,13 +712,15 @@
           "name": "a",
           "type": {
             "kind": "i32"
-          }
+          },
+          "default_value": null
         },
         {
           "name": "b",
           "type": {
             "kind": "i32"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -712,7 +759,8 @@
               "kind": "i32"
             },
             "size": 4
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -733,7 +781,8 @@
           "name": "value",
           "type": {
             "kind": "i64"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -759,7 +808,8 @@
               "name": "OrderStatus",
               "qualified": "demo::api::OrderStatus"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -788,7 +838,8 @@
             "inner": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -814,13 +865,15 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point"
-          }
+          },
+          "default_value": null
         },
         {
           "name": "factor",
           "type": {
             "kind": "f64"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -843,7 +896,8 @@
           "name": "value",
           "type": {
             "kind": "bool"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -864,7 +918,8 @@
           "name": "msg",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -885,7 +940,8 @@
           "name": "name",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -906,7 +962,8 @@
           "name": "value",
           "type": {
             "kind": "u128"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -941,7 +998,8 @@
           "name": "value",
           "type": {
             "kind": "u32"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -965,19 +1023,22 @@
             "inner": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         },
         {
           "name": "count",
           "type": {
             "kind": "i32"
-          }
+          },
+          "default_value": "5"
         },
         {
           "name": "interval_ms",
           "type": {
             "kind": "i32"
-          }
+          },
+          "default_value": "10"
         }
       ],
       "return": {
@@ -1005,13 +1066,15 @@
             "return": {
               "kind": "string"
             }
-          }
+          },
+          "default_value": null
         },
         {
           "name": "name",
           "type": {
             "kind": "string"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1032,7 +1095,8 @@
           "name": "n",
           "type": {
             "kind": "i32"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1065,7 +1129,8 @@
             "inner": {
               "kind": "i32"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1091,7 +1156,8 @@
               "name": "Point",
               "qualified": "demo::api::Point"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1114,7 +1180,8 @@
           "name": "value",
           "type": {
             "kind": "i128"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1138,7 +1205,8 @@
             "inner": {
               "kind": "string"
             }
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {
@@ -1164,7 +1232,8 @@
             "kind": "enum",
             "name": "OrderStatus",
             "qualified": "demo::api::OrderStatus"
-          }
+          },
+          "default_value": null
         }
       ],
       "return": {

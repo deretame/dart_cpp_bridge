@@ -128,6 +128,11 @@ async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo
 void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
                  std::int32_t interval_ms = 10);
 
+// async + optional sink → Dart: Future<String> downloadWithProgress({required String url, StreamController<int>? progress})
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> download_with_progress(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
+
 // data class tests
 // async → Dart: Future<double> distance(Point a, Point b)
 BRIDGE_ASYNC

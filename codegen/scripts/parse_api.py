@@ -881,6 +881,7 @@ def _collect_functions(
                                 opaque_class_by_name,
                                 loc=_cursor_loc(ch),
                             ),
+                            "default_value": _extract_default_value(ch),
                         }
                     )
             ret = _type_ir(

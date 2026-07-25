@@ -234,6 +234,35 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 463555789: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto url = r.str();
+        const auto _stream_id = r.u64();
+        std::optional<dcb::StreamSink<std::int32_t>> sink;
+        if (_stream_id != 0) {
+          sink.emplace(session.get(), _stream_id, gen, method, [](std::int32_t v) {
+            ByteWriter w;
+            w.i32(v);
+            return w.raw();
+          });
+        }
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, url = std::move(url), sink = std::move(sink)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::download_with_progress(url, std::move(sink));
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "download_with_progress", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "download_with_progress", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 489154044: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = r.opt<std::int32_t>([&]() { return r.i32(); });

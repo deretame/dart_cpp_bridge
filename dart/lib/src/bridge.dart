@@ -303,6 +303,44 @@ final class DartCppBridge implements Finalizable {
     return controller.stream;
   }
 
+  /// Invoke an async method that optionally produces stream events.
+  ///
+  /// Used for C++ functions with `std::optional<StreamSink<T>>` parameters.
+  /// The same [request_id] carries both stream events (streamData/streamEnd)
+  /// and the final response (responseOk/responseErr).
+  ///
+  /// [controller] receives stream events if provided; pass null to skip.
+  /// The stream_id is appended to [payload] automatically (non-zero if
+  /// controller is provided, 0 otherwise).
+  /// Returns the raw response payload bytes.
+  Future<Uint8List> invokeAsyncMethodWithStream<T>(
+    int methodId,
+    ByteWriter payload,
+    StreamController<T>? controller,
+    T Function(ByteReader) decodeItem,
+  ) async {
+    _ensureAlive();
+    final id = _allocId();
+    // Write stream_id: non-zero if controller provided, 0 otherwise.
+    payload.u64(controller != null ? id : 0);
+    if (controller != null) {
+      _streams[id] = _StreamSubscription<T>(controller, decodeItem);
+    }
+    final c = Completer<Uint8List>();
+    _pending[id] = c;
+    _invokeAsyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: methodId,
+      payload: payload.takeBytes(),
+    ));
+    try {
+      return await c.future;
+    } finally {
+      _streams.remove(id);
+    }
+  }
+
   Uint8List _invokeSyncRaw(Uint8List req) {
     _ensureAlive();
     final ptr = malloc<Uint8>(req.length);

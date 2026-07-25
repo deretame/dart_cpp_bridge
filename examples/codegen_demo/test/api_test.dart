@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:codegen_demo/codegen_demo.dart';
@@ -38,11 +39,11 @@ String resolveDemoLibrary() {
 
 void main() {
   setUpAll(() async {
-    await initBridge(libraryPath: resolveDemoLibrary());
+    await DcbLib.init(libraryPath: resolveDemoLibrary());
   });
 
   tearDownAll(() {
-    shutdownBridge();
+    DcbLib.shutdown();
   });
 
   test('BRIDGE_SYNC bridge_version', () {
@@ -50,135 +51,155 @@ void main() {
   });
 
   test('BRIDGE_ASYNC add', () async {
-    expect(await add(2, 3), 5);
+    expect(await add(a: 2, b: 3), 5);
   });
 
   test('BRIDGE_NORMAL sleep_greeting', () async {
-    expect(await sleepGreeting('Ada'), 'hello, Ada');
+    expect(await sleepGreeting(name: 'Ada'), 'hello, Ada');
   });
 
   test('BRIDGE_ASYNC enum next_status', () async {
-    expect(await nextStatus(OrderStatus.created), OrderStatus.paid);
-    expect(await nextStatus(OrderStatus.paid), OrderStatus.shipped);
-    expect(await nextStatus(OrderStatus.shipped), OrderStatus.created);
+    expect(await nextStatus(current: OrderStatus.created), OrderStatus.paid);
+    expect(await nextStatus(current: OrderStatus.paid), OrderStatus.shipped);
+    expect(await nextStatus(current: OrderStatus.shipped), OrderStatus.created);
   });
 
   test('BRIDGE_ASYNC optional maybe_double', () async {
-    expect(await maybeDouble(null), isNull);
-    expect(await maybeDouble(5), 10);
-    expect(await maybeDouble(-3), -6);
+    expect(await maybeDouble(), isNull);
+    expect(await maybeDouble(value: 5), 10);
+    expect(await maybeDouble(value: -3), -6);
   });
 
   test('BRIDGE_ASYNC u32 increment_u32', () async {
-    expect(await incrementU32(0), 1);
-    expect(await incrementU32(4294967290), 4294967291);
+    expect(await incrementU32(value: 0), 1);
+    expect(await incrementU32(value: 4294967290), 4294967291);
   });
 
   test('BRIDGE_ASYNC i64 increment_i64', () async {
-    expect(await incrementI64(0), 1);
-    expect(await incrementI64(9223372036854775800), 9223372036854775801);
-    expect(await incrementI64(-9223372036854775800), -9223372036854775799);
+    expect(await incrementI64(value: 0), 1);
+    expect(await incrementI64(value: 9223372036854775800), 9223372036854775801);
+    expect(await incrementI64(value: -9223372036854775800), -9223372036854775799);
   });
 
   test('BRIDGE_ASYNC bool negate_bool', () async {
-    expect(await negateBool(true), false);
-    expect(await negateBool(false), true);
+    expect(await negateBool(value: true), false);
+    expect(await negateBool(value: false), true);
   });
 
   test('BRIDGE_ASYNC optional string', () async {
-    expect(await optionalString(null), isNull);
-    expect(await optionalString('hello'), 'hello!');
+    expect(await optionalString(), isNull);
+    expect(await optionalString(value: 'hello'), 'hello!');
   });
 
   test('BRIDGE_ASYNC optional enum', () async {
-    expect(await optionalStatus(null), isNull);
-    expect(await optionalStatus(OrderStatus.created), OrderStatus.paid);
-    expect(await optionalStatus(OrderStatus.shipped), OrderStatus.created);
+    expect(await optionalStatus(), isNull);
+    expect(await optionalStatus(value: OrderStatus.created), OrderStatus.paid);
+    expect(await optionalStatus(value: OrderStatus.shipped), OrderStatus.created);
   });
 
   test('BRIDGE_ASYNC vector<int> echo_list', () async {
-    expect(await echoList([]), <int>[]);
-    expect(await echoList([1, 2, 3]), [1, 2, 3]);
-    expect(await echoList([-1, 0, 42]), [-1, 0, 42]);
+    expect(await echoList(values: []), <int>[]);
+    expect(await echoList(values: [1, 2, 3]), [1, 2, 3]);
+    expect(await echoList(values: [-1, 0, 42]), [-1, 0, 42]);
   });
 
   test('BRIDGE_ASYNC array<int, 4> sum_array', () async {
-    expect(await sumArray([1, 2, 3, 4]), 10);
-    expect(await sumArray([-1, 1, -1, 1]), 0);
+    expect(await sumArray(values: [1, 2, 3, 4]), 10);
+    expect(await sumArray(values: [-1, 1, -1, 1]), 0);
   });
 
   test('BRIDGE_ASYNC map<string, int> sum_scores', () async {
-    expect(await sumScores({}), 0);
-    expect(await sumScores({'a': 1, 'b': 2, 'c': 3}), 6);
+    expect(await sumScores(scores: {}), 0);
+    expect(await sumScores(scores: {'a': 1, 'b': 2, 'c': 3}), 6);
   });
 
   test('BRIDGE_ASYNC set<int> sum_set', () async {
-    expect(await sumSet(<int>{}), 0);
-    expect(await sumSet({1, 2, 3}), 6);
+    expect(await sumSet(values: <int>{}), 0);
+    expect(await sumSet(values: {1, 2, 3}), 6);
   });
 
   test('BRIDGE_ASYNC Int128 echo_i128', () async {
     final big = BigInt.parse('170141183460469231731687303715884105727');
-    expect(await echoI128(big), big);
-    expect(await echoI128(BigInt.zero), BigInt.zero);
+    expect(await echoI128(value: big), big);
+    expect(await echoI128(value: BigInt.zero), BigInt.zero);
     expect(
-      await echoI128(BigInt.parse('-170141183460469231731687303715884105728')),
+      await echoI128(value: BigInt.parse('-170141183460469231731687303715884105728')),
       BigInt.parse('-170141183460469231731687303715884105728'),
     );
   });
 
   test('BRIDGE_ASYNC UInt128 echo_u128', () async {
     final big = BigInt.parse('340282366920938463463374607431768211455');
-    expect(await echoU128(big), big);
-    expect(await echoU128(BigInt.zero), BigInt.zero);
+    expect(await echoU128(value: big), big);
+    expect(await echoU128(value: BigInt.zero), BigInt.zero);
   });
 
   test('BRIDGE_ASYNC DartFn greet_dart_fn', () async {
     expect(
-      await greetDartFn((name) => 'Dart $name', 'world'),
+      await greetDartFn(callback: (name) => 'Dart $name', name: 'world'),
       'hello, Dart world',
     );
     expect(
-      await greetDartFn((name) async {
+      await greetDartFn(callback: (name) async {
         await Future<void>.delayed(const Duration(milliseconds: 10));
         return 'async $name';
-      }, 'moon'),
+      }, name: 'moon'),
       'hello, async moon',
     );
   });
 
   test('BRIDGE_ASYNC pair<int, string> pair_echo', () async {
-    expect(await pairEcho((1, 'hello')), (1, 'hello'));
-    expect(await pairEcho((-42, 'world')), (-42, 'world'));
+    expect(await pairEcho(value: (1, 'hello')), (1, 'hello'));
+    expect(await pairEcho(value: (-42, 'world')), (-42, 'world'));
   });
 
   test('BRIDGE_ASYNC tuple<int, string, bool> tuple_echo', () async {
-    expect(await tupleEcho((1, 'hello', true)), (1, 'hello', true));
-    expect(await tupleEcho((-42, 'world', false)), (-42, 'world', false));
+    expect(await tupleEcho(value: (1, 'hello', true)), (1, 'hello', true));
+    expect(await tupleEcho(value: (-42, 'world', false)), (-42, 'world', false));
   });
 
   test('Stream tick_stream emits 0..count-1 then done', () async {
-    final values = await tickStream(5, 10).toList();
+    final values = await tickStream(count: 5, intervalMs: 10).toList();
     expect(values, [0, 1, 2, 3, 4]);
   });
 
   test('Stream tick_stream cancels subscription', () async {
-    final stream = tickStream(100, 10);
+    final stream = tickStream(count: 100, intervalMs: 10);
     final sub = stream.listen(null);
     await Future<void>.delayed(const Duration(milliseconds: 30));
     await sub.cancel();
   });
 
+  test('optional StreamSink downloadWithProgress with progress', () async {
+    final progressValues = <int>[];
+    final controller = StreamController<int>();
+    controller.stream.listen(progressValues.add);
+
+    final result = await downloadWithProgress(
+      url: 'https://example.com/file.zip',
+      progress: controller,
+    );
+
+    expect(result, 'downloaded: https://example.com/file.zip');
+    expect(progressValues, [20, 40, 60, 80, 100]);
+    await controller.close();
+  });
+
+  test('optional StreamSink downloadWithProgress without progress', () async {
+    final result = await downloadWithProgress(url: 'test.txt');
+    expect(result, 'downloaded: test.txt');
+  });
+
   test('data class distance', () async {
     final a = const Point(x: 0.0, y: 0.0);
     final b = const Point(x: 3.0, y: 4.0);
-    expect(await distance(a, b), closeTo(5.0, 1e-9));
-    expect(await distance(a, a), closeTo(0.0, 1e-9));
+    expect(await distance(a: a, b: b), closeTo(5.0, 1e-9));
+    expect(await distance(a: a, b: a), closeTo(0.0, 1e-9));
   });
 
   test('data class scale', () async {
     final p = const Point(x: 1.5, y: -2.0);
-    final scaled = await scale(p, 2.0);
+    final scaled = await scale(p: p, factor: 2.0);
     expect(scaled.x, closeTo(3.0, 1e-9));
     expect(scaled.y, closeTo(-4.0, 1e-9));
   });
@@ -189,7 +210,7 @@ void main() {
       const Point(x: -3.0, y: 4.0),
       const Point(x: 0.0, y: -1.0),
     ];
-    final box = await boundingBox(points);
+    final box = await boundingBox(points: points);
     expect(box.topLeft.x, closeTo(-3.0, 1e-9));
     expect(box.topLeft.y, closeTo(-1.0, 1e-9));
     expect(box.bottomRight.x, closeTo(1.0, 1e-9));
@@ -204,7 +225,7 @@ void main() {
   });
 
   test('opaque class Counter create and value', () async {
-    final counter = Counter.withInitialValue(initialValue: 10);
+    final counter = Counter.int32T(initialValue: 10);
     expect(await counter.value(), 10);
     expect(counter.valueSync(), 10);
   });
@@ -215,29 +236,29 @@ void main() {
   });
 
   test('opaque class Counter increment and default delta', () async {
-    final counter = Counter.withInitialValue(initialValue: 5);
+    final counter = Counter.int32T(initialValue: 5);
     await counter.increment();
     expect(await counter.value(), 6);
-    await counter.increment(3);
+    await counter.increment(delta: 3);
     expect(await counter.value(), 9);
   });
 
   test('opaque class Counter addList', () async {
-    final counter = Counter.withInitialValue(initialValue: 10);
-    expect(await counter.addList([1, 2, 3]), 16);
+    final counter = Counter.int32T(initialValue: 10);
+    expect(await counter.addList(values: [1, 2, 3]), 16);
     expect(await counter.value(), 16);
   });
 
   test('opaque class Counter setValue', () async {
-    final counter = Counter.withInitialValue(initialValue: 0);
-    await counter.setValue(42);
+    final counter = Counter.int32T(initialValue: 0);
+    await counter.setValue(value: 42);
     expect(await counter.value(), 42);
-    await counter.setValue(null);
+    await counter.setValue();
     expect(await counter.value(), 42);
   });
 
   test('opaque class Counter duplicate', () async {
-    final counter = Counter.withInitialValue(initialValue: 7);
+    final counter = Counter.int32T(initialValue: 7);
     final copy = await counter.duplicate();
     expect(await copy.value(), 7);
     await counter.increment();
@@ -246,42 +267,42 @@ void main() {
   });
 
   test('opaque class Counter static sum', () {
-    expect(Counter.sum(3, 4), 7);
+    expect(Counter.sum(a: 3, b: 4), 7);
   });
 
   test('opaque class Counter sleepAndGet normal method', () async {
-    final counter = Counter.withInitialValue(initialValue: 100);
-    expect(await counter.sleepAndGet(50), 100);
+    final counter = Counter.int32T(initialValue: 100);
+    expect(await counter.sleepAndGet(sleepMs: 50), 100);
   });
 
   test('opaque class Counter greetDartFn', () async {
-    final counter = Counter.withInitialValue(initialValue: 5);
+    final counter = Counter.int32T(initialValue: 5);
     final result = await counter.greetDartFn(
-      (value) => 'Dart got $value',
-      'world',
+      callback: (value) => 'Dart got $value',
+      name: 'world',
     );
     expect(result, 'hello, Dart got world');
   });
 
   test('opaque class Counter tickStream', () async {
-    final counter = Counter.withInitialValue(initialValue: 3);
-    final values = await counter.tickStream(3, 10).toList();
+    final counter = Counter.int32T(initialValue: 3);
+    final values = await counter.tickStream(count: 3, intervalMs: 10).toList();
     expect(values, [3, 3, 3]);
   });
 
   test('opaque class Counter dispose then throws', () async {
-    final counter = Counter.withInitialValue(initialValue: 1);
+    final counter = Counter.int32T(initialValue: 1);
     counter.dispose();
     expect(() => counter.valueSync(), throwsA(isA<StateError>()));
   });
 
   test('opaque class Counter instances are independent', () async {
-    final a = Counter.withInitialValue(initialValue: 1);
-    final b = Counter.withInitialValue(initialValue: 2);
+    final a = Counter.int32T(initialValue: 1);
+    final b = Counter.int32T(initialValue: 2);
     await a.increment();
     expect(await a.value(), 2);
     expect(await b.value(), 2);
-    await b.increment(5);
+    await b.increment(delta: 5);
     expect(await a.value(), 2);
     expect(await b.value(), 7);
   });
@@ -290,7 +311,7 @@ void main() {
     // Record baseline alive count (other tests may have leaked counters).
     final baseline = Counter.aliveCount();
 
-    final c1 = Counter.withInitialValue(initialValue: 100);
+    final c1 = Counter.int32T(initialValue: 100);
     final c2 = Counter();
     expect(Counter.aliveCount(), baseline + 2);
 
@@ -305,7 +326,7 @@ void main() {
 
   test('opaque class Counter double dispose is safe', () {
     final baseline = Counter.aliveCount();
-    final c = Counter.withInitialValue(initialValue: 1);
+    final c = Counter.int32T(initialValue: 1);
     expect(Counter.aliveCount(), baseline + 1);
 
     c.dispose();
@@ -320,7 +341,7 @@ void main() {
     'opaque class Counter duplicate creates independent alive count',
     () async {
       final baseline = Counter.aliveCount();
-      final original = Counter.withInitialValue(initialValue: 42);
+      final original = Counter.int32T(initialValue: 42);
       expect(Counter.aliveCount(), baseline + 1);
 
       final copy = await original.duplicate();
@@ -345,7 +366,7 @@ void main() {
   group('runtime error propagation', () {
     test('R01: async throw surfaces as StateError', () async {
       await expectLater(
-        failAsync('boom-async'),
+        failAsync(msg: 'boom-async'),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -358,7 +379,7 @@ void main() {
 
     test('R02: sync throw surfaces as StateError', () {
       expect(
-        () => failSync('boom-sync'),
+        () => failSync(msg: 'boom-sync'),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -371,7 +392,7 @@ void main() {
 
     test('R03: normal throw surfaces as StateError', () async {
       await expectLater(
-        failNormal('boom-normal'),
+        failNormal(msg: 'boom-normal'),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -399,7 +420,7 @@ void main() {
       final values = <int>[];
       Object? err;
       try {
-        await for (final v in failStream('boom-stream')) {
+        await for (final v in failStream(msg: 'boom-stream')) {
           values.add(v);
         }
       } catch (e) {
@@ -412,9 +433,9 @@ void main() {
 
     test('R06: session recovers after exception', () async {
       // Trigger an exception first.
-      await expectLater(failAsync('temp-error'), throwsA(isA<StateError>()));
+      await expectLater(failAsync(msg: 'temp-error'), throwsA(isA<StateError>()));
       // Session should still work normally.
-      expect(await add(10, 20), 30);
+      expect(await add(a: 10, b: 20), 30);
       expect(bridgeVersion(), 42);
     });
   });
@@ -423,7 +444,7 @@ void main() {
 
   group('deep nesting containers', () {
     test('G03: 3-level nested vector roundtrip', () {
-      final cube = nestedCube(2);
+      final cube = nestedCube(n: 2);
       expect(cube.length, 2);
       expect(cube[0].length, 2);
       expect(cube[0][0].length, 2);
@@ -436,7 +457,7 @@ void main() {
     });
 
     test('G03: nested cube with n=0', () {
-      final cube = nestedCube(0);
+      final cube = nestedCube(n: 0);
       expect(cube, isEmpty);
     });
   });

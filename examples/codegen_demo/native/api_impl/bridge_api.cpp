@@ -139,6 +139,17 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
              });
 }
 
+async_simple::coro::Lazy<std::string> download_with_progress(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
+  // Simulate a download with 5 progress steps.
+  for (std::int32_t i = 1; i <= 5; ++i) {
+    if (progress) {
+      progress->add(i * 20);  // 20, 40, 60, 80, 100
+    }
+  }
+  co_return std::string("downloaded: ") + url;
+}
+
 async_simple::coro::Lazy<double> distance(Point a, Point b) {
   const double dx = a.x - b.x;
   const double dy = a.y - b.y;
