@@ -99,7 +99,7 @@ set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/native/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run codegen first:\n"
-    "  cd codegen && .\\codegen.ps1 -Script scripts/run_codegen.py -- "
+    "  cd codegen && dart run bin/codegen.dart scripts/run_codegen.py "
     "${CMAKE_CURRENT_SOURCE_DIR}/dart_cpp_bridge.yaml")
 endif()
 

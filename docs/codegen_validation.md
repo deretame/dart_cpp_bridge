@@ -2,7 +2,7 @@
 
 > 本文档定义 dart_cpp_bridge codegen 阶段应执行的所有静态校验规则、运行时错误传播机制，以及对应的测试用例矩阵。
 >
-> 更新日期：2026-07-25
+> 更新日期：2026-07-25（新增 BRIDGE_DATA_CLASS / BRIDGE_OPAQUE 显式类标记校验）
 > 状态：规格定义完成，部分规则已实现（标注 ✅），其余待实现（标注 ⏳）。
 
 ---
@@ -54,17 +54,19 @@ to the class declaration, or remove it from the exported API surface.
 
 ### 2.2 类级校验（C 系列）
 
-适用于所有带 `BRIDGE_EXPORT` / `DCB_EXPORT` 标记的 class/struct。
+适用于所有带 `BRIDGE_EXPORT` / `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE`（或对应 `DCB_*`）标记的 class/struct。
 
 | 规则 ID | 触发条件 | 状态 | 错误信息模板 |
 |---------|----------|------|--------------|
-| **C01** | 导出类含有虚函数（`virtual` 方法或 override） | ⏳ | `class \`{name}\` at {loc}: exported class has virtual method \`{method}\`. Virtual dispatch is not supported across the bridge.` |
-| **C02** | 导出类有继承关系（有 base class，无论是 `public`/`protected`/`private`） | ⏳ | `class \`{name}\` at {loc}: exported class has base class \`{base}\`. Inheritance is not supported for exported classes.` |
-| **C03** | 导出类是模板类（`template<typename T> struct Foo`） | ⏳ | `class \`{name}\` at {loc}: exported class is a template. Template classes cannot be exported; use explicit non-template wrappers.` |
+| **C01** | 导出类含有虚函数（`virtual` 方法或 override） | ✅ | `class \`{name}\` at {loc}: exported class has virtual method \`{method}\`. Virtual dispatch is not supported across the bridge.` |
+| **C02** | 导出类有继承关系（有 base class，无论是 `public`/`protected`/`private`） | ✅ | `class \`{name}\` at {loc}: exported class has base class \`{base}\`. Inheritance is not supported for exported classes.` |
+| **C03** | 导出类是模板类（`template<typename T> struct Foo`） | ✅ | `class \`{name}\` at {loc}: exported class is a template. Template classes cannot be exported; use explicit non-template wrappers.` |
 | **C04** | data_class 字段含不支持类型（包括未标记导出的类、指针、引用等） | ✅ | `data_class \`{name}\`, field \`{field}\`: unsupported type \`{spelling}\` at {loc}` |
 | **C05** | data_class 字段按值嵌入 opaque_class | ✅ | `data_class \`{name}\`, field \`{field}\`: data class field cannot reference opaque class \`{opaque}\`. Opaque classes are handle-only.` |
 | **C06** | data_class 字段含非白名单容器的泛型实例（如 `std::shared_lock<std::mutex>`、`boost::optional<int>`） | ✅ | 落入 F01/C04 的 `unsupported` 路径 |
 | **C07** | opaque_class 方法的参数或返回值含不支持类型 | ✅ | `opaque_class \`{name}\`, method \`{method}\`, arg \`{arg}\`: unsupported type ...` |
+| **C08** | 类同时标记 `BRIDGE_DATA_CLASS` 和 `BRIDGE_OPAQUE` | ✅ | `class \`{name}\` at {loc}: cannot be both BRIDGE_DATA_CLASS and BRIDGE_OPAQUE.` |
+| **C09** | `BRIDGE_DATA_CLASS` 类含有导出方法（BRIDGE_SYNC/ASYNC/NORMAL） | ✅ | `class \`{name}\` at {loc}: BRIDGE_DATA_CLASS must not have exported methods. Use BRIDGE_OPAQUE for classes with methods.` |
 
 #### C01 详细说明
 
@@ -88,6 +90,32 @@ to the class declaration, or remove it from the exported API surface.
 - 当前 `_collect_classes` 只匹配 `CLASS_DECL` / `STRUCT_DECL`，模板类不会被收集。
 - 需要额外扫描 `CLASS_TEMPLATE`，若带 `BRIDGE_EXPORT` 标记则报错。
 - 原因：codegen 为每个导出类生成固定的 encode/decode 函数，无法处理未特化的模板参数。
+
+#### C08/C09 详细说明（显式类标记校验）
+
+**C08**：`BRIDGE_DATA_CLASS` 和 `BRIDGE_OPAQUE` 互斥，不能同时使用。
+
+**C09**：`BRIDGE_DATA_CLASS` 标记的类必须是纯数据类，不能有导出方法。若需方法，应使用 `BRIDGE_OPAQUE`。
+
+```cpp
+// C08 反例：同时标记两种
+struct BRIDGE_DATA_CLASS BRIDGE_OPAQUE Bad {  // 错误！
+    int x;
+};
+
+// C09 反例：data_class 有方法
+struct BRIDGE_DATA_CLASS BadData {
+    int x;
+    BRIDGE_SYNC int getX() const { return x; }  // 错误！
+};
+
+// 正例：opaque 类 + 手写 getter
+struct BRIDGE_OPAQUE GoodOpaque {
+    int x;  // 公开字段被忽略，不生成访问器
+    BRIDGE_CONSTRUCTOR GoodOpaque(int x);
+    BRIDGE_SYNC int getX() const { return x; }  // 手写 getter
+};
+```
 
 ---
 
@@ -184,9 +212,11 @@ std::filesystem::path          // 非容器，非白名单类型
 parse_project()
   ├─ Pass 1: _collect_enums()
   ├─ Pass 2: _collect_classes()
-  │    ├─ [⏳] C01: 检查虚函数
-  │    ├─ [⏳] C02: 检查继承
-  │    └─ [⏳] C03: 检查模板类
+  │    ├─ [✅] C01: 检查虚函数
+  │    ├─ [✅] C02: 检查继承
+  │    ├─ [✅] C03: 检查模板类
+  │    ├─ [✅] C08: 检查 DATA_CLASS + OPAQUE 互斥
+  │    └─ [✅] C09: 检查 DATA_CLASS 无导出方法
   ├─ _resolve_class_field_types()
   ├─ Pass 3: _collect_functions()
   └─ _validate_ir()

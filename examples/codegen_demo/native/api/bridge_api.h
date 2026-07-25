@@ -21,12 +21,12 @@ namespace demo::api {
 inline std::int32_t internal_helper() { return -1; }
 
 // data classes
-struct BRIDGE_EXPORT Point {
+struct BRIDGE_DATA_CLASS Point {
     double x;
     double y;
 };
 
-struct BRIDGE_EXPORT Rect {
+struct BRIDGE_DATA_CLASS Rect {
     Point top_left;
     Point bottom_right;
 };

@@ -3,7 +3,7 @@
 
 Run with the pinned Python:
   cd codegen
-  ./codegen.ps1 -Script tests/run_tests.py
+  dart run bin/codegen.dart tests/run_tests.py
 
 Or directly:
   <pinned-python> codegen/tests/run_tests.py

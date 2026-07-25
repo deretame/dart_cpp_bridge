@@ -13,7 +13,7 @@
 
 namespace demo::api {
 
-class BRIDGE_EXPORT Counter {
+class BRIDGE_OPAQUE Counter {
  public:
   BRIDGE_CONSTRUCTOR Counter(std::int32_t initialValue);
   BRIDGE_CONSTRUCTOR Counter();

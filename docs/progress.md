@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-07-25
+> 更新日期：2026-07-25（新增 BRIDGE_DATA_CLASS / BRIDGE_OPAQUE 显式类标记）
 
 ---
 
@@ -93,6 +93,8 @@ Dart 侧回调无论 sync/async 都在 **Isolate 事件循环**执行。细节�
 | `dcb_smoke` 原生冒烟 | ✅（含 oneshot / DartFn e2e） |
 | `dart test`（codec + FFI） | ✅ **38** 例量级 |
 | 远端固定版 Python/libclang codegen | ✅ | lock + cache + scan/标记；已生成 SYNC/ASYNC/NORMAL + enum/optional/容器/Int128/UInt128/DartFn；Dart 三层（impl/单例/顶层函数）；见 `examples/codegen_demo` |
+| Dart CLI 工具链 (`dcb_codegen`) | ✅ | 替代旧 PowerShell/Shell 脚本；`dart run bin/codegen.dart` 一键 bootstrap + 运行 |
+| 显式类标记 `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE` | ✅ | 对齐 FRB `RustAutoOpaque` 模式；opaque 类忽略公开字段，只生成方法 |
 | Native Assets hook | ❌ |
 | examples 用户模板 + PUBLIC 暴露依赖 | ⏳ | `codegen_demo` 可作模板雏形；未产品化 FetchContent 接入 |
 
@@ -133,7 +135,7 @@ examples/codegen_demo/           # Phase 2 fixture（yaml + 生成 + dart test�
 常用命令：
 
 ```powershell
-# C++ 主库
+# C++ 主库（需在 VS Developer PowerShell 中运行）
 cmake -S . -B build
 cmake --build build --config Release
 .\build\Release\dcb_smoke.exe
@@ -239,10 +241,10 @@ dart test
     - 运行时已提供 `dcb::ObjectHandleRegistry`（per-Session）和 `dcb_drop_object`；codegen 只需调用。
     - 实现点：
       - `parse_api.py`：
-        - 识别带 `BRIDGE_EXPORT` 的 `class` / `struct`。
+        - 识别带 `BRIDGE_EXPORT` / `BRIDGE_OPAQUE` / `BRIDGE_DATA_CLASS` 的 `class` / `struct`。
         - 扫描类内 public 方法，按 `BRIDGE_SYNC/ASYNC/NORMAL` 分类。
         - 识别 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（约定兜底）。
-        - 无导出方法的类归入 data_class；有导出方法的类归入 opaque_class。
+        - **显式标记优先**：`BRIDGE_DATA_CLASS` → data_class；`BRIDGE_OPAQUE` → opaque_class（忽略公开字段）；`BRIDGE_EXPORT`（旧）→ 自动检测。
         - 自动为每个 opaque class 注入 `aliveCount()` 诊断方法到 IR（标记 `"generated": true`）。
       - IR：每个 opaque_class 记录 `name`、`qualified`、`fields`（可选，当前阶段不导出字段）、`methods`。
       - `_type_ir`：opaque 类作为参数/返回值时统一按 `"kind": "opaque_handle"` 处理。
@@ -256,8 +258,12 @@ dart test
       - Dart `dispose()` → `dcb_drop_object(handle)` → registry 移除 → `shared_ptr` 引用归零 → C++ `~ClassName()`。
       - 若未手动 dispose，Dart GC 通过 `NativeFinalizer` 自动触发相同清理。
       - 用户只需在 `~ClassName()` 中写自定义清理逻辑（关文件、释放资源等），无需手动管理计数。
-    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`，覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝、`BRIDGE_DESTRUCTOR` 析构标记等场景。
-    - 测试：`examples/codegen_demo` 39 例 demo 测试全绿（含 Counter 16 例，其中析构相关 3 例）；`dart/` 主包 82 例全绿。
+    - **显式类标记（对齐 FRB）**：
+      - `BRIDGE_DATA_CLASS`：显式标记纯数据类，校验不能有导出方法。
+      - `BRIDGE_OPAQUE`：显式标记 opaque 类，公开字段被忽略，只生成标注的方法。若需访问字段，手写 `BRIDGE_SYNC` getter/setter。
+      - `BRIDGE_EXPORT`（旧）：保持向后兼容，自动检测（有导出方法→opaque，否则→data_class）。
+    - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`（使用 `BRIDGE_OPAQUE`），覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝、`BRIDGE_DESTRUCTOR` 析构标记等场景。`Point`/`Rect` 使用 `BRIDGE_DATA_CLASS`。
+    - 测试：`examples/codegen_demo` 47 例 demo 测试全绿（含 Counter 16 例，其中析构相关 3 例）；`dart/` 主包 82 例全绿。
     - 限制：当前阶段不导出 Opaque 类字段、不支持方法重载、不支持多态继承。
 
 ---
@@ -272,5 +278,5 @@ dart test
 
 ## 7. 一句话
 
-**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法 + BRIDGE_DESTRUCTOR 析构 + per-session alive 计数（C++ wire + Dart 三层）+ 类型白名单校验友好报错 + 用户模板产品化，fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。Phase 2 完成。**
+**Phase 1 手写桥已跑通；Phase 2 codegen 已能扫标记头并生成 SYNC/ASYNC/NORMAL + enum / optional / 容器 / Int128 / UInt128 / DartFn / tuple / Stream / 数据类 / Opaque 类方法 + BRIDGE_DESTRUCTOR 析构 + per-session alive 计数（C++ wire + Dart 三层）+ 类型白名单校验友好报错 + 用户模板产品化 + 显式类标记（BRIDGE_DATA_CLASS / BRIDGE_OPAQUE，对齐 FRB）+ Dart CLI 工具链，fixture 见 `examples/codegen_demo`；所有当前支持类型均已端到端测试通过。Phase 2 完成。**
 

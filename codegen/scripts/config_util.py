@@ -14,7 +14,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
     except ImportError:
         print(
             "error: ruamel.yaml is not installed in the codegen toolchain.\n"
-            "Run bootstrap first: codegen/bootstrap.ps1 (or bootstrap.sh)",
+            "Run bootstrap first: cd codegen && dart run bin/codegen.dart",
             file=sys.stderr,
         )
         raise SystemExit(1)

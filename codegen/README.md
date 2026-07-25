@@ -77,8 +77,32 @@ dart run bin/codegen.dart scripts/run_codegen.py /path/to/dart_cpp_bridge.yaml
 | `BRIDGE_ASYNC` / `DCB_ASYNC` | Dart `Future`，C++ `Lazy` + asio |
 | `BRIDGE_NORMAL` / `DCB_NORMAL` | Dart `Future`，blocking 线程池 |
 | 参数含 `StreamSink<T>` | Dart `Stream`（生成器尚未全实现） |
+| `BRIDGE_DATA_CLASS` / `DCB_DATA_CLASS` | 类标记：纯数据类（只有字段，无方法） |
+| `BRIDGE_OPAQUE` / `DCB_OPAQUE` | 类标记：opaque 类（只生成方法，忽略公开字段） |
 
 无标记 → 忽略（可与导出 API 同文件）。
+
+### 类标记说明
+
+| 宏 | 语义 | 校验 |
+|----|------|------|
+| `BRIDGE_DATA_CLASS` | 纯数据类：字段序列化/反序列化，不生成方法 | 不能有 `BRIDGE_SYNC/ASYNC/NORMAL` 方法、不能继承、不能有虚函数 |
+| `BRIDGE_OPAQUE` | Opaque 类：对齐 FRB `RustAutoOpaque`，只生成标注的方法 | 不能继承、不能有虚函数；公开字段被忽略 |
+| `BRIDGE_EXPORT`（旧） | 自动检测：有导出方法→opaque，否则→data_class | 同上两者 |
+
+**Opaque 类字段访问**：若需读写公开字段，请手写 `BRIDGE_SYNC` getter/setter 方法。
+
+```cpp
+// 示例：opaque 类 + 手写字段访问
+struct BRIDGE_OPAQUE Config {
+  int timeout_ms;  // 公开字段，codegen 不生成访问器
+  std::string name;
+
+  BRIDGE_CONSTRUCTOR Config(int timeout_ms, std::string name);
+  BRIDGE_SYNC int getTimeoutMs() const { return timeout_ms; }
+  BRIDGE_SYNC void setTimeoutMs(int v) { timeout_ms = v; }
+};
+```
 
 **实现注意：** codegen 路径宏展开为 `__attribute__((annotate("bridge::*")))`。  
 未知的 `[[bridge::*]]` 会被 clang 丢掉，**AST 不可见**，不能用于过滤。  

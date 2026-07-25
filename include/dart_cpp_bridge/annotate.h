@@ -12,6 +12,8 @@
 #  define DCB_CONSTRUCTOR __attribute__((annotate("bridge::constructor")))
 #  define DCB_DESTRUCTOR __attribute__((annotate("bridge::destructor")))
 #  define DCB_EXPORT __attribute__((annotate("bridge::export")))
+#  define DCB_DATA_CLASS __attribute__((annotate("bridge::data_class")))
+#  define DCB_OPAQUE __attribute__((annotate("bridge::opaque")))
 #else
 #  define DCB_SYNC
 #  define DCB_ASYNC
@@ -19,6 +21,8 @@
 #  define DCB_CONSTRUCTOR
 #  define DCB_DESTRUCTOR
 #  define DCB_EXPORT
+#  define DCB_DATA_CLASS
+#  define DCB_OPAQUE
 #endif
 
 #ifndef BRIDGE_SYNC
@@ -28,4 +32,6 @@
 #  define BRIDGE_CONSTRUCTOR DCB_CONSTRUCTOR
 #  define BRIDGE_DESTRUCTOR DCB_DESTRUCTOR
 #  define BRIDGE_EXPORT DCB_EXPORT
+#  define BRIDGE_DATA_CLASS DCB_DATA_CLASS
+#  define BRIDGE_OPAQUE DCB_OPAQUE
 #endif

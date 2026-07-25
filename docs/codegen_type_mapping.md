@@ -2,7 +2,7 @@
 
 > 记录 dart_cpp_bridge Codegen 阶段当前计划支持的 C++ ↔ Dart 类型映射规则。用于后续实现 IR 生成、Dart 代码生成和 C++ wire 编解码时参照。
 >
-> 更新日期：2026-07-23
+> 更新日期：2026-07-25（新增 BRIDGE_DATA_CLASS / BRIDGE_OPAQUE 显式类标记）
 > 状态：基础类型、容器、Option、枚举、tuple、Stream、128 位整数、DartFn、struct / opaque 类方法生成均已实现并测试。
 
 ---
@@ -188,32 +188,43 @@ encodeOpt(name, (v) => w.str(v));
 
 ### 5.1 总体分类
 
-导出 `class` / `struct` 必须带 `BRIDGE_EXPORT` / `DCB_EXPORT`（或等价的 `[[bridge::export]]`）标记。Codegen 根据类体内容把它分成两类，**两类不能混用**：
+导出 `class` / `struct` 支持三种标记方式：
+
+| 标记 | 语义 | 判定结果 |
+|------|------|----------|
+| `BRIDGE_DATA_CLASS` / `DCB_DATA_CLASS` | 显式纯数据类 | 只有字段，不能有导出方法 |
+| `BRIDGE_OPAQUE` / `DCB_OPAQUE` | 显式 opaque 类（对齐 FRB `RustAutoOpaque`） | 只生成方法，公开字段被忽略 |
+| `BRIDGE_EXPORT` / `DCB_EXPORT`（旧） | 自动检测 | 有导出方法→opaque，否则→data_class |
+
+Codegen 根据标记和类体内容把它分成两类，**两类不能混用**：
 
 | 类型 | 判定标准 | wire 传递方式 | 是否进注册表 | 是否可跨 Isolate |
 |------|----------|---------------|--------------|------------------|
 | **数据类（data class）** | 只有 public 非静态数据字段，**没有导出成员函数** | 按值编码 | 否 | 是 |
 | **Opaque 类** | 带有至少一个导出成员函数（构造/析构/实例/静态方法） | 对象句柄 | 是（per-Session） | 否 |
 
-- 未标记 `BRIDGE_EXPORT` 的类/结构体即使被 API 使用，也当作普通 C++ 类型处理，不生成 Dart 类。
+- 未标记的类/结构体即使被 API 使用，也当作普通 C++ 类型处理，不生成 Dart 类。
 - 数据类字段类型必须是白名单内类型；嵌套类型也必须是数据类。
 - Opaque 类**不允许按值传递**：参数/返回值中出现 Opaque 类时必须以指针/引用/句柄形式出现，生成代码统一按句柄处理。
+- **Opaque 类字段访问**：若需读写公开字段，请手写 `BRIDGE_SYNC` getter/setter 方法。
 
 ### 5.2 数据类（data class）
 
 #### 5.2.1 导出与字段规则
 
+- 标记方式：`BRIDGE_DATA_CLASS`（显式）或 `BRIDGE_EXPORT`（旧，自动检测）。
 - 只导出 `public` 的**非静态数据成员**。
 - 不导出 `private` / `protected` 成员、友元声明、静态成员变量、成员函数。
 - 字段类型必须是本白名单支持的类型：基础类型、枚举、容器、`std::optional<T>`、`std::pair` / `std::tuple`、另一个数据类。
 - 字段名保持 C++ 原样转为 Dart 小驼峰（与函数参数命名规则一致）。
+- **校验**：`BRIDGE_DATA_CLASS` 类不能有 `BRIDGE_SYNC/ASYNC/NORMAL` 方法，否则报错。
 
 #### 5.2.2 编码规则
 
 数据类在 wire 上不传输字段名、类型标签或长度，而是**按 C++ 头文件中的声明顺序**逐个字段编码/解码。
 
 ```cpp
-struct BRIDGE_EXPORT Point {
+struct BRIDGE_DATA_CLASS Point {
     double x;
     double y;
 };
@@ -232,7 +243,7 @@ p.y = r.f64();
 嵌套数据类：
 
 ```cpp
-struct BRIDGE_EXPORT Rect {
+struct BRIDGE_DATA_CLASS Rect {
     Point topLeft;
     Point bottomRight;
 };
@@ -307,7 +318,8 @@ inline Point decode_Point(ByteReader& r) {
 
 #### 5.3.1 导出规则
 
-- 类本身必须带 `BRIDGE_EXPORT`。
+- 类本身必须带 `BRIDGE_OPAQUE`（显式）或 `BRIDGE_EXPORT`（旧，自动检测）。
+- **`BRIDGE_OPAQUE` 语义**：对齐 FRB `RustAutoOpaque`，只生成标注的方法，公开字段被忽略。若需访问字段，手写 `BRIDGE_SYNC` getter/setter。
 - 导出的方法必须带通道标记：`BRIDGE_SYNC`、`BRIDGE_ASYNC`、`BRIDGE_NORMAL`。
 - 构造函数和析构函数使用特殊标记：
   - `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（推荐）。
@@ -341,7 +353,7 @@ auto handle = dcb::ObjectHandleRegistry::instance().insert(
 C++ 头文件示例：
 
 ```cpp
-class BRIDGE_EXPORT Counter {
+class BRIDGE_OPAQUE Counter {
  public:
     BRIDGE_CONSTRUCTOR
     Counter(std::int32_t initialValue);
@@ -400,7 +412,7 @@ class Counter extends CppOpaqueInterface {
 C++ 头文件示例：
 
 ```cpp
-class BRIDGE_EXPORT Counter {
+class BRIDGE_OPAQUE Counter {
  public:
     BRIDGE_ASYNC
     async_simple::coro::Lazy<std::int32_t> value() const;
