@@ -1,0 +1,136 @@
+{
+  "version": 2,
+  "config": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\dart_cpp_bridge.yaml",
+  "headers": [
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+  ],
+  "clang_args": [
+    "-std=c++20",
+    "-x",
+    "c++",
+    "-DBRIDGE_CODEGEN",
+    "-DDART_CPP_BRIDGE_CODEGEN",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+  ],
+  "enums": [],
+  "classes": [],
+  "functions": [
+    {
+      "name": "start_uv_worker",
+      "qualified": "foreign_demo::api::start_uv_worker",
+      "kind": "async",
+      "method_id": 18716410,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "uv_compute",
+      "qualified": "foreign_demo::api::uv_compute",
+      "kind": "async",
+      "method_id": 460040803,
+      "args": [
+        {
+          "name": "n",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "uv_stream",
+      "qualified": "foreign_demo::api::uv_stream",
+      "kind": "stream",
+      "method_id": 828415216,
+      "args": [
+        {
+          "name": "sink",
+          "type": {
+            "kind": "stream_sink",
+            "inner": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "count",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "5"
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "50"
+        }
+      ],
+      "return": {
+        "kind": "void"
+      },
+      "attrs": [],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "ask_uv",
+      "qualified": "foreign_demo::api::ask_uv",
+      "kind": "async",
+      "method_id": 2040169010,
+      "args": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "stop_uv_worker",
+      "qualified": "foreign_demo::api::stop_uv_worker",
+      "kind": "async",
+      "method_id": 2048427889,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
+    }
+  ],
+  "diagnostics": [
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found"
+  ]
+}

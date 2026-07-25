@@ -1,8 +1,8 @@
-# 多运行时通信示例 (multi_runtime_demo)
+# Multi-Runtime Communication Demo (multi_runtime_demo)
 
-演示 `dart_cpp_bridge` 主调度器与多个独立 C++ 运行时之间如何通过协程 channel 进行**完全非阻塞**的消息传递。
+Demonstrates how the `dart_cpp_bridge` main dispatcher and multiple independent C++ runtimes communicate via coroutine channels with **fully non-blocking** message passing.
 
-## 架构总览
+## Architecture Overview
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -14,130 +14,130 @@
                            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Main Runtime — dcb::Runtime                                        │
-│  asio::io_context (单线程) + AsioExecutor                           │
+│  asio::io_context (single-threaded) + AsioExecutor                  │
 │                                                                     │
-│  职责: 接收 Dart 请求 → 通过 channel 分发 → 等待回复 → 回传 Dart     │
+│  Role: receive Dart request → dispatch via channel → await → reply  │
 └───────┬─────────────────────────────────────────────────┬───────────┘
         │ co::oneshot / co::mpsc                          │
-        │ (send 非阻塞, recv 挂起协程)                     │
+        │ (send non-blocking, recv suspends coroutine)    │
         ▼                                                 ▼
 ┌───────────────────────────┐           ┌───────────────────────────┐
 │  Worker A ("processor")   │           │  Worker B ("responder")   │
-│  独立 asio::io_context    │           │  独立 asio::io_context    │
-│  独立 AsioExecutor        │           │  独立 AsioExecutor        │
-│  独立 std::thread         │           │  独立 std::thread         │
+│  independent io_context   │           │  independent io_context   │
+│  independent AsioExecutor │           │  independent AsioExecutor │
+│  independent std::thread  │           │  independent std::thread  │
 └───────────────────────────┘           └───────────────────────────┘
 ```
 
-**核心原则**：每个运行时拥有自己的事件循环和线程，运行时之间**不共享线程**，**不互相阻塞**，唯一的通信方式是 channel。
+**Core Principle**: Each runtime owns its event loop and thread. Runtimes **share no threads**, **never block each other**. The only communication mechanism is channels.
 
-## 通信机制：协程 Channel
+## Communication: Coroutine Channels
 
-本示例使用 `dart_cpp_bridge/channel.hpp` 提供的两种 channel：
+This demo uses two channel types from `dart_cpp_bridge/channel.hpp`:
 
-### oneshot — 一次性请求/回复
+### oneshot — One-time Request/Reply
 
 ```cpp
 #include "dart_cpp_bridge/channel.hpp"
 
-// 创建 channel（可跨线程使用）
+// Create channel (can be used across threads)
 auto [tx, rx] = co::oneshot::channel<std::string>();
 
-// 发送端（任意线程，非阻塞）
+// Sender (any thread, non-blocking)
 tx.send("result");
 
-// 接收端（协程内，挂起而非阻塞线程）
+// Receiver (inside coroutine, suspends instead of blocking thread)
 auto reply = co_await rx.recv();  // std::optional<std::string>
 ```
 
-适用场景：一个请求对应一个回复（RPC 模式）。
+Use case: one request, one reply (RPC pattern).
 
-### mpsc — 多生产者单消费者流
+### mpsc — Multi-Producer Single-Consumer Stream
 
 ```cpp
 auto [tx, rx] = co::mpsc::unbounded<std::string>();
 
-// 发送端（可多次发送，非阻塞，返回 false 表示接收端已关闭）
+// Sender (can send multiple times, non-blocking, returns false if receiver closed)
 tx.send("item_0");
 tx.send("item_1");
-// tx 析构 → channel 关闭 → recv 返回 nullopt
+// tx destructor → channel closed → recv returns nullopt
 
-// 接收端（循环消费）
+// Receiver (consume in loop)
 while (true) {
     auto item = co_await rx.recv();
-    if (!item) break;  // channel 已关闭
-    // 处理 *item
+    if (!item) break;  // channel closed
+    // process *item
 }
 ```
 
-适用场景：持续数据流（Worker 产出多条数据 → Dart Stream）。
+Use case: continuous data stream (Worker produces multiple items → Dart Stream).
 
-### 关键特性
+### Key Properties
 
-| 特性 | 说明 |
-|------|------|
-| **send() 永不阻塞** | 可在任何线程调用，立即返回 |
-| **recv() 挂起协程** | 不阻塞所在线程，仅暂停当前协程 |
-| **线程安全** | 内部 mutex 保护，tx/rx 可跨线程移动 |
-| **Executor 感知** | recv 被唤醒时通过 `ex->schedule()` 回到原运行时的线程恢复 |
+| Property | Description |
+|----------|-------------|
+| **send() never blocks** | Can be called from any thread, returns immediately |
+| **recv() suspends coroutine** | Doesn't block the thread, only pauses current coroutine |
+| **Thread-safe** | Internal mutex protection, tx/rx can move across threads |
+| **Executor-aware** | When recv is woken, resumes on original runtime's thread via `ex->schedule()` |
 
-## 演示的通信模式
+## Demonstrated Communication Patterns
 
-### 1. 单 Worker 处理 (oneshot)
+### 1. Single Worker Processing (oneshot)
 
 ```
-Dart → Main → Worker A 处理 → oneshot 回复 → Main → Dart
+Dart → Main → Worker A processes → oneshot reply → Main → Dart
 ```
 
 ```cpp
-// Main 侧: 创建 channel，分发任务到 Worker A
+// Main side: create channel, dispatch task to Worker A
 auto [tx, rx] = co::oneshot::channel<std::string>();
 worker_a->spawn([tx = std::move(tx), msg]() mutable -> Lazy<> {
-    tx.send("[A:" + msg + "]");  // Worker A 线程上执行
+    tx.send("[A:" + msg + "]");  // runs on Worker A thread
     co_return;
 });
-// Main 侧: 协程等待回复（不阻塞 Main 线程）
+// Main side: coroutine awaits reply (doesn't block Main thread)
 auto reply = co_await rx.recv();
 ```
 
-### 2. Pipeline 链式处理 (oneshot 链)
+### 2. Pipeline Chained Processing (oneshot chain)
 
 ```
 Dart → Main → Worker A → Worker B → Main → Dart
 ```
 
-两个 Worker 之间也通过 channel 通信，Worker B 的协程 `co_await` Worker A 的输出：
+Workers also communicate via channels. Worker B's coroutine `co_await`s Worker A's output:
 
 ```cpp
 auto [tx_ab, rx_ab] = co::oneshot::channel<std::string>();
 auto [tx_final, rx_final] = co::oneshot::channel<std::string>();
 
-// Worker A: 处理后发给 Worker B
+// Worker A: process and send to Worker B
 worker_a->spawn([tx_ab]() mutable -> Lazy<> {
     tx_ab.send("A{data}");
     co_return;
 });
 
-// Worker B: 等待 A 的结果，再处理
+// Worker B: await A's result, then process
 worker_b->spawn([rx_ab, tx_final]() mutable -> Lazy<> {
-    auto from_a = co_await rx_ab.recv();  // 挂起直到 A 发送
+    auto from_a = co_await rx_ab.recv();  // suspend until A sends
     tx_final.send("B[" + *from_a + "]");
     co_return;
 });
 
-// Main: 等待最终结果
+// Main: await final result
 auto result = co_await rx_final.recv();  // "B[A{data}]"
 ```
 
-### 3. Fan-out 并行分发
+### 3. Fan-out Parallel Dispatch
 
 ```
          ┌→ Worker A → reply_a ─┐
-Dart → Main                      ├→ Main 合并 → Dart
+Dart → Main                      ├→ Main merges → Dart
          └→ Worker B → reply_b ─┘
 ```
 
-同时向两个 Worker 发送，两个 Worker 并行执行，Main 收集两个回复：
+Send to both Workers simultaneously, they execute in parallel, Main collects both replies:
 
 ```cpp
 auto [tx_a, rx_a] = co::oneshot::channel<std::string>();
@@ -145,29 +145,29 @@ auto [tx_b, rx_b] = co::oneshot::channel<std::string>();
 worker_a->spawn([tx_a]() -> Lazy<> { tx_a.send("A:msg"); co_return; });
 worker_b->spawn([tx_b]() -> Lazy<> { tx_b.send("B:msg"); co_return; });
 
-auto a = co_await rx_a.recv();  // 两个 Worker 并行执行
+auto a = co_await rx_a.recv();  // both Workers execute in parallel
 auto b = co_await rx_b.recv();
 ```
 
 ### 4. Worker Stream (mpsc)
 
 ```
-Worker A 持续产出 → mpsc channel → Main 消费 → Dart Stream
+Worker A produces continuously → mpsc channel → Main consumes → Dart Stream
 ```
 
 ```cpp
 auto [tx, rx] = co::mpsc::unbounded<std::string>();
 
-// Worker A: 持续发送
+// Worker A: send continuously
 worker_a->spawn([tx, count]() mutable -> Lazy<> {
     for (int i = 0; i < count; ++i) {
         tx.send("item_" + std::to_string(i));
     }
-    // tx 析构 → channel 关闭
+    // tx destructor → channel closed
     co_return;
 });
 
-// Main: 消费并转发为 Dart stream 帧
+// Main: consume and forward as Dart stream frames
 while (true) {
     auto item = co_await rx.recv();
     if (!item) break;
@@ -176,98 +176,137 @@ while (true) {
 session->try_post(gen, make_frame(MsgType::kStreamEnd, ...));
 ```
 
-## WorkerRuntime 类
+## WorkerRuntime Class
 
-每个 Worker 是一个独立的运行时：
+Each Worker is an independent runtime:
 
 ```cpp
 class WorkerRuntime {
-    asio::io_context ioc_;          // 独立事件循环
-    dcb::AsioExecutor executor_;    // 独立协程调度器
-    std::thread thread_;            // 独立线程
+    asio::io_context ioc_;          // independent event loop
+    dcb::AsioExecutor executor_;    // independent coroutine scheduler
+    std::thread thread_;            // independent thread
 
-    void start();                   // 启动事件循环线程
-    void stop();                    // 停止并 join
+    void start();                   // start event loop thread
+    void stop();                    // stop and join
 
-    // 在此 Worker 的事件循环上启动协程
+    // Spawn coroutine on this Worker's event loop
     template <class LazyFactory>
     void spawn(LazyFactory&& factory);
 };
 ```
 
-`spawn()` 将协程投递到 Worker 自己的 `io_context`，协程内的 `co_await rx.recv()` 只挂起协程，不阻塞 Worker 线程。
+`spawn()` posts the coroutine to the Worker's own `io_context`. `co_await rx.recv()` inside the coroutine only suspends the coroutine, not the Worker thread.
 
-## 为什么不会阻塞？
+## Why Non-Blocking?
 
-| 操作 | 行为 |
-|------|------|
-| `tx.send()` | 立即返回，将值放入 channel 内部队列，唤醒等待者 |
-| `co_await rx.recv()` | 如果无数据，挂起当前协程（线程继续处理其他事件） |
-| 唤醒 | sender 调用 `executor->schedule(resume)` 将协程恢复投递回接收方的事件循环 |
-| Main 线程 | 永远不会被 Worker 阻塞；Worker 也永远不会被 Main 阻塞 |
+| Operation | Behavior |
+|-----------|----------|
+| `tx.send()` | Returns immediately, puts value in channel's internal queue, wakes waiter |
+| `co_await rx.recv()` | If no data, suspends current coroutine (thread continues processing other events) |
+| Wakeup | Sender calls `executor->schedule(resume)` to post coroutine resumption back to receiver's event loop |
+| Main thread | Never blocked by Workers; Workers never blocked by Main |
 
-## 构建与运行
+## Build & Run
 
 ```bash
-# 前置: 先构建基础库（获取 asio / async-simple 依赖）
+# Prerequisite: build base library first (fetches asio / async-simple deps)
 cmake -S ../../dart/native -B ../../dart/native/build
 cmake --build ../../dart/native/build --config Release
 
-# 运行 codegen 生成绑定（修改 native/api/*.h 后需重新执行）
+# Run codegen to generate bindings (re-run after modifying native/api/*.h)
 cd ../../codegen
 dart run bin/codegen.dart scripts/run_codegen.py ../examples/multi_runtime_demo/dart_cpp_bridge.yaml
 cd ../examples/multi_runtime_demo
 
-# 构建本 demo
+# Build this demo
 cmake -S . -B build
 cmake --build build --config Release
 
-# 运行 Dart 测试
+# Run Dart tests
 dart pub get
 dart test
 ```
 
-Windows 下如果自动检测 DLL 失败：
+On Windows, if DLL auto-detection fails:
 
 ```powershell
 $env:DCB_LIBRARY_PATH = "build\Release\dart_cpp_bridge.dll"
 dart test
 ```
 
-## 文件结构
+## File Structure
 
 ```text
 multi_runtime_demo/
-├── dart_cpp_bridge.yaml           # codegen 配置
-├── worker_runtime.hpp             # WorkerRuntime 类（独立事件循环）
+├── dart_cpp_bridge.yaml           # codegen config
+├── worker_runtime.hpp             # WorkerRuntime class (independent event loop)
 ├── native/
 │   ├── api/
-│   │   └── multi_runtime_api.h    # BRIDGE_* 注解头文件（API 定义）
+│   │   └── multi_runtime_api.h    # BRIDGE_* annotated header (API definitions)
 │   ├── api_impl/
-│   │   └── multi_runtime_api.cpp  # 业务实现（channel 通信逻辑）
-│   └── generated/                 # ← codegen 自动生成，勿手动修改
+│   │   └── multi_runtime_api.cpp  # business implementation (channel logic)
+│   └── generated/                 # ← codegen auto-generated, do not edit
 │       ├── wire_dispatch.hpp
 │       ├── wire_dispatch.cpp
 │       └── ir.json
-├── CMakeLists.txt                 # 构建配置
-├── pubspec.yaml                   # Dart 包定义
+├── CMakeLists.txt                 # build config
+├── pubspec.yaml                   # Dart package definition
 ├── lib/
-│   ├── multi_runtime_demo.dart    # 包入口（export 生成代码）
-│   └── src/native_gen/            # ← codegen 自动生成的 Dart 绑定
-│       ├── gcm_generated.dart     #   BridgeApiImpl 单例
+│   ├── multi_runtime_demo.dart    # package entry (exports generated code)
+│   └── src/native_gen/            # ← codegen auto-generated Dart bindings
+│       ├── gcm_generated.dart     #   BridgeApiImpl singleton
 │       └── api/
-│           ├── init.dart          #   DcbLib 初始化类
-│           └── multi_runtime_api.dart  # 顶层函数 API
+│           ├── init.dart          #   DcbLib initialization class
+│           └── multi_runtime_api.dart  # top-level function API
 └── test/
-    ├── multi_runtime_test.dart    # 13 个集成测试
-    └── support/library_path.dart  # DLL 路径解析
+    ├── multi_runtime_test.dart    # 13 integration tests
+    └── support/library_path.dart  # DLL path resolution
 ```
 
-## 设计要点
+## Design Highlights
 
-1. **运行时完全独立**：每个 Worker 拥有自己的 `io_context` + 线程，不共享任何调度状态。
-2. **Channel 是唯一通信手段**：没有共享内存、没有回调、没有锁竞争（除了 Worker 生命周期的 mutex）。
-3. **协程挂起 ≠ 线程阻塞**：`co_await` 只暂停协程，事件循环继续处理其他任务。
-4. **Executor 感知恢复**：channel recv 被唤醒时通过 `schedule()` 回到原运行时的线程，避免跨线程恢复协程。
-5. **与 Dart 无缝集成**：Dart 侧只看到 `Future<T>` 和 `Stream<T>`，底层的跨运行时通信完全透明。
-6. **Codegen 自动生成绑定**：只需在 `native/api/*.h` 中用 `BRIDGE_ASYNC` / `StreamSink` 声明 API，codegen 自动生成 C++ wire dispatch 和 Dart 绑定。业务代码只写纯 `Lazy<T>` 协程。
+1. **Fully Independent Runtimes**: Each Worker owns its `io_context` + thread, sharing no scheduling state.
+2. **Channel is the Only Communication**: No shared memory, no callbacks, no lock contention (except Worker lifecycle mutex).
+3. **Coroutine Suspension ≠ Thread Blocking**: `co_await` only pauses the coroutine; the event loop continues processing other tasks.
+4. **Executor-Aware Resumption**: When channel recv is woken, it returns to the original runtime's thread via `schedule()`, avoiding cross-thread coroutine resumption.
+5. **Seamless Dart Integration**: Dart side only sees `Future<T>` and `Stream<T>`; the underlying cross-runtime communication is completely transparent.
+6. **Codegen Auto-Generates Bindings**: Just declare APIs with `BRIDGE_ASYNC` / `StreamSink` in `native/api/*.h`; codegen auto-generates C++ wire dispatch and Dart bindings. Business code only writes pure `Lazy<T>` coroutines.
+
+## Performance & Optimization
+
+### Current Lock Overhead
+
+| Location | Purpose | Critical Section |
+|----------|---------|------------------|
+| `channel.hpp` internal mutex | protect channel state (sender/receiver matching) | nanoseconds (pointer swap) |
+| `WorkerRuntime` lifecycle mutex | start/stop protection | non-hot path |
+| `asio::post` | internal lock-free queue (io_context built-in) | — |
+
+Channel's `send()` internally only does one short mutex (match waiter or enqueue). For low-to-medium frequency messages (thousands msg/s), this is not a bottleneck.
+
+### High-Frequency Optimization (hundreds of thousands msg/s)
+
+1. **Lock-free channel**: Replace channel's internal `mutex + optional` with `atomic` CAS operations (e.g., `std::atomic<Waiter*>` lock-free linked list) to eliminate locks on send/recv path.
+
+2. **Batched posting**: Merge multiple `asio::post` calls into one wakeup. asio has internal optimizations, but business layer can batch further:
+   ```cpp
+   // Pseudocode: collect multiple results then post once
+   std::vector<Result> batch;
+   for (auto& item : items) batch.push_back(process(item));
+   asio::post(ioc, [batch = std::move(batch)] { deliver(batch); });
+   ```
+
+3. **Avoid shared_ptr overhead**: Currently `shared_ptr` wraps move-only Sender when crossing `std::function` boundary. Using `std::move_only_function` (C++23) or custom `unique_function` eliminates reference counting.
+
+4. **Memory pool**: For high-frequency channel creation/destruction, use object pools to reuse channel internal nodes, reducing malloc/free.
+
+5. **Multi-consumer extension**: Current mpsc is single-consumer. For multiple Workers consuming in parallel, extend to work-stealing mode or introduce `co::mpmc`.
+
+### Design Trade-offs
+
+This demo chooses mutex-based channel because:
+- Correctness first, implementation is simple and auditable
+- Core goal is demonstrating cross-runtime communication patterns
+- Real bottlenecks are usually in business computation or IO, not channel locks
+
+For production optimization, simply replace `channel.hpp` internal implementation — **the external send/recv interface remains unchanged**, business code needs no modification.
