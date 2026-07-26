@@ -131,7 +131,7 @@ Future<BootstrapResult> bootstrap(
   //     python-build-standalone ships vcruntime140.dll but NOT msvcp140.dll.
   //     libclang.dll (C++) requires it.
   if (platform.isWindows) {
-    _ensureMsvcp(pythonExe, packageRoot, log);
+    await _ensureMsvcp(pythonExe, cacheRoot, log);
   }
 
   // --- 6. Smoke test ----------------------------------------------------
@@ -437,24 +437,52 @@ void _writeLastEnv(File lastEnvFile, String envKey, String envDir) {
 // Windows msvcp140.dll provisioning
 // ---------------------------------------------------------------------------
 
+const _msvcpUrl =
+    'https://raw.githubusercontent.com/deretame/dart_cpp_bridge/main/'
+    'dcb_gen_tool/runtime/windows-x64/msvcp140.dll';
+const _msvcpSha256 =
+    '7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca';
+
 /// Ensure msvcp140.dll is present next to python.exe.
 ///
-/// The DLL is bundled in the package at `runtime/windows-x64/msvcp140.dll`.
-/// Simply copy it if not already present.
-void _ensureMsvcp(String pythonExe, String packageRoot, _Logger log) {
+/// Downloads from GitHub (SHA-256 verified) and caches locally.
+Future<void> _ensureMsvcp(
+    String pythonExe, String cacheRoot, _Logger log) async {
   final exeDir = p.dirname(pythonExe);
   final target = File(p.join(exeDir, 'msvcp140.dll'));
   if (target.existsSync()) return;
 
-  final bundled = File(
-      p.join(packageRoot, 'runtime', 'windows-x64', 'msvcp140.dll'));
-  if (bundled.existsSync()) {
-    bundled.copySync(target.path);
-    log.info('msvcp140.dll: copied from bundled runtime');
-  } else {
-    log.info(
-        'WARNING: bundled msvcp140.dll not found at ${bundled.path}.\n'
-        'libclang may fail to load. Install Visual C++ Redistributable:\n'
-        'https://aka.ms/vs/17/release/vc_redist.x64.exe');
+  // Check local cache first.
+  final cached = File(p.join(cacheRoot, 'downloads', 'msvcp140.dll'));
+  if (cached.existsSync() && _verifySha256(cached, _msvcpSha256)) {
+    cached.copySync(target.path);
+    log.info('msvcp140.dll: restored from cache');
+    return;
+  }
+
+  // Download from GitHub.
+  log.info('msvcp140.dll: downloading ...');
+  final client = http.Client();
+  try {
+    final response = await client.get(Uri.parse(_msvcpUrl));
+    if (response.statusCode != 200) {
+      log.info('WARNING: HTTP ${response.statusCode} downloading msvcp140.dll');
+      return;
+    }
+    final bytes = response.bodyBytes;
+    final digest = sha256.convert(bytes).toString().toLowerCase();
+    if (digest != _msvcpSha256) {
+      log.info('WARNING: msvcp140.dll SHA-256 mismatch: $digest');
+      return;
+    }
+    // Cache and place.
+    cached.parent.createSync(recursive: true);
+    cached.writeAsBytesSync(bytes);
+    target.writeAsBytesSync(bytes);
+    log.info('msvcp140.dll: downloaded and verified');
+  } catch (e) {
+    log.info('WARNING: Failed to download msvcp140.dll: $e');
+  } finally {
+    client.close();
   }
 }
