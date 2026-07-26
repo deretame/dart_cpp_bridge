@@ -553,4 +553,48 @@ void main() {
       expect(cube, isEmpty);
     });
   });
+
+  group('time_point <-> DateTime (Unix micros, UTC)', () {
+    // Reference instants expressed as microseconds since the Unix epoch.
+    const epochMicros = 0; // 1970-01-01T00:00:00Z
+    const y2020Micros = 1577836800000000; // 2020-01-01T00:00:00Z
+    const withSubSecond = 1577836800123456; // +123456us microsecond precision
+
+    test('async echoTime round-trips exact microseconds', () async {
+      for (final micros in [epochMicros, y2020Micros, withSubSecond]) {
+        final input = DateTime.fromMicrosecondsSinceEpoch(micros, isUtc: true);
+        final output = await echoTime(value: input);
+        expect(output.microsecondsSinceEpoch, micros);
+        expect(output.isUtc, isTrue);
+        expect(output, input);
+      }
+    });
+
+    test('sync echoTimeSync round-trips exact microseconds', () {
+      for (final micros in [epochMicros, y2020Micros, withSubSecond]) {
+        final input = DateTime.fromMicrosecondsSinceEpoch(micros, isUtc: true);
+        final output = echoTimeSync(value: input);
+        expect(output.microsecondsSinceEpoch, micros);
+        expect(output.isUtc, isTrue);
+        expect(output, input);
+      }
+    });
+
+    test('microsecond precision is preserved (not truncated to millis)', () async {
+      final input = DateTime.fromMicrosecondsSinceEpoch(withSubSecond, isUtc: true);
+      final output = await echoTime(value: input);
+      // Last three digits (456) would be lost at millisecond precision.
+      expect(output.microsecond, 456);
+      expect(output.millisecond, 123);
+    });
+
+    test('result carries no offset (UTC, isUtc == true)', () async {
+      final input = DateTime.fromMicrosecondsSinceEpoch(y2020Micros, isUtc: true);
+      final output = await echoTime(value: input);
+      expect(output.isUtc, isTrue);
+      expect(output.timeZoneOffset, Duration.zero);
+      // Dart's toIso8601String renders millisecond precision (3 fractional digits).
+      expect(output.toIso8601String(), '2020-01-01T00:00:00.000Z');
+    });
+  });
 }

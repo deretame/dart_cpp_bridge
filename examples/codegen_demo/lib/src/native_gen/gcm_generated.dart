@@ -68,6 +68,7 @@ final class BridgeApiImpl {
   static const int bridgeVersionId = 513280939;
   static const int sumArrayId = 516316109;
   static const int incrementI64Id = 826193512;
+  static const int echoTimeId = 861874896;
   static const int optionalStatusId = 923880942;
   static const int echoListId = 923919167;
   static const int scaleId = 1132741135;
@@ -75,6 +76,7 @@ final class BridgeApiImpl {
   static const int failSyncId = 1225502033;
   static const int sleepGreetingId = 1347623235;
   static const int echoU128Id = 1349826830;
+  static const int echoTimeSyncId = 1426479656;
   static const int failNonStdId = 1517851511;
   static const int addCountersId = 1533879238;
   static const int incrementU32Id = 1597460230;
@@ -226,6 +228,14 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i64();
   }
 
+  Future<DateTime> echoTime(DateTime value) async {
+    final _payload = ByteWriter();
+    _payload.i64(value.microsecondsSinceEpoch);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(echoTimeId, _payloadBytes);
+    return DateTime.fromMicrosecondsSinceEpoch(ByteReader(_bytes).i64(), isUtc: true);
+  }
+
   Future<OrderStatus?> optionalStatus(OrderStatus? value) async {
     final _payload = ByteWriter();
     if (value == null) { _payload.u8(0); } else { _payload.u8(1);
@@ -286,6 +296,14 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(echoU128Id, _payloadBytes);
     return ByteReader(_bytes).readU128();
+  }
+
+  DateTime echoTimeSync(DateTime value) {
+    final _payload = ByteWriter();
+    _payload.i64(value.microsecondsSinceEpoch);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(echoTimeSyncId, _payloadBytes);
+    return DateTime.fromMicrosecondsSinceEpoch(ByteReader(_bytes).i64(), isUtc: true);
   }
 
   Future<int> failNonStd() async {

@@ -601,6 +601,28 @@ def _is_basic_string(type_spell: str) -> bool:
     return bool(args and args[0] in ("char", "const char"))
 
 
+def _is_system_clock_time_point(type_spell: str) -> bool:
+    """Detect std::chrono::system_clock::time_point spellings.
+
+    libclang may emit the typedef `std::chrono::system_clock::time_point` or the
+    canonical template `std::chrono::time_point<std::chrono::system_clock, ...>`.
+    Only the system_clock specialization is bridgeable: it measures time since the
+    Unix epoch and maps to Dart DateTime. Other clocks (steady_clock etc.) have no
+    date semantics and are intentionally left unsupported.
+    """
+    if type_spell in (
+        "std::chrono::system_clock::time_point",
+        "chrono::system_clock::time_point",
+        "system_clock::time_point",
+    ):
+        return True
+    base = _template_base_name(type_spell)
+    if base is not None and base.endswith("time_point"):
+        args = _template_args(type_spell)
+        return bool(args and "system_clock" in args[0])
+    return False
+
+
 def _split_top_level(s: str, sep: str = ",") -> list[str]:
     """Split `s` by `sep` while ignoring separators inside (), <>, []."""
     parts: list[str] = []
@@ -762,6 +784,10 @@ def _type_ir(
     # inside a template instantiation.
     if _is_basic_string(s):
         return {"kind": "string"}
+
+    # std::chrono::system_clock::time_point → Dart DateTime (Unix micros, UTC).
+    if _is_system_clock_time_point(s):
+        return {"kind": "time_point"}
 
     # 128-bit integers are bridge-specific value types sent as marker + decimal string.
     if s in ("dcb::Int128", "Int128"):
@@ -1113,6 +1139,14 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         raise RuntimeError(f"no headers under scan={cfg['scan']}")
 
     args = [f"-std={cfg['std']}", "-x", "c++"]
+    # Disable clang's default error limit (20). The bridge runtime headers
+    # (asio_executor.hpp / runtime.hpp) and the fetched asio/async_simple
+    # internals produce benign parse diagnostics under libclang that we do not
+    # care about for codegen. Without this, hitting the limit makes clang emit
+    # "too many errors emitted, stopping now" and degrade later template types
+    # (e.g. std::vector<T>) to `int`, silently corrupting the IR on Windows
+    # where the host-clang include detection below returns nothing.
+    args.append("-ferror-limit=0")
     for d in cfg["defines"]:
         args.append(f"-D{d}")
 

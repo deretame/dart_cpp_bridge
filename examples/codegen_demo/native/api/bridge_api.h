@@ -8,6 +8,7 @@
 #include <array>
 #include <async_simple/coro/Lazy.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -172,5 +173,18 @@ void fail_stream(dcb::StreamSink<std::int32_t> sink, std::string msg);
 // G03: 3-level nested vector → Dart List<List<List<int>>>
 BRIDGE_SYNC
 std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n);
+
+// --- Time (std::chrono::system_clock::time_point ↔ Dart DateTime) ---
+// Wire format: i64 microseconds since Unix epoch (UTC, no offset).
+
+// async → Dart: Future<DateTime> echoTime(DateTime value)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::chrono::system_clock::time_point> echo_time(
+    std::chrono::system_clock::time_point value);
+
+// sync → Dart: DateTime echoTimeSync(DateTime value)
+BRIDGE_SYNC
+std::chrono::system_clock::time_point echo_time_sync(
+    std::chrono::system_clock::time_point value);
 
 }  // namespace demo::api

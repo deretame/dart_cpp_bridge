@@ -17,6 +17,7 @@
 
 #include <asio/post.hpp>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -376,6 +377,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 861874896: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = std::chrono::system_clock::time_point{std::chrono::microseconds{r.i64()}};
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, value]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::echo_time(value);
+                ByteWriter w;
+                w.i64(static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::microseconds>((out).time_since_epoch()).count()));
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "echo_time", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "echo_time", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 923880942: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = r.opt<::demo::api::OrderStatus>([&]() { return static_cast<::demo::api::OrderStatus>(r.i32()); });
@@ -511,6 +532,18 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               }
               co_return;
             });
+        break;
+      }
+
+      case 1426479656: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto value = std::chrono::system_clock::time_point{std::chrono::microseconds{r.i64()}};
+        ByteWriter w;
+        {
+          auto out = ::demo::api::echo_time_sync(value);
+          w.i64(static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::microseconds>((out).time_since_epoch()).count()));
+        }
+        post_ok(session, gen, req, method, w.raw());
         break;
       }
 
@@ -1124,6 +1157,17 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     {
       auto out = ::demo::api::fail_sync(msg);
       w.i32(out);
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
+
+  if (frame.method_id == 1426479656u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto value = std::chrono::system_clock::time_point{std::chrono::microseconds{r.i64()}};
+    ByteWriter w;
+    {
+      auto out = ::demo::api::echo_time_sync(value);
+      w.i64(static_cast<std::int64_t>(std::chrono::duration_cast<std::chrono::microseconds>((out).time_since_epoch()).count()));
     }
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }

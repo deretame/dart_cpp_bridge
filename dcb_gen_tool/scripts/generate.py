@@ -41,6 +41,7 @@ def _type_sig_fragment(t: dict[str, Any]) -> str:
         "string": "String",
         "i128": "Int128",
         "u128": "Uint128",
+        "time_point": "DateTime",
     }
     if k in mapping:
         return mapping[k]
@@ -194,6 +195,8 @@ def _dart_type(t: dict[str, Any]) -> str:
         return t["name"]
     if k == "opaque_class":
         return "int"
+    if k == "time_point":
+        return "DateTime"
     return {
         "i32": "int",
         "u32": "int",
@@ -264,6 +267,8 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return "float"
     if k == "f64":
         return "double"
+    if k == "time_point":
+        return "std::chrono::system_clock::time_point"
     if k == "data_class":
         q = t["qualified"]
         if not q.startswith("::"):
@@ -294,6 +299,12 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         return f"w.f32({expr});"
     if k == "f64":
         return f"w.f64({expr});"
+    if k == "time_point":
+        return (
+            f"w.i64(static_cast<std::int64_t>("
+            f"std::chrono::duration_cast<std::chrono::microseconds>("
+            f"({expr}).time_since_epoch()).count()));"
+        )
     if k == "enum":
         return f"w.i32(static_cast<std::int32_t>({expr}));"
     if k == "data_class":
@@ -353,6 +364,11 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         return f"{reader}.f32()"
     if k == "f64":
         return f"{reader}.f64()"
+    if k == "time_point":
+        return (
+            f"std::chrono::system_clock::time_point{{"
+            f"std::chrono::microseconds{{{reader}.i64()}}}}"
+        )
     if k == "enum":
         q = t["qualified"]
         if not q.startswith("::"):
@@ -806,7 +822,7 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
     t = a["type"]
     k = t.get("kind")
     name = a["name"]
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point"):
         return f"const auto {name} = {_cpp_read_item(t)};"
     if k == "optional":
         inner = t["inner"]
@@ -904,7 +920,7 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return ""
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point"):
         return _cpp_write_item(t, expr)
     if k == "optional":
         inner = t["inner"]
@@ -979,6 +995,8 @@ def _dart_write_item(
         return [f"{indent}{writer}.f32({expr});"]
     if k == "f64":
         return [f"{indent}{writer}.f64({expr});"]
+    if k == "time_point":
+        return [f"{indent}{writer}.i64({expr}.microsecondsSinceEpoch);"]
     if k == "enum":
         return [f"{indent}{writer}.i32({expr}.index);"]
     if k == "data_class":
@@ -1056,6 +1074,8 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{reader}.f32()"
     if k == "f64":
         return f"{reader}.f64()"
+    if k == "time_point":
+        return f"DateTime.fromMicrosecondsSinceEpoch({reader}.i64(), isUtc: true)"
     if k == "enum":
         return f"{t['name']}.values[{reader}.i32()]"
     if k == "data_class":
@@ -1117,6 +1137,8 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).f32()"
     if k == "f64":
         return f"ByteReader({expr}).f64()"
+    if k == "time_point":
+        return f"DateTime.fromMicrosecondsSinceEpoch(ByteReader({expr}).i64(), isUtc: true)"
     if k == "enum":
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
     if k == "data_class":
@@ -1183,7 +1205,7 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
             lines.append(f"_payload.u64(_{a['dart_name']}Id);")
         elif k == "opaque_class":
             lines.append(f"_payload.u64({n}.handle);")
-        elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class"):
+        elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class", "time_point"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
             inner = t["inner"]
@@ -1655,6 +1677,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 
 #include <asio/post.hpp>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>

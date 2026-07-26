@@ -89,6 +89,8 @@ Future<int> sumArray({required List<int> values}) => BridgeApiImpl.instance.sumA
 
 Future<int> incrementI64({required int value}) => BridgeApiImpl.instance.incrementI64(value);
 
+Future<DateTime> echoTime({required DateTime value}) => BridgeApiImpl.instance.echoTime(value);
+
 Future<OrderStatus?> optionalStatus({OrderStatus? value}) => BridgeApiImpl.instance.optionalStatus(value);
 
 Future<List<int>> echoList({required List<int> values}) => BridgeApiImpl.instance.echoList(values);
@@ -102,6 +104,8 @@ int failSync({required String msg}) => BridgeApiImpl.instance.failSync(msg);
 Future<String> sleepGreeting({required String name}) => BridgeApiImpl.instance.sleepGreeting(name);
 
 Future<BigInt> echoU128({required BigInt value}) => BridgeApiImpl.instance.echoU128(value);
+
+DateTime echoTimeSync({required DateTime value}) => BridgeApiImpl.instance.echoTimeSync(value);
 
 Future<int> failNonStd() => BridgeApiImpl.instance.failNonStd();
 

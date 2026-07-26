@@ -228,4 +228,16 @@ std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n) 
   return cube;
 }
 
+// --- Time (std::chrono::system_clock::time_point ↔ Dart DateTime) ---
+
+async_simple::coro::Lazy<std::chrono::system_clock::time_point> echo_time(
+    std::chrono::system_clock::time_point value) {
+  co_return value;
+}
+
+std::chrono::system_clock::time_point echo_time_sync(
+    std::chrono::system_clock::time_point value) {
+  return value;
+}
+
 }  // namespace demo::api
