@@ -643,4 +643,4 @@ class Counter extends CppOpaqueInterface {
 - [frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md) — 整体架构与锁定决策
 - [progress.md](./progress.md) — 实现进度
 - [known_issues.md](./known_issues.md) — 已知问题与技术债
-- `codegen/README.md` — Codegen 工具链说明
+- `dcb_gen_tool/README.md` — Codegen 工具链说明

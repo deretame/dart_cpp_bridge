@@ -3,11 +3,11 @@ description: >-
   Code generation CLI for dart_cpp_bridge. Downloads a pinned Python toolchain
   (python-build-standalone + libclang-ng), parses C++ headers via libclang, and
   generates Dart/C++ bridge code.
-version: 0.1.0
+version: 0.1.0-dev.1
 repository: https://github.com/deretame/dart_cpp_bridge
 
 environment:
-  sdk: '>=3.5.0 <4.0.0'
+  sdk: ">=3.5.0 <4.0.0"
 
 dependencies:
   archive: ^4.0.0

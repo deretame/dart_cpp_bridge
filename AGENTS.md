@@ -74,13 +74,14 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 │   │   └── dart_cpp_bridge.dart
 │   ├── test/                  # FFI + codec tests
 │   └── example/example.dart
-├── codegen/                   # Codegen toolchain (Dart CLI, manual, not in build hook)
-│   ├── pubspec.yaml           # dcb_codegen pub package
-│   ├── bin/codegen.dart       # CLI entry: bootstrap + run Python script
+├── dcb_gen_tool/              # Codegen CLI (pub global activate dcb_gen_tool)
+│   ├── pubspec.yaml           # dcb_gen_tool pub package
+│   ├── bin/dcb_gen.dart       # CLI entry: generate / bootstrap / doctor
 │   ├── lib/src/               # platform detection, lock parsing, bootstrap logic
 │   ├── versions.lock          # Pinned Python + libclang-ng URLs/hashes
 │   ├── scripts/               # parse/generate Python scripts
-│   └── stubs/                 # Stub headers for codegen parsing
+│   ├── stubs/                 # Stub headers for codegen parsing
+│   └── tests/                 # Parser defensive tests (Python)
 └── examples/
     ├── base_demo/             # Hand-written wire dispatch demo + C++ smoke test
     │   ├── demo_api.cpp       # Hand-written demo wire dispatch
@@ -152,12 +153,10 @@ DCB_LIBRARY_PATH=/path/to/libdart_cpp_bridge.so dart test
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
 # 2. Run codegen for the demo fixture
-cd codegen
-dart pub get
-dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+cd examples/codegen_demo
+dcb_gen generate dart_cpp_bridge.yaml
 
 # 3. Build the demo library
-cd ../examples/codegen_demo
 cmake -S . -B build
 cmake --build build --config Release
 
@@ -276,7 +275,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 - **Native memory**: FFI allocates with `malloc` and exposes `dcb_free` for caller cleanup. Dart bindings free native output/error pointers after copying.
 - **DartFn closures**: closures are held in a per-session map keyed by generated `fn_id`. They are unregistered after each reverse call. Do not pass closures that capture sensitive data unless you trust the C++ side.
 - **No sandboxing**: C++ code runs natively with the host process privileges. Treat C++ business code as part of the application trust boundary.
-- **Dependency integrity**: codegen toolchain is pinned by URL + SHA256 in `codegen/versions.lock` and validated on every bootstrap. Do not bypass the hash verification.
+- **Dependency integrity**: codegen toolchain is pinned by URL + SHA256 in `dcb_gen_tool/versions.lock` and validated on every bootstrap. Do not bypass the hash verification.
 
 ## Common pitfalls
 
@@ -295,7 +294,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 | `docs/frb_and_cpp_bridge_design.md` | Full design, FRB comparison, codegen model (Chinese). |
 | `docs/progress.md` | Landed checklist, current phase, next steps. |
 | `docs/known_issues.md` | Resolved issues (DartFn oneshot, etc.) and accepted trade-offs. |
-| `codegen/README.md` | Codegen toolchain, `dart_cpp_bridge.yaml`, generated layers. |
+| `dcb_gen_tool/README.md` | Codegen toolchain, `dart_cpp_bridge.yaml`, generated layers. |
 | `examples/codegen_demo/README.md` | Phase 2 fixture end-to-end instructions. |
 | `dart/README.md` | Dart package status and minimal usage. |
 | `dart/CHANGELOG.md` | Pub package changelog. |

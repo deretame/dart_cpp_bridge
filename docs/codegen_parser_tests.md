@@ -1,11 +1,11 @@
 # Codegen Parser 防御性测试规格
 
-> 本文档定义 `codegen/scripts/` 下 Python parser 和 generator 的防御性测试用例。
+> 本文档定义 `dcb_gen_tool/scripts/` 下 Python parser 和 generator 的防御性测试用例。
 > 目标：确保 parser 在面对异常输入时给出明确错误信息，而不是生成垃圾代码或静默崩溃。
 
 ## 测试基础设施
 
-- 测试文件位置：`codegen/tests/`
+- 测试文件位置：`dcb_gen_tool/tests/`
 - 运行方式：使用 pinned Python 直接执行（不依赖 pytest，用简单 assert + 子进程）
 - 每个测试用例构造临时 `.h` 文件和 `dart_cpp_bridge.yaml`，调用 `parse_api.py` / `generate.py`
 - 断言：退出码非零 + stderr 包含预期关键字

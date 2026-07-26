@@ -214,7 +214,7 @@ third_party/dart_api/            # Dart API DL
 dart/                            # Dart 包 + test
 examples/phase1_demo/            # C++ smoke
 cmake/                           # 工具脚本
-codegen/                         # 固定工具链 + parse/generate
+dcb_gen_tool/                    # CLI 工具 + parse/generate
 examples/codegen_demo/           # codegen fixture（yaml + 生成物 + 测试）
 hook/                            # Native Assets 预留
 ```
@@ -237,7 +237,7 @@ hook/                            # Native Assets 预留
 
 1. **Phase 1**（当前）：手写骨架验证 Runtime / Session / 四通道 / DartFn  
 2. **Phase 2**：基础 SYNC/ASYNC/NORMAL 已通 → 扩展 struct/Stream/DartFn 与模板  
-   文档：[`codegen/README.md`](codegen/README.md)、[`examples/codegen_demo`](examples/codegen_demo/)
+   文档：[`dcb_gen_tool/README.md`](dcb_gen_tool/README.md)、[`examples/codegen_demo`](examples/codegen_demo/)
 3. **Phase 3**：Native Assets hook、CMake export、示例工程产品化  
 4. **Phase 4**：业务接入（不默认替换任何已有 FRB 生产桥）
 

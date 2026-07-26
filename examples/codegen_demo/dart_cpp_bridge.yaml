@@ -8,7 +8,7 @@ include_paths:
   - native
   - native/api
   - ../../dart/native/include
-  - ../../codegen/stubs
+  - ../../dcb_gen_tool/stubs
 
 dart_output: lib/src/native_gen/
 cpp_wire_output: native/generated/

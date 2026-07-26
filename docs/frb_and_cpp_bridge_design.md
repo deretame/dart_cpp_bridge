@@ -641,7 +641,7 @@ payload:     bytes
 - **stream 不靠返回 `Stream<T>`**，靠参数列表里出现 `StreamSink<T>`（与 FRB 相同）；带 `StreamSink` 参数即视为生成标记。
 - 解析用 compile flags 与真编译一致（`-std=c++20`、`-I`、宏）。
 - **Python 与 libclang 均仓库锁定 + 远端拉取 + hash 校验；明确禁止回落到本机安装。**
-- 工具链缓存为**用户级目录**，按 `versions.lock` 指纹分 `envs/`（多项目 / 多锁版本并存）；详见仓库 `codegen/README.md`。
+- 工具链缓存为**用户级目录**，按 `versions.lock` 指纹分 `envs/`（多项目 / 多锁版本并存）；详见仓库 `dcb_gen_tool/README.md`。
 
 #### 6.1.1 注解宏（减少非标准告警）
 
@@ -996,7 +996,7 @@ native_bridge/                 # 或拆成 runtime 库 + examples 仓库
 │   ├── runtime/               # io_context(1) + thread_pool + session
 │   ├── codec/
 │   └── ffi_entry.cc
-├── codegen/                   # 仅手动
+├── dcb_gen_tool/              # CLI 工具（pub global activate）
 │   ├── versions.lock          # Python + libclang：版本 / URL / hash
 │   ├── bin/codegen.dart       # Dart CLI：校验 hash → 必要时重下 → 调解析（不用本机 python）
 │   ├── lib/src/               # 平台检测、lock 解析、bootstrap 逻辑

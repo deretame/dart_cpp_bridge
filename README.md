@@ -214,7 +214,7 @@ third_party/dart_api/            # Dart API DL
 dart/                            # Dart package + tests
 examples/phase1_demo/            # C++ smoke
 cmake/                           # helper scripts
-codegen/                         # pinned toolchain + parse/generate
+dcb_gen_tool/                    # CLI tool + parse/generate
 examples/codegen_demo/           # codegen fixture (yaml + generated + tests)
 hook/                            # Native Assets placeholder
 ```
@@ -237,7 +237,7 @@ Design and progress docs are currently written primarily in **Chinese**; English
 
 1. **Phase 1** (current): Hand-written skeleton — Runtime / Session / four channels / DartFn  
 2. **Phase 2**: Codegen MVP done for primitive SYNC/ASYNC/NORMAL → extend structs/Stream/DartFn + templates  
-   Docs: [`codegen/README.md`](codegen/README.md), [`examples/codegen_demo`](examples/codegen_demo/)
+   Docs: [`dcb_gen_tool/README.md`](dcb_gen_tool/README.md), [`examples/codegen_demo`](examples/codegen_demo/)
 3. **Phase 3**: Native Assets hooks, CMake export, polished examples  
 4. **Phase 4**: Real app integration (does not replace existing FRB bridges by default)
 

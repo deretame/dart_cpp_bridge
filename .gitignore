@@ -47,8 +47,7 @@ __pycache__/
 venv/
 
 # Codegen: legacy in-repo cache (toolchain is user-level now)
-codegen/.cache/
-codegen/toolchain/
+# (codegen/ directory removed; dcb_gen_tool uses user-level cache)
 
 # OS
 .DS_Store

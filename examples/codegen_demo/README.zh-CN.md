@@ -4,7 +4,7 @@
 
 如果你想在自己的 C++ 库上接入 `dart_cpp_bridge`，从这里开始：复制本目录，改配置和头文件，跑 codegen，编 DLL，Dart 侧即可调用。
 
-更完整的 codegen 说明见 [codegen/README.md](../../codegen/README.md)。
+更完整的 codegen 说明见 [dcb_gen_tool/README.md](../../dcb_gen_tool/README.md)。
 
 ---
 
@@ -62,7 +62,7 @@ include_paths:               # libclang 解析时的 -I 路径
   - native
   - native/api
   - ../../include            # dart_cpp_bridge 公共头
-  - ../../codegen/stubs      # async_simple stub
+  - ../../dcb_gen_tool/stubs      # async_simple stub
 
 dart_output: lib/src/native_gen/   # Dart 生成物
 cpp_wire_output: native/generated/ # C++ wire 生成物

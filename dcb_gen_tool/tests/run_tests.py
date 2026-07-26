@@ -2,29 +2,32 @@
 """Codegen parser defensive tests.
 
 Run with the pinned Python:
-  cd codegen
-  dart run bin/codegen.dart tests/run_tests.py
+  cd dcb_gen_tool
+  dart run bin/dcb_gen.dart run tests/run_tests.py
 
 Or directly:
-  <pinned-python> codegen/tests/run_tests.py
+  <pinned-python> dcb_gen_tool/tests/run_tests.py
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
 TESTS_DIR = Path(__file__).resolve().parent
-CODEGEN_DIR = TESTS_DIR.parent
-SCRIPTS_DIR = CODEGEN_DIR / "scripts"
-REPO_ROOT = CODEGEN_DIR.parent
-INCLUDE_DIR = REPO_ROOT / "include"
-STUBS_DIR = CODEGEN_DIR / "stubs"
+TOOL_DIR = TESTS_DIR.parent
+SCRIPTS_DIR = TOOL_DIR / "scripts"
+REPO_ROOT = TOOL_DIR.parent
+INCLUDE_DIR = REPO_ROOT / "dart" / "native" / "include"
+STUBS_DIR = TOOL_DIR / "stubs"
 
 RUN_CODEGEN = SCRIPTS_DIR / "run_codegen.py"
 
@@ -32,10 +35,12 @@ RUN_CODEGEN = SCRIPTS_DIR / "run_codegen.py"
 # Test result tracking
 # ---------------------------------------------------------------------------
 _results: list[tuple[str, bool, str]] = []
+_results_lock = threading.Lock()
 
 
 def _record(name: str, passed: bool, detail: str = "") -> None:
-    _results.append((name, passed, detail))
+    with _results_lock:
+        _results.append((name, passed, detail))
     status = "PASS" if passed else "FAIL"
     print(f"  [{status}] {name}")
     if not passed and detail:
@@ -746,7 +751,6 @@ def main() -> int:
     print("=" * 60)
     print("Codegen Parser Defensive Tests")
     print("=" * 60)
-    print()
 
     tests = [
         # P0 priority
@@ -774,11 +778,20 @@ def main() -> int:
         test_s03_order_independence,
     ]
 
-    for t in tests:
+    workers = int(os.environ.get("DCB_TEST_WORKERS", "0")) or min(len(tests), os.cpu_count() or 4)
+    print(f"  ({workers} parallel workers)")
+    print()
+
+    def _run_one(t):
         try:
             t()
         except Exception as e:
             _record(t.__name__, False, f"Exception: {e}")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_run_one, t) for t in tests]
+        for f in as_completed(futures):
+            f.result()  # propagate unexpected exceptions
 
     print()
     print("=" * 60)

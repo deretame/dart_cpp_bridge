@@ -128,7 +128,7 @@ docs/
 include/dart_cpp_bridge/         # 公共头（含 channel / asio_executor）
 src/runtime|wire|ffi_entry       # 实现
 dart/lib + dart/test             # Dart 包与测试
-codegen/                         # 工具链 + parse/generate
+dcb_gen_tool/                    # CLI 工具 + parse/generate
 examples/codegen_demo/           # Phase 2 fixture（yaml + 生成 + dart test）
 ```
 

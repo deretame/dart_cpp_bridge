@@ -4,7 +4,7 @@ This directory serves as both the Phase 2 end-to-end test fixture and a **copyab
 
 To integrate `dart_cpp_bridge` with your own C++ library, start here: copy this directory, modify the config and headers, run codegen, build the DLL, and call from Dart.
 
-For full codegen documentation, see [codegen/README.md](../../codegen/README.md).
+For full codegen documentation, see [dcb_gen_tool/README.md](../../dcb_gen_tool/README.md).
 
 ---
 
@@ -62,7 +62,7 @@ include_paths:               # -I paths for libclang parsing
   - native
   - native/api
   - ../../include            # dart_cpp_bridge public headers
-  - ../../codegen/stubs      # async_simple stub
+  - ../../dcb_gen_tool/stubs      # async_simple stub
 
 dart_output: lib/src/native_gen/   # Dart output
 cpp_wire_output: native/generated/ # C++ wire output

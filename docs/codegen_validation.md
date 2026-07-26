@@ -711,11 +711,11 @@ test('opaque method throw surfaces error', () async {
 
 | 批次 | 内容 | 涉及文件 |
 |------|------|----------|
-| 批次 1 | C01（虚函数）、C02（继承）、C03（模板类）检测 | `codegen/scripts/parse_api.py` `_collect_classes` |
-| 批次 2 | F02 增强（未导出类的精确 Hint） | `codegen/scripts/parse_api.py` `_validate_ir` |
+| 批次 1 | C01（虚函数）、C02（继承）、C03（模板类）检测 | `dcb_gen_tool/scripts/parse_api.py` `_collect_classes` |
+| 批次 2 | F02 增强（未导出类的精确 Hint） | `dcb_gen_tool/scripts/parse_api.py` `_validate_ir` |
 | 批次 3 | 运行时异常测试函数 + Dart 测试 | `examples/codegen_demo/native/api/bridge_api.h`、`native/api_impl/bridge_api.cpp`、`test/api_test.dart` |
 | 批次 4 | 深层嵌套容器端到端测试 | 同批次 3 |
-| 批次 5 | 静态校验反例测试（可选：作为 codegen 的 negative test） | 新增 `codegen/tests/` 或脚本内 assert |
+| 批次 5 | 静态校验反例测试（可选：作为 codegen 的 negative test） | 新增 `dcb_gen_tool/tests/` 或脚本内 assert |
 
 ---
 
@@ -725,7 +725,7 @@ test('opaque method throw surfaces error', () async {
 |------|------|
 | `docs/codegen_type_mapping.md` | 定义白名单**是什么**；本文档定义违反白名单时**怎么报错** |
 | `docs/known_issues.md` | 记录已接受的技术债；本文档的校验规则是"不允许通过"的硬约束 |
-| `codegen/README.md` | 工具链使用说明；本文档补充错误输出格式说明 |
+| `dcb_gen_tool/README.md` | 工具链使用说明；本文档补充错误输出格式说明 |
 
 ---
 
