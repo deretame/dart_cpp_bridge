@@ -474,6 +474,123 @@ void main() {
     });
   });
 
+  group('opaque as parameter (free function)', () {
+    test('counterAddValues reads two Counters and returns sum', () async {
+      final a = await bridge.createCounter(initialValue: 10);
+      final b = await bridge.createCounter(initialValue: 32);
+      expect(await bridge.counterAddValues(a, b), 42);
+      // Both handles remain valid (borrow semantics).
+      expect(await a.value(), 10);
+      expect(await b.value(), 32);
+      a.dispose();
+      b.dispose();
+    });
+
+    test('counterAddValues with same object twice', () async {
+      final a = await bridge.createCounter(initialValue: 7);
+      expect(await bridge.counterAddValues(a, a), 14);
+      expect(await a.value(), 7);
+      a.dispose();
+    });
+
+    test('counterTransferValue moves value from src to dst', () async {
+      final src = await bridge.createCounter(initialValue: 15);
+      final dst = await bridge.createCounter(initialValue: 5);
+      final newDst = await bridge.counterTransferValue(src: src, dst: dst);
+      expect(newDst, 20);
+      // Both handles still valid; src unchanged, dst updated.
+      expect(await src.value(), 15);
+      expect(await dst.value(), 20);
+      src.dispose();
+      dst.dispose();
+    });
+
+    test('counterSumHandles sums a list of Counters', () async {
+      final counters = await Future.wait([
+        bridge.createCounter(initialValue: 1),
+        bridge.createCounter(initialValue: 2),
+        bridge.createCounter(initialValue: 3),
+        bridge.createCounter(initialValue: 4),
+      ]);
+      expect(await bridge.counterSumHandles(counters), 10);
+      // All handles remain valid after the call.
+      expect(await counters[0].value(), 1);
+      expect(await counters[3].value(), 4);
+      for (final c in counters) {
+        c.dispose();
+      }
+    });
+
+    test('counterSumHandles with empty list returns 0', () async {
+      expect(await bridge.counterSumHandles([]), 0);
+    });
+
+    test('counterCloneFrom creates independent copy', () async {
+      final original = await bridge.createCounter(initialValue: 99);
+      final clone = await bridge.counterCloneFrom(original);
+      expect(await clone.value(), 99);
+      // Mutating original does not affect clone.
+      await original.increment(1);
+      expect(await original.value(), 100);
+      expect(await clone.value(), 99);
+      // Source remains valid.
+      expect(await original.value(), 100);
+      original.dispose();
+      clone.dispose();
+    });
+
+    test('counterConsumeAndNew invalidates original handle', () async {
+      final original = await bridge.createCounter(initialValue: 55);
+      final moved = await bridge.counterConsumeAndNew(original);
+      // New handle works.
+      expect(await moved.value(), 55);
+      // Original handle is now invalid on C++ side.
+      // Dart-side ensureAlive still passes (Dart doesn't know), but C++ rejects.
+      await expectLater(
+        original.value(),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Counter handle not found or already dropped'),
+        )),
+      );
+      moved.dispose();
+    });
+
+    test('passing disposed Counter throws on Dart side', () async {
+      final a = await bridge.createCounter(initialValue: 1);
+      final b = await bridge.createCounter(initialValue: 2);
+      a.dispose();
+      expect(
+        () => bridge.counterAddValues(a, b),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Counter disposed'),
+        )),
+      );
+      b.dispose();
+    });
+
+    test('counterSumHandles with one dropped handle errors from C++', () async {
+      final a = await bridge.createCounter(initialValue: 10);
+      final b = await bridge.createCounter(initialValue: 20);
+      // Drop b's native handle directly (bypass Dart dispose).
+      final payload = (ByteWriter()..u64(b.handle)).takeBytes();
+      await bridge.invokeAsyncMethod(MethodId.counterDrop.value, payload);
+      // Now sumHandles should fail because b's handle is invalid on C++ side.
+      await expectLater(
+        bridge.counterSumHandles([a, b]),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Counter handle not found or already dropped'),
+        )),
+      );
+      a.dispose();
+    });
+  });
+
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
       final out = await bridge.callDartHello((name) => 'Hello, $name!');

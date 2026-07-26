@@ -129,8 +129,20 @@
     }
   ],
   "diagnostics": [
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: 'async_simple/Executor.h' file not found"
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers"
   ]
 }

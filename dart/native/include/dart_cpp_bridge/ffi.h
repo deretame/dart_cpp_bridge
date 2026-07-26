@@ -57,6 +57,10 @@ DCB_API void dcb_free(void* p);
 // When enabled, error messages are prefixed with "[function_name] ".
 DCB_API void dcb_set_verbose_errors(uint8_t enabled);
 
+// Set thread pool size (default: 4). Must be called before the first
+// dcb_session_open() that starts the runtime; ignored after start.
+DCB_API void dcb_set_pool_threads(uint32_t n);
+
 #ifdef __cplusplus
 }
 #endif

@@ -498,6 +498,7 @@ def _cpp_class_method_cases(
             arg_names = [a["name"] for a in non_sink_args]
             ret = m["return"]
             arg_reads = "\n        ".join(_cpp_read_arg(a) for a in non_sink_args)
+            sync_arg_reads = "\n        ".join(_cpp_read_arg(a, sync=True) for a in non_sink_args)
 
             if is_constructor:
                 ctor_call = f"std::make_shared<{class_q}>({', '.join(arg_names)})"
@@ -537,7 +538,7 @@ def _cpp_class_method_cases(
             fn_label = f"{class_name}::{m['name']}"
             if is_static:
                 handle_block = arg_reads
-                sync_handle_block = arg_reads
+                sync_handle_block = sync_arg_reads
                 # Special case: aliveCount() reads the generated counter.
                 if m["name"] == "aliveCount" and not arg_names:
                     counter_var = f"g_{class_name}_alive_count"
@@ -560,7 +561,7 @@ def _cpp_class_method_cases(
           ew.str("{err_msg}");
           return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
         }}
-        {arg_reads}"""
+        {sync_arg_reads}"""
                 call = f"static_cast<{class_q}*>(obj.get())->{m['name']}({', '.join(arg_names)})"
 
             write = _cpp_write_ret(ret, "out") if kind != "stream" else ""
@@ -776,7 +777,7 @@ def _dart_data_class_helpers(classes: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _cpp_read_arg(a: dict[str, Any]) -> str:
+def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
     t = a["type"]
     k = t.get("kind")
     name = a["name"]
@@ -824,11 +825,22 @@ def _cpp_read_arg(a: dict[str, Any]) -> str:
         q = t["qualified"]
         if not q.startswith("::"):
             q = "::" + q
+        err_msg = f"{t['name']} handle not found or already dropped"
+        if sync:
+            return (
+                f"const auto {name}Handle = r.u64();\n"
+                f"    auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
+                f"    if (!{name}Obj) {{\n"
+                f"      ByteWriter ew; ew.i32(1); ew.str(\"{err_msg}\");\n"
+                f"      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());\n"
+                f"    }}\n"
+                f"    {q}& {name} = *static_cast<{q}*>({name}Obj.get());"
+            )
         return (
             f"const auto {name}Handle = r.u64();\n"
             f"        auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
             f"        if (!{name}Obj) {{\n"
-            f"          post_err(session, gen, req, method, \"dispatch\", \"{t['name']} handle not found or already dropped\");\n"
+            f"          post_err(session, gen, req, method, \"dispatch\", \"{err_msg}\");\n"
             f"          break;\n"
             f"        }}\n"
             f"        {q}& {name} = *static_cast<{q}*>({name}Obj.get());"
@@ -1145,7 +1157,7 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
         if k == "dart_fn":
             lines.append(f"_payload.u64(_{a['dart_name']}Id);")
         elif k == "opaque_class":
-            lines.append(f"_payload.u64({n});")
+            lines.append(f"_payload.u64({n}.handle);")
         elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
@@ -1337,7 +1349,7 @@ def _dart_opaque_class_wrappers(classes: list[dict[str, Any]]) -> str:
         method_s = "\n".join(method_lines)
         wrappers.append(
             f"""final class {class_name} extends CppOpaqueInterface {{
-  {class_name}._({{required super.bridge, required super.handle}});
+  {class_name}.fromHandle({{required super.bridge, required super.handle}});
 
 {ctor_s}
 
@@ -1403,6 +1415,10 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             _cpp_read_arg(a) for a in fn["args"]
             if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
         )
+        sync_reads = "\n    ".join(
+            _cpp_read_arg(a, sync=True) for a in fn["args"]
+            if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
+        )
         call = _cpp_call_expr(fn)
         write = _cpp_write_ret(fn["return"], "out")
 
@@ -1423,7 +1439,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             sync_body = f"""
   if (frame.method_id == {mid}u) {{
     ByteReader r(frame.payload.data(), frame.payload.size());
-    {reads}
+    {sync_reads}
     ByteWriter w;
     {{
       auto out = {call};
@@ -1719,6 +1735,7 @@ def _iter_dart_methods(ir: dict[str, Any]):
             args.append({**a, "dart_name": _dart_param_name(a["name"])})
         params = []
         call_args = []
+        ensure_alive_lines: list[str] = []
         opt_sink_info = None  # {"dart_name": ..., "item_t": ..., "dart_item_type": ...}
         for a in args:
             if a["type"].get("kind") == "stream_sink":
@@ -1737,13 +1754,27 @@ def _iter_dart_methods(ir: dict[str, Any]):
                     "decode_expr": _dart_read_item(item_t, "_r"),
                 }
                 continue
+            if a["type"].get("kind") == "opaque_class":
+                # Opaque params use the class name, not raw int.
+                cls_name = a["type"]["name"]
+                params.append(f"{cls_name} {a['dart_name']}")
+                call_args.append(a["dart_name"])
+                ensure_alive_lines.append(f"{a['dart_name']}.ensureAlive();")
+                continue
             type_s = _dart_type(a['type'])
             # std::optional<T> args become nullable at wire level.
             if _is_optional_arg(a) and not type_s.endswith('?'):
                 type_s = f"{type_s}?"
             params.append(f"{type_s} {a['dart_name']}")
             call_args.append(a["dart_name"])
-        ret_t = _dart_type(fn["return"])
+        # Return type: opaque_class returns wrapped object.
+        fn_ret = fn["return"]
+        if fn_ret.get("kind") == "opaque_class":
+            ret_t = fn_ret["name"]
+            read_ret = f"{ret_t}.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64())"
+        else:
+            ret_t = _dart_type(fn_ret)
+            read_ret = _dart_read_ret(fn_ret, "_bytes")
         is_stream = fn["kind"] == "stream"
         is_async = not is_stream and fn["kind"] != "sync"
         stream_decode_expr = None
@@ -1769,9 +1800,10 @@ def _iter_dart_methods(ir: dict[str, Any]):
             "sig_ret": sig_ret,
             "is_async": is_async,
             "is_stream": is_stream,
+            "ensure_alive_lines": ensure_alive_lines,
             "payload_lines": _dart_payload_lines(args),
             "dart_fn_args": dart_fn_args,
-            "read_ret": _dart_read_ret(fn["return"], "_bytes"),
+            "read_ret": read_ret,
             "stream_decode_expr": stream_decode_expr,
             "opt_sink_info": opt_sink_info,
         }
@@ -1807,7 +1839,7 @@ def _dart_fn_wrapper_lines(a: dict[str, Any]) -> list[str]:
     return lines
 
 
-def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") -> str:
+def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", api_subdir: str = "api") -> str:
     """Low-level generated impl (method ids + codec) — like FRB frb_generated."""
     methods = []
     id_consts = []
@@ -1820,10 +1852,13 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
         read_ret = m["read_ret"]
         payload_lines = m["payload_lines"]
         dart_fn_args = m["dart_fn_args"]
+        ensure_alive_lines = m.get("ensure_alive_lines", [])
 
         # Build payload body. DartFn callbacks must be registered before the
         # payload is sent and unregistered after the C++ call returns.
         body_lines: list[str] = []
+        # ensureAlive() checks for opaque params go first.
+        body_lines.extend(ensure_alive_lines)
         dart_fn_try = bool(dart_fn_args)
         if dart_fn_try:
             if m["is_stream"]:
@@ -1913,16 +1948,19 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
             # Build params and call args for the impl method.
             params = []
             call_args = []
+            ensure_alive_lines_cls: list[str] = []
             if is_instance:
-                params.append("int handle")
-                call_args.append("handle")
+                params.append(f"{cls['name']} self")
+                call_args.append("self")
+                ensure_alive_lines_cls.append("self.ensureAlive();")
             for a in method["args"]:
                 t = a["type"]
                 if t.get("kind") == "stream_sink":
                     continue
                 dart_name = a["dart_name"]
                 if t.get("kind") == "opaque_class":
-                    params.append(f"int {dart_name}")
+                    params.append(f"{t['name']} {dart_name}")
+                    ensure_alive_lines_cls.append(f"{dart_name}.ensureAlive();")
                 elif t.get("kind") == "dart_fn":
                     arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
                     ret_t = _dart_type(t["return"])
@@ -1938,7 +1976,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
             # Payload construction (handle first for instance methods).
             payload_lines = ["final _payload = ByteWriter();"]
             if is_instance:
-                payload_lines.append("_payload.u64(handle);")
+                payload_lines.append("_payload.u64(self.handle);")
             for a in method["args"]:
                 t = a["type"]
                 n = a["dart_name"]
@@ -1948,15 +1986,18 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
                 if k == "dart_fn":
                     payload_lines.append(f"_payload.u64(_{a['dart_name']}Id);")
                 elif k == "opaque_class":
-                    payload_lines.append(f"_payload.u64({n});")
+                    payload_lines.append(f"_payload.u64({n}.handle);")
                 else:
                     payload_lines.extend(_dart_write_item(t, n))
 
             # Determine return type handling.
             ret_type = method["return"]
-            if is_constructor or ret_type.get("kind") == "opaque_class":
-                ret_t = "int"
-                read_ret = "ByteReader(_bytes).u64()"
+            if is_constructor:
+                ret_t = cls["name"]
+                read_ret = f"{cls['name']}.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64())"
+            elif ret_type.get("kind") == "opaque_class":
+                ret_t = ret_type["name"]
+                read_ret = f"{ret_t}.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64())"
             else:
                 ret_t = _dart_type(ret_type)
                 read_ret = _dart_read_ret(ret_type, "_bytes")
@@ -1977,6 +2018,8 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl") ->
             dart_fn_args = [a for a in method["args"] if a["type"].get("kind") == "dart_fn"]
 
             body_lines: list[str] = []
+            # ensureAlive() checks for self and opaque params go first.
+            body_lines.extend(ensure_alive_lines_cls)
             dart_fn_try = bool(dart_fn_args)
             if dart_fn_try:
                 if is_stream:
@@ -2051,6 +2094,23 @@ enum {name} {{
     if data_class_helpers:
         data_class_helpers += "\n"
 
+    # Opaque class wrappers live in gcm_generated alongside BridgeApiImpl.
+    # Collect API file imports for opaque classes (impl references their types).
+    opaque_api_imports: list[str] = []
+    if opaque_classes:
+        from pathlib import PurePosixPath, PureWindowsPath
+        seen_headers: set[str] = set()
+        for cls in opaque_classes:
+            h = cls.get("header", "")
+            if h and h not in seen_headers:
+                seen_headers.add(h)
+                hp = PureWindowsPath(h) if "\\" in h else PurePosixPath(h)
+                dart_fname = hp.stem + ".dart"
+                opaque_api_imports.append(f"import '{api_subdir}/{dart_fname}';")
+    opaque_imports_s = "\n".join(opaque_api_imports)
+    if opaque_imports_s:
+        opaque_imports_s += "\n"
+
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // ignore_for_file: unused_element, unused_import
 
@@ -2059,7 +2119,7 @@ import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
-{enums_s}
+{opaque_imports_s}{enums_s}
 {data_class_defs}
 {data_class_helpers}
 /// Wire-level API singleton. Access via [BridgeApiImpl.instance].
@@ -2122,9 +2182,13 @@ final class {lib_class} {{
   }}
 
   /// Initialize (call once per Isolate).
-  static Future<void> init({{String? libraryPath}}) async {{
+  ///
+  /// [threadPoolSize] sets the native thread pool concurrency (default 4).
+  /// [verboseErrors] controls whether C++ errors include function names (default true).
+  static Future<void> init({{String? libraryPath, int threadPoolSize = 4, bool verboseErrors = true}}) async {{
     if (_bridge != null) return;
-    final b = await DartCppBridge.init(libraryPath: libraryPath);
+    final b = await DartCppBridge.init(libraryPath: libraryPath, poolThreads: threadPoolSize);
+    b.setVerboseErrors(verboseErrors);
     _bridge = b;
     {impl_class}.initSingleton(b);
   }}
@@ -2141,6 +2205,13 @@ final class {lib_class} {{
     _bridge?.shutdown();
     _bridge = null;
     {impl_class}.disposeSingleton();
+  }}
+
+  /// Enable or disable verbose error messages (default: enabled).
+  ///
+  /// When enabled, C++ error messages are prefixed with `[function_name] `.
+  static void setVerboseErrors(bool enabled) {{
+    bridge.setVerboseErrors(enabled);
   }}
 }}
 """
@@ -2164,10 +2235,7 @@ def _dart_call_args_positional(args: list[dict[str, Any]]) -> str:
         if t.get("kind") == "stream_sink":
             continue
         dn = _dart_param_name(a["name"])
-        if t.get("kind") == "opaque_class":
-            parts.append(f"{dn}.handle")
-        else:
-            parts.append(dn)
+        parts.append(dn)
     return ", ".join(parts)
 
 
@@ -2225,6 +2293,14 @@ def generate_dart_api_files(
                 export_names.append(cls["name"])
 
         has_opaque = any(c.get("kind") == "opaque_class" for c in classes)
+        # Also check free functions for opaque params/returns.
+        if not has_opaque:
+            has_opaque = any(
+                a["type"].get("kind") == "opaque_class"
+                for fn in fns for a in fn["args"]
+            ) or any(
+                fn["return"].get("kind") == "opaque_class" for fn in fns
+            )
         has_dart_fn = any(
             a["type"].get("kind") == "dart_fn"
             for fn in fns for a in fn["args"]
@@ -2235,9 +2311,6 @@ def generate_dart_api_files(
         has_opt_sink = any(
             _is_optional_sink_arg(a)
             for fn in fns for a in fn["args"]
-        ) or any(
-            _is_optional_sink_arg(a)
-            for cls in classes for m in cls.get("methods", []) for a in m["args"]
         )
 
         lines: list[str] = []
@@ -2251,14 +2324,12 @@ def generate_dart_api_files(
             lines.append("import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';")
             lines.append("")
         lines.append("import '../gcm_generated.dart';")
-        if has_opaque:
-            lines.append("import 'init.dart';")
         lines.append("")
         if export_names:
             lines.append(f"export '../gcm_generated.dart' show {', '.join(sorted(export_names))};")
             lines.append("")
 
-        # Generate top-level functions.
+        # Generate top-level functions — all are thin `=>` forwards.
         if fns:
             lines.append("// " + "═" * 45)
             lines.append("// Functions")
@@ -2269,13 +2340,16 @@ def generate_dart_api_files(
                 args = [{**a, "dart_name": _dart_param_name(a["name"])} for a in fn["args"]]
                 is_stream = fn["kind"] == "stream"
                 is_async = not is_stream and fn["kind"] != "sync"
+                ret = fn["return"]
 
                 if is_stream:
                     sink_args = [a for a in args if a["type"].get("kind") == "stream_sink"]
                     item_t = sink_args[0]["type"]["inner"]
                     sig_ret = f"Stream<{_dart_type(item_t)}>"
+                elif ret.get("kind") == "opaque_class":
+                    sig_ret = f"Future<{ret['name']}>" if is_async else ret["name"]
                 else:
-                    ret_t = _dart_type(fn["return"])
+                    ret_t = _dart_type(ret)
                     if is_async:
                         sig_ret = "Future<void>" if ret_t == "void" else f"Future<{ret_t}>"
                     else:
@@ -2283,11 +2357,11 @@ def generate_dart_api_files(
 
                 param_s = _dart_named_params(args)
                 call_args = _dart_call_args_positional(args)
-                lines.append(f"{sig_ret} {dart_name}({param_s}) =>")
-                lines.append(f"    {impl_class}.instance.{dart_name}({call_args});")
+                call = f"{impl_class}.instance.{dart_name}({call_args})"
+                lines.append(f"{sig_ret} {dart_name}({param_s}) => {call};")
                 lines.append("")
 
-        # Generate opaque class wrappers.
+        # Generate opaque class wrappers (thin forwarding methods).
         opaque_classes = [c for c in classes if c.get("kind") == "opaque_class"]
         for cls in opaque_classes:
             lines.append("// " + "═" * 45)
@@ -2307,15 +2381,19 @@ def _dart_opaque_class_wrapper_new(
     impl_class: str = "BridgeApiImpl",
     lib_class: str = "DcbLib",
 ) -> str:
-    """Generate a single opaque class wrapper with factory constructors and named params."""
+    """Generate a single opaque class wrapper with thin forwarding methods.
+
+    All lifecycle checks (ensureAlive) and handle extraction are done inside
+    BridgeApiImpl; the class methods are simple `=>` forwards.
+    """
     class_name = cls["name"]
     lines: list[str] = []
     lines.append(f"/// Opaque wrapper for `{cls['qualified']}`.")
     lines.append(f"final class {class_name} extends CppOpaqueInterface {{")
-    lines.append(f"  {class_name}._({{required super.bridge, required super.handle}});")
+    lines.append(f"  {class_name}.fromHandle({{required super.bridge, required super.handle}});")
     lines.append("")
 
-    # Constructors as factory.
+    # Constructors as factory — impl returns the wrapped object directly.
     ctors = [m for m in cls.get("methods", []) if m["kind"] == "constructor"]
     if ctors:
         lines.append("  // ── Constructors ──")
@@ -2325,10 +2403,8 @@ def _dart_opaque_class_wrapper_new(
             impl_name = _class_impl_method_name(cls, method)
             param_s = _dart_named_params(method["args"])
             call_args = _dart_call_args_positional(method["args"])
-            lines.append(f"  factory {factory_name}({param_s}) => {class_name}._(")
-            lines.append(f"        bridge: {lib_class}.bridge,")
-            lines.append(f"        handle: {impl_class}.instance.{impl_name}({call_args}),")
-            lines.append(f"      );")
+            lines.append(f"  factory {factory_name}({param_s}) =>")
+            lines.append(f"      {impl_class}.instance.{impl_name}({call_args});")
             lines.append("")
 
     # Instance methods.
@@ -2369,7 +2445,11 @@ def _dart_opaque_method_lines(
     impl_class: str = "BridgeApiImpl",
     lib_class: str = "DcbLib",
 ) -> list[str]:
-    """Generate lines for a single opaque class method with named params."""
+    """Generate thin forwarding lines for an opaque class method.
+
+    All ensureAlive/handle logic lives in BridgeApiImpl; the class method is
+    a simple `=>` expression passing `this` (for instance methods) and args.
+    """
     is_stream = method["kind"] == "stream"
     is_async = method["kind"] not in ("sync", "constructor")
     dart_name = _dart_fn_name(method["name"])
@@ -2391,54 +2471,22 @@ def _dart_opaque_method_lines(
     param_s = _dart_named_params(method["args"])
     impl_name = _class_impl_method_name(cls, method)
 
-    # Build call args (handle first for instance methods).
+    # Build call args: `this` first for instance methods, then named params.
     call_parts: list[str] = []
     if not is_static:
-        call_parts.append("handle")
+        call_parts.append("this")
     for a in method["args"]:
         t = a["type"]
         if t.get("kind") == "stream_sink":
             continue
         dn = _dart_param_name(a["name"])
-        if t.get("kind") == "opaque_class":
-            call_parts.append(f"{dn}.handle")
-        else:
-            call_parts.append(dn)
+        call_parts.append(dn)
     call_args = ", ".join(call_parts)
     call = f"{impl_class}.instance.{impl_name}({call_args})"
 
     result: list[str] = []
     static_kw = "static " if is_static else ""
-    async_kw = "async " if is_async and not is_stream else ""
-
-    if is_stream:
-        result.append(f"  {static_kw}{sig_ret} {dart_name}({param_s}) {{")
-        if not is_static:
-            result.append("    ensureAlive();")
-        result.append(f"    return {call};")
-        result.append("  }")
-    elif ret.get("kind") == "opaque_class":
-        result.append(f"  {static_kw}{sig_ret} {dart_name}({param_s}) {async_kw}{{")
-        if not is_static:
-            result.append("    ensureAlive();")
-        result.append(f"    final newHandle = {'await ' if is_async else ''}{call};")
-        result.append(f"    return {ret['name']}._(bridge: {lib_class}.bridge, handle: newHandle);")
-        result.append("  }")
-    elif is_async:
-        result.append(f"  {static_kw}{sig_ret} {dart_name}({param_s}) {async_kw}{{")
-        if not is_static:
-            result.append("    ensureAlive();")
-        if _dart_type(ret) == "void":
-            result.append(f"    await {call};")
-        else:
-            result.append(f"    return await {call};")
-        result.append("  }")
-    else:
-        result.append(f"  {static_kw}{sig_ret} {dart_name}({param_s}) {{")
-        if not is_static:
-            result.append("    ensureAlive();")
-        result.append(f"    return {call};")
-        result.append("  }")
+    result.append(f"  {static_kw}{sig_ret} {dart_name}({param_s}) => {call};")
     return result
 
 
@@ -2464,7 +2512,7 @@ def run_generate(config_path: Path) -> dict[str, Any]:
             api_includes.append(hp.name)
 
     hpp, cpp = generate_cpp(ir, api_includes)
-    dart_impl = generate_dart_impl(ir, impl_class=impl_class)
+    dart_impl = generate_dart_impl(ir, impl_class=impl_class, api_subdir=api_subdir)
     dart_init = generate_dart_init(
         lib_class=lib_class,
         impl_class=impl_class,

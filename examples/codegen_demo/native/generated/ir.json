@@ -13,10 +13,8 @@
     "-DDART_CPP_BRIDGE_CODEGEN",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\include",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\codegen\\stubs",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\build\\_deps\\async_simple-src",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\build\\_deps\\asio-src\\asio\\include"
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
   ],
   "enums": [
     {
@@ -240,6 +238,33 @@
           }
         },
         {
+          "name": "addTo",
+          "displayname": "addTo(const Counter &)",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "async",
+          "is_static": false,
+          "method_id": 479175197,
+          "attrs": [
+            "bridge::async"
+          ],
+          "args": [
+            {
+              "name": "other",
+              "type": {
+                "kind": "opaque_class",
+                "name": "Counter",
+                "qualified": "demo::api::Counter",
+                "loc": "counter.h:41"
+              },
+              "default_value": null,
+              "dart_name": "other"
+            }
+          ],
+          "return": {
+            "kind": "i32"
+          }
+        },
+        {
           "name": "sum",
           "displayname": "sum(std::int32_t, std::int32_t)",
           "cursor_kind": "CXX_METHOD",
@@ -422,6 +447,39 @@
     }
   ],
   "functions": [
+    {
+      "name": "cloneWithOffset",
+      "qualified": "demo::api::cloneWithOffset",
+      "kind": "sync",
+      "method_id": 36494560,
+      "args": [
+        {
+          "name": "source",
+          "type": {
+            "kind": "opaque_class",
+            "name": "Counter",
+            "qualified": "demo::api::Counter"
+          },
+          "default_value": null
+        },
+        {
+          "name": "offset",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "opaque_class",
+        "name": "Counter",
+        "qualified": "demo::api::Counter"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+    },
     {
       "name": "sum_scores",
       "qualified": "demo::api::sum_scores",
@@ -989,6 +1047,39 @@
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "addCounters",
+      "qualified": "demo::api::addCounters",
+      "kind": "async",
+      "method_id": 1533879238,
+      "args": [
+        {
+          "name": "a",
+          "type": {
+            "kind": "opaque_class",
+            "name": "Counter",
+            "qualified": "demo::api::Counter"
+          },
+          "default_value": null
+        },
+        {
+          "name": "b",
+          "type": {
+            "kind": "opaque_class",
+            "name": "Counter",
+            "qualified": "demo::api::Counter"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+    },
+    {
       "name": "increment_u32",
       "qualified": "demo::api::increment_u32",
       "kind": "async",
@@ -1247,5 +1338,36 @@
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
-  "diagnostics": []
+  "diagnostics": [
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers"
+  ]
 }

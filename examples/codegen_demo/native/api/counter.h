@@ -37,6 +37,9 @@ class BRIDGE_OPAQUE Counter {
       std::optional<std::int32_t> value);
   BRIDGE_ASYNC async_simple::coro::Lazy<Counter> duplicate() const;
 
+  BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addTo(
+      const Counter& other);
+
   static BRIDGE_SYNC std::int32_t sum(std::int32_t a, std::int32_t b);
 
   BRIDGE_ASYNC async_simple::coro::Lazy<std::string> greetDartFn(
@@ -48,5 +51,13 @@ class BRIDGE_OPAQUE Counter {
  private:
   std::int32_t value_ = 0;
 };
+
+/// Free function: sum two Counter values (opaque as parameter, borrow semantics).
+BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addCounters(
+    const Counter& a, const Counter& b);
+
+/// Free function: create a new Counter with source's value + offset
+/// (opaque param → new opaque return, clone semantics).
+BRIDGE_SYNC Counter cloneWithOffset(const Counter& source, std::int32_t offset);
 
 }  // namespace demo::api

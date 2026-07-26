@@ -75,7 +75,7 @@ final class DartCppBridge implements Finalizable {
       _instance ?? (throw StateError('DartCppBridge not initialized'));
 
   /// Open a session on **this** isolate.
-  static Future<DartCppBridge> init({String? libraryPath}) async {
+  static Future<DartCppBridge> init({String? libraryPath, int poolThreads = 4}) async {
     if (_instance != null) return _instance!;
 
     final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
@@ -85,6 +85,9 @@ final class DartCppBridge implements Finalizable {
     if (rc != 0) {
       throw StateError('Dart_InitializeApiDL failed: $rc');
     }
+
+    // Configure pool size before runtime starts (session_open triggers start).
+    b.setPoolThreads(poolThreads);
 
     final rp = ReceivePort();
     final sessionId = b.sessionOpen(rp.sendPort.nativePort);

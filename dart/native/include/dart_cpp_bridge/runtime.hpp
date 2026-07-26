@@ -32,6 +32,9 @@ class Runtime {
   void stop();
   bool running() const { return started_.load(std::memory_order_acquire); }
 
+  /// Set thread pool size (must be called before start; default 4).
+  void set_pool_threads(std::uint32_t n) { pool_threads_ = n ? n : 1; }
+
   void ensure_running() {
     if (!running()) {
       throw std::runtime_error("runtime stopped");
@@ -87,6 +90,7 @@ class Runtime {
   std::unique_ptr<std::thread> io_thread_;
   std::unique_ptr<asio::thread_pool> pool_;
   std::atomic<bool> started_{false};
+  std::uint32_t pool_threads_{4};
   DartPostFn post_fn_{nullptr};
   void* post_userdata_{nullptr};
 };

@@ -58,6 +58,8 @@ typedef _FreeD = void Function(Pointer<Void>);
 
 typedef _SetVerboseErrorsC = Void Function(Uint8);
 typedef _SetVerboseErrorsD = void Function(int);
+typedef _SetPoolThreadsC = Void Function(Uint32);
+typedef _SetPoolThreadsD = void Function(int);
 
 class NativeBindings {
   NativeBindings(this.lib)
@@ -76,6 +78,9 @@ class NativeBindings {
         setVerboseErrors = lib.lookupFunction<_SetVerboseErrorsC, _SetVerboseErrorsD>(
           'dcb_set_verbose_errors',
         ),
+        setPoolThreads = lib.lookupFunction<_SetPoolThreadsC, _SetPoolThreadsD>(
+          'dcb_set_pool_threads',
+        ),
         dropObject = lib.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
           'dcb_drop_object',
         );
@@ -92,6 +97,7 @@ class NativeBindings {
   final _DartFnReplyD dartFnReply;
   final _FreeD free;
   final _SetVerboseErrorsD setVerboseErrors;
+  final _SetPoolThreadsD setPoolThreads;
   final Pointer<NativeFunction<Void Function(Pointer<Void>)>> dropObject;
 
   static DynamicLibrary openDefault({String? path}) {

@@ -361,6 +361,81 @@ void main() {
     },
   );
 
+  // --- Opaque as parameter (free functions) ---
+
+  group('opaque as parameter (codegen free functions)', () {
+    test('addCounters sums two Counter values (borrow semantics)', () async {
+      final a = Counter.int32T(initialValue: 10);
+      final b = Counter.int32T(initialValue: 20);
+      final result = await addCounters(a: a, b: b);
+      expect(result, 30);
+      // Both still usable after borrow.
+      expect(a.valueSync(), 10);
+      expect(b.valueSync(), 20);
+      a.dispose();
+      b.dispose();
+    });
+
+    test('addCounters with same object twice', () async {
+      final c = Counter.int32T(initialValue: 7);
+      final result = await addCounters(a: c, b: c);
+      expect(result, 14);
+      c.dispose();
+    });
+
+    test('cloneWithOffset creates new Counter with offset (sync)', () {
+      final source = Counter.int32T(initialValue: 100);
+      final cloned = cloneWithOffset(source: source, offset: 5);
+      expect(cloned.valueSync(), 105);
+      // Source unchanged.
+      expect(source.valueSync(), 100);
+      // They are independent.
+      source.dispose();
+      expect(cloned.valueSync(), 105);
+      cloned.dispose();
+    });
+
+    test('cloneWithOffset with negative offset', () {
+      final source = Counter.int32T(initialValue: 3);
+      final cloned = cloneWithOffset(source: source, offset: -10);
+      expect(cloned.valueSync(), -7);
+      source.dispose();
+      cloned.dispose();
+    });
+
+    test('addCounters with disposed Counter throws on Dart side', () async {
+      final a = Counter.int32T(initialValue: 1);
+      final b = Counter.int32T(initialValue: 2);
+      a.dispose();
+      await expectLater(
+        addCounters(a: a, b: b),
+        throwsA(isA<StateError>()),
+      );
+      b.dispose();
+    });
+
+    test('cloneWithOffset with disposed source throws on Dart side', () {
+      final source = Counter.int32T(initialValue: 5);
+      source.dispose();
+      expect(
+        () => cloneWithOffset(source: source, offset: 1),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('cloneWithOffset affects alive count', () {
+      final baseline = Counter.aliveCount();
+      final source = Counter.int32T(initialValue: 42);
+      expect(Counter.aliveCount(), baseline + 1);
+      final cloned = cloneWithOffset(source: source, offset: 0);
+      expect(Counter.aliveCount(), baseline + 2);
+      source.dispose();
+      expect(Counter.aliveCount(), baseline + 1);
+      cloned.dispose();
+      expect(Counter.aliveCount(), baseline);
+    });
+  });
+
   // --- Runtime error propagation tests (R01-R06) ---
 
   group('runtime error propagation', () {

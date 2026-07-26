@@ -196,4 +196,8 @@ DCB_API void dcb_set_verbose_errors(uint8_t enabled) {
   dcb::error::verbose().store(enabled != 0, std::memory_order_relaxed);
 }
 
+DCB_API void dcb_set_pool_threads(uint32_t n) {
+  dcb::Runtime::instance().set_pool_threads(n);
+}
+
 }  // extern "C"

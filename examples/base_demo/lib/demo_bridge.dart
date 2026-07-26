@@ -46,7 +46,13 @@ enum MethodId {
   counterSetValue(32),
   counterDuplicate(33),
   pairEcho(34),
-  tupleEcho(35);
+  tupleEcho(35),
+  // Opaque-as-parameter tests
+  counterAddValues(36),
+  counterTransferValue(37),
+  counterSumHandles(38),
+  counterCloneFrom(39),
+  counterConsumeAndNew(40);
 
   final int value;
   const MethodId(this.value);
@@ -286,6 +292,77 @@ extension DemoBridge on DartCppBridge {
       FutureOr<String> Function(String name) dartCallback) {
     return invokeStringToStringDartFn(
         MethodId.callDartHelloSync.value, null, dartCallback);
+  }
+
+  // -------------------------------------------------------------------------
+  // Opaque-as-parameter free functions.
+  // -------------------------------------------------------------------------
+
+  /// Free function: read two Counters and return the sum of their values.
+  /// Both handles remain valid after the call (borrow semantics).
+  Future<int> counterAddValues(Counter a, Counter b) async {
+    a.ensureAlive();
+    b.ensureAlive();
+    final payload = ByteWriter()
+      ..u64(a.handle)
+      ..u64(b.handle);
+    return ByteReader(await invokeAsyncMethod(
+            MethodId.counterAddValues.value, payload.takeBytes()))
+        .i32();
+  }
+
+  /// Free function: transfer src's value into dst (dst += src.value()).
+  /// Returns dst's new value. Both handles remain valid.
+  Future<int> counterTransferValue(
+      {required Counter src, required Counter dst}) async {
+    src.ensureAlive();
+    dst.ensureAlive();
+    final payload = ByteWriter()
+      ..u64(src.handle)
+      ..u64(dst.handle);
+    return ByteReader(await invokeAsyncMethod(
+            MethodId.counterTransferValue.value, payload.takeBytes()))
+        .i32();
+  }
+
+  /// Free function: sum the values of a list of Counters.
+  /// All handles remain valid after the call (borrow semantics).
+  Future<int> counterSumHandles(List<Counter> counters) async {
+    for (final c in counters) {
+      c.ensureAlive();
+    }
+    final payload = ByteWriter()..u32(counters.length);
+    for (final c in counters) {
+      payload.u64(c.handle);
+    }
+    return ByteReader(await invokeAsyncMethod(
+            MethodId.counterSumHandles.value, payload.takeBytes()))
+        .i32();
+  }
+
+  /// Free function: create a new Counter with the same value as [source].
+  /// Source handle remains valid (clone semantics).
+  Future<Counter> counterCloneFrom(Counter source) async {
+    source.ensureAlive();
+    final payload = ByteWriter()..u64(source.handle);
+    final newHandle = ByteReader(await invokeAsyncMethod(
+            MethodId.counterCloneFrom.value, payload.takeBytes()))
+        .u64();
+    return Counter.create_(bridge: this, handle: newHandle);
+  }
+
+  /// Free function: consume the original handle (drop it on C++ side) and
+  /// return a new Counter with the same value. Simulates FRB move semantics:
+  /// after this call the original Counter's native handle is invalid.
+  /// The Dart wrapper is NOT auto-disposed — caller should not use [source]
+  /// after calling this.
+  Future<Counter> counterConsumeAndNew(Counter source) async {
+    source.ensureAlive();
+    final payload = ByteWriter()..u64(source.handle);
+    final newHandle = ByteReader(await invokeAsyncMethod(
+            MethodId.counterConsumeAndNew.value, payload.takeBytes()))
+        .u64();
+    return Counter.create_(bridge: this, handle: newHandle);
   }
 
   /// Helper for string-to-string DartFn reverse calls.

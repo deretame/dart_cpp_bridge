@@ -97,6 +97,25 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   try {
     switch (method) {
 
+      case 36494560: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto sourceHandle = r.u64();
+        auto sourceObj = dcb::ObjectHandleRegistry::instance().get(sourceHandle);
+        if (!sourceObj) {
+          post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
+          break;
+        }
+        ::demo::api::Counter& source = *static_cast<::demo::api::Counter*>(sourceObj.get());
+        const auto offset = r.i32();
+        ByteWriter w;
+        {
+          auto out = ::demo::api::cloneWithOffset(source, offset);
+          { auto __obj = std::make_shared<::demo::api::Counter>(std::move(out)); g_Counter_alive_count.increment(session_id); const auto __handle = dcb::ObjectHandleRegistry::instance().insert(session_id, __obj, [session_id](std::shared_ptr<void>&) { g_Counter_alive_count.decrement(session_id); }); w.u64(__handle); }
+        }
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }
+
       case 66895156: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto scores = r.map<std::string, std::int32_t>([&]() { return r.str(); }, [&]() { return r.i32(); });
@@ -515,6 +534,39 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1533879238: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto aHandle = r.u64();
+        auto aObj = dcb::ObjectHandleRegistry::instance().get(aHandle);
+        if (!aObj) {
+          post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
+          break;
+        }
+        ::demo::api::Counter& a = *static_cast<::demo::api::Counter*>(aObj.get());
+        const auto bHandle = r.u64();
+        auto bObj = dcb::ObjectHandleRegistry::instance().get(bHandle);
+        if (!bObj) {
+          post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
+          break;
+        }
+        ::demo::api::Counter& b = *static_cast<::demo::api::Counter*>(bObj.get());
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, a, b]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::addCounters(a, b);
+                ByteWriter w;
+                w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "addCounters", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "addCounters", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1597460230: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = r.u32();
@@ -895,6 +947,38 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 479175197: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        if (!obj) {
+          post_err(session, gen, req, method, "Counter::addTo", "Counter handle not found or already dropped");
+          break;
+        }
+        const auto otherHandle = r.u64();
+        auto otherObj = dcb::ObjectHandleRegistry::instance().get(otherHandle);
+        if (!otherObj) {
+          post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
+          break;
+        }
+        ::demo::api::Counter& other = *static_cast<::demo::api::Counter*>(otherObj.get());
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, session_id, handle, obj, other]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await static_cast<::demo::api::Counter*>(obj.get())->addTo(other);
+                ByteWriter w;
+                w.i32(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "Counter::addTo", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "Counter::addTo", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1521970656: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto a = r.i32();
@@ -985,6 +1069,24 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
 
 std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len) {
   auto frame = parse_frame(data, len);
+
+  if (frame.method_id == 36494560u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto sourceHandle = r.u64();
+    auto sourceObj = dcb::ObjectHandleRegistry::instance().get(sourceHandle);
+    if (!sourceObj) {
+      ByteWriter ew; ew.i32(1); ew.str("Counter handle not found or already dropped");
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    }
+    ::demo::api::Counter& source = *static_cast<::demo::api::Counter*>(sourceObj.get());
+    const auto offset = r.i32();
+    ByteWriter w;
+    {
+      auto out = ::demo::api::cloneWithOffset(source, offset);
+      { auto __obj = std::make_shared<::demo::api::Counter>(std::move(out)); g_Counter_alive_count.increment(session_id); const auto __handle = dcb::ObjectHandleRegistry::instance().insert(session_id, __obj, [session_id](std::shared_ptr<void>&) { g_Counter_alive_count.decrement(session_id); }); w.u64(__handle); }
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
 
   if (frame.method_id == 513280939u) {
     ByteReader r(frame.payload.data(), frame.payload.size());

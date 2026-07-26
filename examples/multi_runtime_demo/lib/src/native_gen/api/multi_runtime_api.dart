@@ -7,23 +7,16 @@ import '../gcm_generated.dart';
 // Functions
 // ═════════════════════════════════════════════
 
-Future<String> stopWorkers() =>
-    BridgeApiImpl.instance.stopWorkers();
+Future<String> stopWorkers() => BridgeApiImpl.instance.stopWorkers();
 
-Future<String> startWorkers() =>
-    BridgeApiImpl.instance.startWorkers();
+Future<String> startWorkers() => BridgeApiImpl.instance.startWorkers();
 
-Future<String> pingWorker({required String payload}) =>
-    BridgeApiImpl.instance.pingWorker(payload);
+Future<String> pingWorker({required String payload}) => BridgeApiImpl.instance.pingWorker(payload);
 
-Future<String> processMessage({required String message}) =>
-    BridgeApiImpl.instance.processMessage(message);
+Future<String> processMessage({required String message}) => BridgeApiImpl.instance.processMessage(message);
 
-Future<String> pipeline({required String message}) =>
-    BridgeApiImpl.instance.pipeline(message);
+Future<String> pipeline({required String message}) => BridgeApiImpl.instance.pipeline(message);
 
-Future<(String, String)> fanOut({required String message}) =>
-    BridgeApiImpl.instance.fanOut(message);
+Future<(String, String)> fanOut({required String message}) => BridgeApiImpl.instance.fanOut(message);
 
-Stream<String> workerStream({int count = 5, int intervalMs = 50}) =>
-    BridgeApiImpl.instance.workerStream(count, intervalMs);
+Stream<String> workerStream({int count = 5, int intervalMs = 50}) => BridgeApiImpl.instance.workerStream(count, intervalMs);

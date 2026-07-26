@@ -24,7 +24,7 @@ void Runtime::start() {
   }
   io_.restart();
   executor_ = std::make_unique<AsioExecutor>(io_);
-  pool_ = std::make_unique<asio::thread_pool>(4);
+  pool_ = std::make_unique<asio::thread_pool>(pool_threads_);
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });

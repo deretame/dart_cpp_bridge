@@ -55,6 +55,11 @@ async_simple::coro::Lazy<Counter> Counter::duplicate() const {
   co_return Counter(value_);
 }
 
+async_simple::coro::Lazy<std::int32_t> Counter::addTo(const Counter& other) {
+  value_ += other.value_;
+  co_return value_;
+}
+
 std::int32_t Counter::sum(std::int32_t a, std::int32_t b) { return a + b; }
 
 async_simple::coro::Lazy<std::string> Counter::greetDartFn(
@@ -77,6 +82,15 @@ void Counter::tickStream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
                }
                sink.end();
              });
+}
+
+async_simple::coro::Lazy<std::int32_t> addCounters(const Counter& a,
+                                                   const Counter& b) {
+  co_return a.valueSync() + b.valueSync();
+}
+
+Counter cloneWithOffset(const Counter& source, std::int32_t offset) {
+  return Counter(source.valueSync() + offset);
 }
 
 }  // namespace demo::api

@@ -28,9 +28,20 @@ final class DcbLib {
   }
 
   /// Initialize (call once per Isolate).
-  static Future<void> init({String? libraryPath}) async {
+  ///
+  /// [threadPoolSize] sets the native thread pool concurrency (default 4).
+  /// [verboseErrors] controls whether C++ errors include function names (default true).
+  static Future<void> init({
+    String? libraryPath,
+    int threadPoolSize = 4,
+    bool verboseErrors = true,
+  }) async {
     if (_bridge != null) return;
-    final b = await DartCppBridge.init(libraryPath: libraryPath);
+    final b = await DartCppBridge.init(
+      libraryPath: libraryPath,
+      poolThreads: threadPoolSize,
+    );
+    b.setVerboseErrors(verboseErrors);
     _bridge = b;
     BridgeApiImpl.initSingleton(b);
   }
@@ -47,5 +58,12 @@ final class DcbLib {
     _bridge?.shutdown();
     _bridge = null;
     BridgeApiImpl.disposeSingleton();
+  }
+
+  /// Enable or disable verbose error messages (default: enabled).
+  ///
+  /// When enabled, C++ error messages are prefixed with `[function_name] `.
+  static void setVerboseErrors(bool enabled) {
+    bridge.setVerboseErrors(enabled);
   }
 }

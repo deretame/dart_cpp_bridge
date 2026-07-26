@@ -61,6 +61,12 @@ enum class MethodId : std::uint32_t {
   kCounterDuplicate = 33,
   kPairEcho = 34,
   kTupleEcho = 35,
+  // Opaque-as-parameter tests
+  kCounterAddValues = 36,      // free fn: read two Counters, return sum
+  kCounterTransferValue = 37,  // free fn: move value from src to dst
+  kCounterSumHandles = 38,     // free fn: sum a list of Counter handles
+  kCounterCloneFrom = 39,      // free fn: create new Counter from existing
+  kCounterConsumeAndNew = 40,  // free fn: drop original, return new (move semantics)
 };
 
 std::int32_t bridge_version() { return 1; }
@@ -246,6 +252,57 @@ std::shared_ptr<Counter> counter_checked_get(std::uint64_t handle, const char* o
 std::uint64_t counter_duplicate(std::uint64_t session_id, std::uint64_t handle) {
   auto obj = counter_checked_get(handle, "duplicating");
   return counter_create(session_id, obj->value());
+}
+
+// ---------------------------------------------------------------------------
+// Opaque-as-parameter free functions.
+// These test passing opaque object handles as function parameters (not `this`).
+// ---------------------------------------------------------------------------
+
+/// Read two Counter objects and return the sum of their values.
+/// Borrow semantics: both handles remain valid after the call.
+std::int32_t counter_add_values(std::uint64_t handle_a, std::uint64_t handle_b) {
+  auto a = counter_checked_get(handle_a, "addValues(a)");
+  auto b = counter_checked_get(handle_b, "addValues(b)");
+  return a->value() + b->value();
+}
+
+/// Transfer value from src to dst: dst += src.value(). Returns dst's new value.
+/// Both handles remain valid (borrow semantics).
+std::int32_t counter_transfer_value(std::uint64_t handle_src, std::uint64_t handle_dst) {
+  auto src = counter_checked_get(handle_src, "transferValue(src)");
+  auto dst = counter_checked_get(handle_dst, "transferValue(dst)");
+  dst->increment(src->value());
+  return dst->value();
+}
+
+/// Sum the values of a list of Counter handles.
+/// All handles remain valid after the call (borrow semantics).
+std::int32_t counter_sum_handles(const std::vector<std::uint64_t>& handles) {
+  std::int32_t sum = 0;
+  for (std::size_t i = 0; i < handles.size(); ++i) {
+    auto obj = counter_checked_get(handles[i], "sumHandles");
+    sum += obj->value();
+  }
+  return sum;
+}
+
+/// Create a new Counter with the same value as the source (clone semantics).
+/// Source handle remains valid.
+std::uint64_t counter_clone_from(std::uint64_t session_id, std::uint64_t handle) {
+  auto obj = counter_checked_get(handle, "cloneFrom");
+  return counter_create(session_id, obj->value());
+}
+
+/// Consume the original handle (drop it) and create a new Counter with the
+/// same value. Simulates FRB move/ownership-transfer semantics:
+/// after this call the original handle is invalid.
+std::uint64_t counter_consume_and_new(std::uint64_t session_id, std::uint64_t handle) {
+  auto obj = counter_checked_get(handle, "consumeAndNew");
+  const auto value = obj->value();
+  obj.reset();  // release our shared_ptr before dropping
+  ObjectHandleRegistry::instance().drop(handle);
+  return counter_create(session_id, value);
 }
 
 }  // namespace
@@ -902,6 +959,95 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           post_err(session, gen, req, method, "Counter::duplicate", e.what());
         } catch (...) {
           post_err(session, gen, req, method, "Counter::duplicate", "unknown");
+        }
+        break;
+      }
+      case MethodId::kCounterAddValues: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle_a = r.u64();
+        const auto handle_b = r.u64();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle_a, handle_b]() -> async_simple::coro::Lazy<> {
+              try {
+                const auto result = counter_add_values(handle_a, handle_b);
+                ByteWriter w;
+                w.i32(result);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "counterAddValues", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "counterAddValues", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterTransferValue: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle_src = r.u64();
+        const auto handle_dst = r.u64();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handle_src, handle_dst]() -> async_simple::coro::Lazy<> {
+              try {
+                const auto result = counter_transfer_value(handle_src, handle_dst);
+                ByteWriter w;
+                w.i32(result);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "counterTransferValue", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "counterTransferValue", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterSumHandles: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        auto handles = r.vec<std::uint64_t>([&r]() { return r.u64(); });
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, handles = std::move(handles)]() -> async_simple::coro::Lazy<> {
+              try {
+                const auto result = counter_sum_handles(handles);
+                ByteWriter w;
+                w.i32(result);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "counterSumHandles", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "counterSumHandles", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+      case MethodId::kCounterCloneFrom: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        try {
+          auto new_handle = counter_clone_from(session_id, handle);
+          ByteWriter w;
+          w.u64(new_handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, "counterCloneFrom", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "counterCloneFrom", "unknown");
+        }
+        break;
+      }
+      case MethodId::kCounterConsumeAndNew: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        try {
+          auto new_handle = counter_consume_and_new(session_id, handle);
+          ByteWriter w;
+          w.u64(new_handle);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception& e) {
+          post_err(session, gen, req, method, "counterConsumeAndNew", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "counterConsumeAndNew", "unknown");
         }
         break;
       }

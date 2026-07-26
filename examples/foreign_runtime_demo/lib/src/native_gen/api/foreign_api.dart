@@ -7,17 +7,12 @@ import '../gcm_generated.dart';
 // Functions
 // ═════════════════════════════════════════════
 
-Future<String> startUvWorker() =>
-    BridgeApiImpl.instance.startUvWorker();
+Future<String> startUvWorker() => BridgeApiImpl.instance.startUvWorker();
 
-Future<int> uvCompute({required int n}) =>
-    BridgeApiImpl.instance.uvCompute(n);
+Future<int> uvCompute({required int n}) => BridgeApiImpl.instance.uvCompute(n);
 
-Stream<String> uvStream({int count = 5, int intervalMs = 50}) =>
-    BridgeApiImpl.instance.uvStream(count, intervalMs);
+Stream<String> uvStream({int count = 5, int intervalMs = 50}) => BridgeApiImpl.instance.uvStream(count, intervalMs);
 
-Future<String> askUv({required String message}) =>
-    BridgeApiImpl.instance.askUv(message);
+Future<String> askUv({required String message}) => BridgeApiImpl.instance.askUv(message);
 
-Future<String> stopUvWorker() =>
-    BridgeApiImpl.instance.stopUvWorker();
+Future<String> stopUvWorker() => BridgeApiImpl.instance.stopUvWorker();
