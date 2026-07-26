@@ -36,7 +36,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 | Dart side | Dart 3 + `package:ffi` | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`. |
 | Dart SDK | `>= 3.10.0` | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+. |
 | Codegen | Pinned Python 3.13.13 + libclang-ng 22.1.4.2 | Downloaded from remote, cached, hash-verified. No host Python/LLVM. |
-| Build | CMake 3.20+ | FetchContent pulls Asio/async-simple. Native Assets hook is not yet wired. |
+| Build | CMake 3.24+ | FetchContent pulls Asio/async-simple. Native Assets hook is not yet wired. |
 
 ## Directory structure
 
@@ -101,7 +101,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 
 ### Requirements
 
-- CMake >= 3.20
+- CMake >= 3.24
 - C++20 compiler (MSVC 2019+, GCC 10+, Clang 12+)
 - Dart SDK >= 3.10.0
 - Git (for FetchContent)

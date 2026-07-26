@@ -165,7 +165,7 @@ This suspends on an `asio::steady_timer` on the io event loop (via `AsioExecutor
 
 ### Requirements
 
-- CMake ≥ 3.20  
+- CMake ≥ 3.24  
 - **C++20** compiler  
 - Git (FetchContent pulls Asio / async-simple)  
 - **Dart SDK ≥ 3.10** (`dart/pubspec.yaml`: `sdk: ^3.10.0`)  

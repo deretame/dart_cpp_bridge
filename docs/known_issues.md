@@ -171,5 +171,5 @@ Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单�
 
 ### 7.4 彻底解决
 
-单独安装 CMake（>= 3.20）并确保安装程序勾选“Add CMake to the system PATH for all users / current user”。
+单独安装 CMake（>= 3.24）并确保安装程序勾选“Add CMake to the system PATH for all users / current user”。
 

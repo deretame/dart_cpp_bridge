@@ -165,7 +165,7 @@ co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
 
 ### 环境
 
-- CMake ≥ 3.20  
+- CMake ≥ 3.24  
 - **C++20** 编译器  
 - Git（FetchContent 拉取 Asio / async-simple）  
 - **Dart SDK ≥ 3.10**（`dart/pubspec.yaml`：`sdk: ^3.10.0`）  
