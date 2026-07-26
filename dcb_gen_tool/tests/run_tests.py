@@ -747,6 +747,113 @@ std::int32_t func_a(std::int32_t x);
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# TS: BRIDGE_TO_STRING validation
+# ---------------------------------------------------------------------------
+def test_ts01_valid_to_string() -> None:
+    header = HEADER_PREAMBLE + """
+class BRIDGE_OPAQUE Widget {
+ public:
+  BRIDGE_CONSTRUCTOR Widget();
+  BRIDGE_TO_STRING std::string toString() const;
+};
+
+BRIDGE_SYNC
+std::int32_t dummy();
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        # exit==0 means no validation error rejected the BRIDGE_TO_STRING.
+        passed = r.returncode == 0 and "BRIDGE_TO_STRING" not in combined
+        _record(
+            "TS01: valid BRIDGE_TO_STRING accepted",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+def test_ts02_to_string_wrong_return() -> None:
+    header = HEADER_PREAMBLE + """
+class BRIDGE_OPAQUE Widget {
+ public:
+  BRIDGE_CONSTRUCTOR Widget();
+  BRIDGE_TO_STRING std::int32_t toString() const;
+};
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "return std::string" in combined
+        _record(
+            "TS02: BRIDGE_TO_STRING non-string return rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+def test_ts03_to_string_with_args() -> None:
+    header = HEADER_PREAMBLE + """
+class BRIDGE_OPAQUE Widget {
+ public:
+  BRIDGE_CONSTRUCTOR Widget();
+  BRIDGE_TO_STRING std::string toString(std::int32_t x) const;
+};
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "no arguments" in combined
+        _record(
+            "TS03: BRIDGE_TO_STRING with arguments rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+def test_ts04_to_string_static() -> None:
+    header = HEADER_PREAMBLE + """
+class BRIDGE_OPAQUE Widget {
+ public:
+  BRIDGE_CONSTRUCTOR Widget();
+  static BRIDGE_TO_STRING std::string toString();
+};
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "instance method" in combined
+        _record(
+            "TS04: static BRIDGE_TO_STRING rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+def test_ts05_to_string_async() -> None:
+    header = HEADER_PREAMBLE + """
+class BRIDGE_OPAQUE Widget {
+ public:
+  BRIDGE_CONSTRUCTOR Widget();
+  BRIDGE_TO_STRING async_simple::coro::Lazy<std::string> toString() const;
+};
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "synchronous" in combined
+        _record(
+            "TS05: async BRIDGE_TO_STRING rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
 def main() -> int:
     print("=" * 60)
     print("Codegen Parser Defensive Tests")
@@ -776,6 +883,12 @@ def main() -> int:
         test_y03_missing_include_paths,
         test_y04_invalid_yaml,
         test_s03_order_independence,
+        # BRIDGE_TO_STRING validation
+        test_ts01_valid_to_string,
+        test_ts02_to_string_wrong_return,
+        test_ts03_to_string_with_args,
+        test_ts04_to_string_static,
+        test_ts05_to_string_async,
     ]
 
     workers = int(os.environ.get("DCB_TEST_WORKERS", "0")) or min(len(tests), os.cpu_count() or 4)

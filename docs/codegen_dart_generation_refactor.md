@@ -422,4 +422,50 @@ dart_api_subdir: api
 | optional 参数 | Dart 侧为 `T?`，不加 `required` |
 | 元组参数 | 整个元组作为一个命名参数，必选加 `required`，可选不加 |
 | opaque class 构造 | 生成为 `factory`，多构造函数通过类型签名后缀区分 |
+| data_class toString | 默认自动生成 `toString()`（如 `Point(x: $x, y: $y)`）；可用 YAML `dart_code` 注入自定义 Dart 代码覆盖 |
+| opaque class toString | 用 `BRIDGE_TO_STRING` 标记一个同步方法（返回 `std::string`、无参、非静态），生成 Dart `toString()` override |
 | 迁移兼容 | 不需要（库未发布，无用户） |
+
+---
+
+## 8. toString 支持
+
+数据类与不透明类的状态可见性不同，因此采用两套机制：
+
+### data_class：默认 toString + YAML `dart_code`
+
+所有 data_class 自动生成标准 `toString()`，无需配置：
+
+```dart
+@override
+String toString() => 'Point(x: $x, y: $y)';
+```
+
+需要定制时，在 `dart_cpp_bridge.yaml` 中按类名注入任意 Dart 代码（原样插入类体末尾，并禁用默认 toString）。C++ 没有过程宏，Dart 代码放在 YAML 多行块标量中比塞进 C++ 字符串更合理：
+
+```yaml
+dart_code:
+  Rect: |
+    @override
+    String toString() => 'Rect[$topLeft -> $bottomRight]';
+```
+
+### opaque_class：`BRIDGE_TO_STRING` 宏
+
+不透明类的状态在 C++ 侧，纯 Dart 的 toString 无法访问，因此指定一个 C++ 方法走 wire 调用：
+
+```cpp
+class BRIDGE_OPAQUE Counter {
+ public:
+  BRIDGE_TO_STRING std::string toString() const;
+};
+```
+
+约束（parser 校验，违反则 codegen 报错）：必须是同步实例方法、无参数、返回 `std::string`、非 `Lazy`、每类至多一个。生成效果：
+
+```dart
+@override
+String toString() => BridgeApiImpl.instance.counterToString(this);
+```
+
+impl 内部照常 `ensureAlive()`，对已 dispose 的对象调用 toString 会抛 `StateError`（与其他方法一致）。

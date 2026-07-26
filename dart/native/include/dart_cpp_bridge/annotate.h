@@ -14,6 +14,7 @@
 #  define DCB_EXPORT __attribute__((annotate("bridge::export")))
 #  define DCB_DATA_CLASS __attribute__((annotate("bridge::data_class")))
 #  define DCB_OPAQUE __attribute__((annotate("bridge::opaque")))
+#  define DCB_TO_STRING __attribute__((annotate("bridge::to_string")))
 #else
 #  define DCB_SYNC
 #  define DCB_ASYNC
@@ -23,6 +24,7 @@
 #  define DCB_EXPORT
 #  define DCB_DATA_CLASS
 #  define DCB_OPAQUE
+#  define DCB_TO_STRING
 #endif
 
 #ifndef BRIDGE_SYNC
@@ -34,4 +36,5 @@
 #  define BRIDGE_EXPORT DCB_EXPORT
 #  define BRIDGE_DATA_CLASS DCB_DATA_CLASS
 #  define BRIDGE_OPAQUE DCB_OPAQUE
+#  define BRIDGE_TO_STRING DCB_TO_STRING
 #endif

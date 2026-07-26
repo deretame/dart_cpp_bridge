@@ -812,6 +812,24 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1826397364: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto handle = r.u64();
+        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        if (!obj) {
+          post_err(session, gen, req, method, "Counter::toString", "Counter handle not found or already dropped");
+          break;
+        }
+        
+        ByteWriter w;
+        {
+          auto out = static_cast<::demo::api::Counter*>(obj.get())->toString();
+          w.str(out);
+        }
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }
+
       case 1534254823: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
@@ -1162,6 +1180,25 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     {
       auto out = static_cast<::demo::api::Counter*>(obj.get())->valueSync();
       w.i32(out);
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
+
+  if (frame.method_id == 1826397364u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto handle = r.u64();
+        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        if (!obj) {
+          ByteWriter ew;
+          ew.i32(1);
+          ew.str("Counter handle not found or already dropped");
+          return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+        }
+        
+    ByteWriter w;
+    {
+      auto out = static_cast<::demo::api::Counter*>(obj.get())->toString();
+      w.str(out);
     }
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }

@@ -17,3 +17,11 @@ std: c++20
 defines:
   - BRIDGE_CODEGEN
   - DART_CPP_BRIDGE_CODEGEN
+
+# Optional: custom Dart code injected verbatim into a generated data class
+# body. When present for a type it replaces the auto-generated toString().
+# Point keeps the default toString; Rect shows a custom one.
+dart_code:
+  Rect: |
+    @override
+    String toString() => 'Rect[$topLeft -> $bottomRight]';

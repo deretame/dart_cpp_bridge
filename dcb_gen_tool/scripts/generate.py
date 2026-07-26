@@ -707,8 +707,17 @@ def _cpp_class_method_cases(
     return cases, sync_cases
 
 
-def _dart_data_class_defs(classes: list[dict[str, Any]]) -> str:
-    """Generate immutable Dart data classes with const constructors."""
+def _dart_data_class_defs(
+    classes: list[dict[str, Any]],
+    custom_code: dict[str, str] | None = None,
+) -> str:
+    """Generate immutable Dart data classes with const constructors.
+
+    Each class gets a default `toString()`. If `custom_code` provides an entry
+    for a class name, that Dart code is injected verbatim at the end of the
+    class body instead (and the default toString is suppressed).
+    """
+    custom_code = custom_code or {}
     defs: list[str] = []
     for cls in classes:
         name = cls["name"]
@@ -729,6 +738,22 @@ def _dart_data_class_defs(classes: list[dict[str, Any]]) -> str:
         field_s = "\n".join(field_lines)
         equals_s = " &&\n".join(equals_parts) if equals_parts else "        true"
         hash_args = ", ".join(hash_fields) if hash_fields else "0"
+
+        # Class-body tail: custom dart_code (verbatim) or a default toString.
+        user_code = custom_code.get(name)
+        if user_code:
+            code_lines = [
+                f"  {ln}" if ln.strip() else ""
+                for ln in str(user_code).rstrip("\n").split("\n")
+            ]
+            tail = "\n" + "\n".join(code_lines) + "\n"
+        else:
+            ts_parts = ", ".join(f"{dn}: ${dn}" for dn in hash_fields)
+            tail = (
+                "\n  @override\n"
+                f"  String toString() => '{name}({ts_parts})';\n"
+            )
+
         defs.append(
             f"""/// Generated data class for `{cls['qualified']}`.
 final class {name} {{
@@ -746,7 +771,7 @@ final class {name} {{
 
   @override
   int get hashCode => Object.hash({hash_args});
-}}"""
+{tail}}}"""
         )
     return "\n\n".join(defs)
 
@@ -2240,6 +2265,7 @@ def generate_dart_api_files(
     *,
     impl_class: str = "BridgeApiImpl",
     lib_class: str = "DcbLib",
+    dart_code: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Generate per-header Dart API files.
 
@@ -2360,7 +2386,7 @@ def generate_dart_api_files(
             lines.append("// Data classes")
             lines.append("// " + "═" * 45)
             lines.append("")
-            lines.append(_dart_data_class_defs(data_classes))
+            lines.append(_dart_data_class_defs(data_classes, custom_code=dart_code))
             lines.append("")
 
         # Generate top-level functions — all are thin `=>` forwards.
@@ -2441,10 +2467,12 @@ def _dart_opaque_class_wrapper_new(
             lines.append(f"      {impl_class}.instance.{impl_name}({call_args});")
             lines.append("")
 
-    # Instance methods.
+    # Instance methods (the designated toString method is handled separately).
     instance_methods = [
         m for m in cls.get("methods", [])
-        if m["kind"] != "constructor" and not m.get("is_static", False)
+        if m["kind"] != "constructor"
+        and not m.get("is_static", False)
+        and not m.get("to_string", False)
     ]
     if instance_methods:
         lines.append("  // ── Instance Methods ──")
@@ -2453,6 +2481,16 @@ def _dart_opaque_class_wrapper_new(
             lines.extend(_dart_opaque_method_lines(cls, method, is_static=False,
                                                    impl_class=impl_class, lib_class=lib_class))
             lines.append("")
+
+    # Designated toString (BRIDGE_TO_STRING): forward to the sync wire method.
+    to_string_method = next(
+        (m for m in cls.get("methods", []) if m.get("to_string", False)), None
+    )
+    if to_string_method:
+        impl_name = _class_impl_method_name(cls, to_string_method)
+        lines.append("  @override")
+        lines.append(f"  String toString() => {impl_class}.instance.{impl_name}(this);")
+        lines.append("")
 
     # Static methods.
     static_methods = [
@@ -2535,6 +2573,12 @@ def run_generate(config_path: Path) -> dict[str, Any]:
     impl_file = str(raw.get("dart_impl_file", "gcm_generated.dart"))
     api_subdir = str(raw.get("dart_api_subdir", "api"))
 
+    # Optional per-type custom Dart code injected into data class bodies
+    # (e.g. a custom toString). Keys are data class names.
+    dart_code_cfg = raw.get("dart_code") or {}
+    if not isinstance(dart_code_cfg, dict):
+        dart_code_cfg = {}
+
     # API headers to include in wire: relative paths from cpp_root if possible
     api_includes: list[str] = []
     for h in ir["headers"]:
@@ -2556,6 +2600,7 @@ def run_generate(config_path: Path) -> dict[str, Any]:
         ir,
         impl_class=impl_class,
         lib_class=lib_class,
+        dart_code={str(k): str(v) for k, v in dart_code_cfg.items()},
     )
 
     cpp_out: Path = cfg["cpp_wire_output"]

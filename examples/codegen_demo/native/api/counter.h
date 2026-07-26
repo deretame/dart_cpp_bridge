@@ -29,6 +29,10 @@ class BRIDGE_OPAQUE Counter {
   BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> value() const;
   BRIDGE_SYNC std::int32_t valueSync() const;
 
+  /// Designated toString: codegen turns this into the Dart `toString()`
+  /// override on the opaque wrapper (sync wire call).
+  BRIDGE_TO_STRING std::string toString() const;
+
   BRIDGE_ASYNC async_simple::coro::Lazy<void> increment(std::int32_t delta = 1);
   BRIDGE_NORMAL std::int32_t sleepAndGet(std::int32_t sleepMs);
   BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addList(

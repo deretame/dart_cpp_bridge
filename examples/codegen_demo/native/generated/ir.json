@@ -54,6 +54,7 @@
           "cursor_kind": "CONSTRUCTOR",
           "kind": "constructor",
           "is_static": false,
+          "to_string": false,
           "method_id": 546811180,
           "attrs": [
             "bridge::constructor"
@@ -78,6 +79,7 @@
           "cursor_kind": "CONSTRUCTOR",
           "kind": "constructor",
           "is_static": false,
+          "to_string": false,
           "method_id": 1174608690,
           "attrs": [
             "bridge::constructor"
@@ -93,6 +95,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1819503097,
           "attrs": [
             "bridge::async"
@@ -108,6 +111,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "sync",
           "is_static": false,
+          "to_string": false,
           "method_id": 190346512,
           "attrs": [
             "bridge::sync"
@@ -118,11 +122,28 @@
           }
         },
         {
+          "name": "toString",
+          "displayname": "toString()",
+          "cursor_kind": "CXX_METHOD",
+          "kind": "sync",
+          "is_static": false,
+          "to_string": true,
+          "method_id": 1826397364,
+          "attrs": [
+            "bridge::to_string"
+          ],
+          "args": [],
+          "return": {
+            "kind": "string"
+          }
+        },
+        {
           "name": "increment",
           "displayname": "increment(std::int32_t)",
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1534254823,
           "attrs": [
             "bridge::async"
@@ -147,6 +168,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "normal",
           "is_static": false,
+          "to_string": false,
           "method_id": 809700219,
           "attrs": [
             "bridge::normal"
@@ -171,6 +193,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1623490793,
           "attrs": [
             "bridge::async"
@@ -198,6 +221,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1197060560,
           "attrs": [
             "bridge::async"
@@ -225,6 +249,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1724183534,
           "attrs": [
             "bridge::async"
@@ -234,7 +259,7 @@
             "kind": "opaque_class",
             "name": "Counter",
             "qualified": "demo::api::Counter",
-            "loc": "counter.h:38"
+            "loc": "counter.h:42"
           }
         },
         {
@@ -243,6 +268,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 479175197,
           "attrs": [
             "bridge::async"
@@ -254,7 +280,7 @@
                 "kind": "opaque_class",
                 "name": "Counter",
                 "qualified": "demo::api::Counter",
-                "loc": "counter.h:41"
+                "loc": "counter.h:45"
               },
               "default_value": null,
               "dart_name": "other"
@@ -270,6 +296,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "sync",
           "is_static": true,
+          "to_string": false,
           "method_id": 1521970656,
           "attrs": [
             "bridge::sync"
@@ -302,6 +329,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "async",
           "is_static": false,
+          "to_string": false,
           "method_id": 1190014947,
           "attrs": [
             "bridge::async"
@@ -343,6 +371,7 @@
           "cursor_kind": "CXX_METHOD",
           "kind": "stream",
           "is_static": false,
+          "to_string": false,
           "method_id": 550621099,
           "attrs": [],
           "args": [

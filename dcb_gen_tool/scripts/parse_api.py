@@ -27,6 +27,7 @@ ATTR_CONSTRUCTOR = "bridge::constructor"
 ATTR_DESTRUCTOR = "bridge::destructor"
 ATTR_DATA_CLASS = "bridge::data_class"
 ATTR_OPAQUE = "bridge::opaque"
+ATTR_TO_STRING = "bridge::to_string"
 
 
 def _stable_method_id(qualified: str) -> int:
@@ -234,6 +235,7 @@ def _collect_classes(
             fields: list[dict[str, Any]] = []
             methods: list[dict[str, Any]] = []
             has_exported_method = False
+            to_string_seen = False
             violations: list[str] = []
 
             # C01: check for virtual methods.
@@ -278,6 +280,7 @@ def _collect_classes(
                     if not _is_public(ch):
                         continue
                     method_attrs = _cursor_attrs(ch)
+                    is_to_string = ATTR_TO_STRING in method_attrs
 
                     args = []
                     for p in ch.get_children():
@@ -302,6 +305,7 @@ def _collect_classes(
                         ATTR_NORMAL,
                         ATTR_CONSTRUCTOR,
                         ATTR_DESTRUCTOR,
+                        ATTR_TO_STRING,
                     }
                     if not (method_attrs & exported_attrs) and not _has_stream_sink(args):
                         continue
@@ -318,7 +322,9 @@ def _collect_classes(
                             loc=_cursor_loc(ch),
                         )
 
-                    if ch.kind == CursorKind.CONSTRUCTOR or ATTR_CONSTRUCTOR in method_attrs:
+                    if is_to_string:
+                        method_kind = "sync"
+                    elif ch.kind == CursorKind.CONSTRUCTOR or ATTR_CONSTRUCTOR in method_attrs:
                         method_kind = "constructor"
                     elif _has_stream_sink(args):
                         method_kind = "stream"
@@ -332,7 +338,8 @@ def _collect_classes(
                         method_kind = "sync"  # default for constructors
 
                     # Strip Lazy wrapper; wire payload carries the inner type.
-                    if ret.get("kind") == "lazy":
+                    was_lazy = ret.get("kind") == "lazy"
+                    if was_lazy:
                         ret = ret["inner"]
 
                     is_static = False
@@ -340,6 +347,42 @@ def _collect_classes(
                         is_static = bool(ch.is_static_method())
                     except Exception:
                         pass
+
+                    if is_to_string:
+                        loc = _cursor_loc(ch)
+                        if to_string_seen:
+                            violations.append(
+                                f"class `{qname}` at {_cursor_loc(cursor)}: "
+                                f"only one BRIDGE_TO_STRING method is allowed "
+                                f"(found extra `{ch.spelling}`)"
+                            )
+                        to_string_seen = True
+                        if ch.kind != CursorKind.CXX_METHOD:
+                            violations.append(
+                                f"method `{ch.spelling}` at {loc}: "
+                                f"BRIDGE_TO_STRING is only valid on methods"
+                            )
+                        elif was_lazy:
+                            violations.append(
+                                f"method `{ch.spelling}` at {loc}: "
+                                f"BRIDGE_TO_STRING must be synchronous "
+                                f"(return std::string, not Lazy)"
+                            )
+                        elif ret.get("kind") != "string":
+                            violations.append(
+                                f"method `{ch.spelling}` at {loc}: "
+                                f"BRIDGE_TO_STRING must return std::string"
+                            )
+                        elif is_static:
+                            violations.append(
+                                f"method `{ch.spelling}` at {loc}: "
+                                f"BRIDGE_TO_STRING must be an instance method"
+                            )
+                        elif args:
+                            violations.append(
+                                f"method `{ch.spelling}` at {loc}: "
+                                f"BRIDGE_TO_STRING must take no arguments"
+                            )
 
                     sig_qname = qname + "::" + (ch.displayname or ch.spelling)
                     methods.append(
@@ -349,6 +392,7 @@ def _collect_classes(
                             "cursor_kind": ch.kind.name,
                             "kind": method_kind,
                             "is_static": is_static,
+                            "to_string": is_to_string,
                             "method_id": _stable_method_id(sig_qname),
                             "attrs": sorted(method_attrs),
                             "args": args,

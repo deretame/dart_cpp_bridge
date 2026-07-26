@@ -197,6 +197,16 @@ void main() {
     expect(await distance(a: a, b: a), closeTo(0.0, 1e-9));
   });
 
+  test('data class toString (default + custom dart_code)', () {
+    const p = Point(x: 1.0, y: 2.0);
+    expect(p.toString(), 'Point(x: 1.0, y: 2.0)');
+    const r = Rect(
+      topLeft: Point(x: 0.0, y: 0.0),
+      bottomRight: Point(x: 3.0, y: 4.0),
+    );
+    expect(r.toString(), 'Rect[Point(x: 0.0, y: 0.0) -> Point(x: 3.0, y: 4.0)]');
+  });
+
   test('data class scale', () async {
     final p = const Point(x: 1.5, y: -2.0);
     final scaled = await scale(p: p, factor: 2.0);
@@ -228,6 +238,13 @@ void main() {
     final counter = Counter.int32T(initialValue: 10);
     expect(await counter.value(), 10);
     expect(counter.valueSync(), 10);
+  });
+
+  test('opaque class Counter toString (BRIDGE_TO_STRING)', () async {
+    final counter = Counter.int32T(initialValue: 42);
+    expect(counter.toString(), 'Counter(value: 42)');
+    await counter.increment(delta: 1);
+    expect('$counter', 'Counter(value: 43)');
   });
 
   test('opaque class Counter default constructor', () async {

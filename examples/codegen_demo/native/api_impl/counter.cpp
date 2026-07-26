@@ -25,6 +25,10 @@ async_simple::coro::Lazy<std::int32_t> Counter::value() const { co_return value_
 
 std::int32_t Counter::valueSync() const { return value_; }
 
+std::string Counter::toString() const {
+  return "Counter(value: " + std::to_string(value_) + ")";
+}
+
 async_simple::coro::Lazy<void> Counter::increment(std::int32_t delta) {
   value_ += delta;
   co_return;

@@ -225,9 +225,10 @@ Errors are always encoded as frames with `msg_type=responseErr` and payload `cod
 - **Error handling**: at the wire boundary always catch `const std::exception&` first, then `(...)`. Encode errors into frames; do not let exceptions propagate across FFI.
 - **Dart**: follows standard Dart package conventions, `package:lints` for static analysis. Use `final` and `StateError` for runtime failures.
 - **Naming**: C++ namespace `dcb`, generated wire namespace `dcb::demo`. Dart classes use `PascalCase`.
-- **Codegen markers**: in user headers use `BRIDGE_SYNC`, `BRIDGE_ASYNC`, `BRIDGE_NORMAL`, `BRIDGE_EXPORT`, `BRIDGE_DATA_CLASS`, or `BRIDGE_OPAQUE` (also aliased as `DCB_*`). They expand to `__attribute__((annotate("bridge::*")))` only when `BRIDGE_CODEGEN` / `DART_CPP_BRIDGE_CODEGEN` is defined; otherwise they expand to nothing, so normal compilation emits no warnings.
+- **Codegen markers**: in user headers use `BRIDGE_SYNC`, `BRIDGE_ASYNC`, `BRIDGE_NORMAL`, `BRIDGE_EXPORT`, `BRIDGE_DATA_CLASS`, `BRIDGE_OPAQUE`, or `BRIDGE_TO_STRING` (also aliased as `DCB_*`). They expand to `__attribute__((annotate("bridge::*")))` only when `BRIDGE_CODEGEN` / `DART_CPP_BRIDGE_CODEGEN` is defined; otherwise they expand to nothing, so normal compilation emits no warnings.
   - `BRIDGE_DATA_CLASS`: marks a pure data class (fields only, no exported methods). Validated: no inheritance, no virtuals, no `BRIDGE_SYNC/ASYNC/NORMAL` methods.
   - `BRIDGE_OPAQUE`: marks an opaque class (methods only, public fields ignored). Aligns with FRB `RustAutoOpaque`. For field access, hand-write `BRIDGE_SYNC` getter/setter methods.
+  - `BRIDGE_TO_STRING`: marks an opaque-class method as the source of the Dart `toString()` override. Must be a sync instance method returning `std::string` with no args (validated); generates a wire-call `toString()` on the wrapper.
   - `BRIDGE_EXPORT` (legacy): auto-detects — has exported methods → opaque, otherwise → data_class.
 
 ## Testing instructions

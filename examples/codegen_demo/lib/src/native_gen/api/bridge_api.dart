@@ -30,6 +30,9 @@ final class Point {
 
   @override
   int get hashCode => Object.hash(x, y);
+
+  @override
+  String toString() => 'Point(x: $x, y: $y)';
 }
 
 /// Generated data class for `demo::api::Rect`.
@@ -51,6 +54,9 @@ final class Rect {
 
   @override
   int get hashCode => Object.hash(topLeft, bottomRight);
+
+  @override
+  String toString() => 'Rect[$topLeft -> $bottomRight]';
 }
 
 // ═════════════════════════════════════════════

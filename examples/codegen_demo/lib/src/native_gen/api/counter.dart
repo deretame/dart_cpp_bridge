@@ -53,6 +53,9 @@ final class Counter extends CppOpaqueInterface {
 
   Stream<int> tickStream({int count = 5, int intervalMs = 10}) => BridgeApiImpl.instance.counterTickStream(this, count, intervalMs);
 
+  @override
+  String toString() => BridgeApiImpl.instance.counterToString(this);
+
   // ── Static Methods ──
 
   static int sum({required int a, required int b}) => BridgeApiImpl.instance.counterSum(a, b);

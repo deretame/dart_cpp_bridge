@@ -90,6 +90,7 @@ final class BridgeApiImpl {
   static const int counterNewId = 1174608690;
   static const int counterValueId = 1819503097;
   static const int counterValueSyncId = 190346512;
+  static const int counterToStringId = 1826397364;
   static const int counterIncrementId = 1534254823;
   static const int counterSleepAndGetId = 809700219;
   static const int counterAddListId = 1623490793;
@@ -429,6 +430,15 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = bridge.invokeSyncMethod(counterValueSyncId, _payloadBytes);
     return ByteReader(_bytes).i32();
+  }
+
+  String counterToString(Counter self) {
+    self.ensureAlive();
+    final _payload = ByteWriter();
+    _payload.u64(self.handle);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(counterToStringId, _payloadBytes);
+    return ByteReader(_bytes).str();
   }
 
   Future<void> counterIncrement(Counter self, int delta) async {

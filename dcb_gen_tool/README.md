@@ -58,6 +58,17 @@ dart_output: lib/src/native_gen
 cpp_output: native/generated
 ```
 
+Optionally inject custom Dart code into generated data class bodies (e.g. a
+custom `toString()`); when present for a type it replaces the auto-generated
+`toString()`:
+
+```yaml
+dart_code:
+  Rect: |
+    @override
+    String toString() => 'Rect[$topLeft -> $bottomRight]';
+```
+
 ## How it works
 
 1. **Bootstrap**: Downloads [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
@@ -69,7 +80,8 @@ cpp_output: native/generated
 
 2. **Parse**: Uses libclang (via Python) to parse C++ headers and extract
    functions/classes annotated with `BRIDGE_SYNC`, `BRIDGE_ASYNC`,
-   `BRIDGE_NORMAL`, `BRIDGE_OPAQUE`, `BRIDGE_DATA_CLASS` markers.
+   `BRIDGE_NORMAL`, `BRIDGE_OPAQUE`, `BRIDGE_DATA_CLASS`, `BRIDGE_TO_STRING`
+   markers.
 
 3. **Generate**: Emits:
    - **Dart API layer** (`api/*.dart`) — thin user-facing functions/classes
