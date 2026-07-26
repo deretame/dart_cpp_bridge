@@ -5,7 +5,53 @@ import 'dart:async';
 
 import '../gcm_generated.dart';
 
-export '../gcm_generated.dart' show OrderStatus, Point, Rect;
+export '../gcm_generated.dart' show OrderStatus;
+
+// ═════════════════════════════════════════════
+// Data classes
+// ═════════════════════════════════════════════
+
+/// Generated data class for `demo::api::Point`.
+final class Point {
+  const Point({
+    required this.x,
+    required this.y,
+  });
+
+  final double x;
+  final double y;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Point &&
+        x == other.x &&
+        y == other.y);
+
+  @override
+  int get hashCode => Object.hash(x, y);
+}
+
+/// Generated data class for `demo::api::Rect`.
+final class Rect {
+  const Rect({
+    required this.topLeft,
+    required this.bottomRight,
+  });
+
+  final Point topLeft;
+  final Point bottomRight;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Rect &&
+        topLeft == other.topLeft &&
+        bottomRight == other.bottomRight);
+
+  @override
+  int get hashCode => Object.hash(topLeft, bottomRight);
+}
 
 // ═════════════════════════════════════════════
 // Functions

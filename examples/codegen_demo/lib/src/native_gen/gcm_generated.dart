@@ -6,54 +6,13 @@ import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
+import 'api/bridge_api.dart';
 import 'api/counter.dart';
 /// Generated enum for `demo::api::OrderStatus`.
 enum OrderStatus {
   created,
   paid,
   shipped,
-}
-
-/// Generated data class for `demo::api::Point`.
-final class Point {
-  const Point({
-    required this.x,
-    required this.y,
-  });
-
-  final double x;
-  final double y;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is Point &&
-        x == other.x &&
-        y == other.y);
-
-  @override
-  int get hashCode => Object.hash(x, y);
-}
-
-/// Generated data class for `demo::api::Rect`.
-final class Rect {
-  const Rect({
-    required this.topLeft,
-    required this.bottomRight,
-  });
-
-  final Point topLeft;
-  final Point bottomRight;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is Rect &&
-        topLeft == other.topLeft &&
-        bottomRight == other.bottomRight);
-
-  @override
-  int get hashCode => Object.hash(topLeft, bottomRight);
 }
 
 void _writeDataClass_Point(ByteWriter w, Point v) {

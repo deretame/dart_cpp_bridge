@@ -33,7 +33,7 @@ native_gen/
 
 ```
 native_gen/
-├── gcm_generated.dart       # 基础层：BridgeApiImpl 单例 + enum/data_class + wire 编解码
+├── gcm_generated.dart       # 基础层：BridgeApiImpl 单例 + enum + wire 编解码
 └── api/
     ├── init.dart            # 管理类：DcbLib（init / dispose / shutdown）
     ├── bridge_api.dart      # 来自 bridge_api.h：顶层函数 + Point/Rect/OrderStatus
@@ -44,7 +44,7 @@ native_gen/
 
 | C++ 头文件 | 生成 Dart 文件 | 内容 |
 |-----------|---------------|------|
-| （全局） | `gcm_generated.dart` | BridgeApiImpl 单例、所有 enum/data_class 定义、wire 编解码 helper |
+| （全局） | `gcm_generated.dart` | BridgeApiImpl 单例、所有 enum 定义、wire 编解码 helper |
 | （全局） | `api/init.dart` | DcbLib 管理类 |
 | `bridge_api.h` | `api/bridge_api.dart` | 该头文件中的顶层函数 + 该头文件中定义的 data_class/enum |
 | `counter.h` | `api/counter.dart` | Counter opaque class wrapper |
@@ -73,19 +73,6 @@ import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 // ═══════════════════════════════════════════
 
 enum OrderStatus { created, paid, shipped }
-
-// ═══════════════════════════════════════════
-// Data Classes
-// ═══════════════════════════════════════════
-
-final class Point {
-  const Point({required this.x, required this.y});
-  final double x;
-  final double y;
-  // == / hashCode ...
-}
-
-final class Rect { ... }
 
 // ═══════════════════════════════════════════
 // Wire Helpers (private)
@@ -128,7 +115,7 @@ final class BridgeApiImpl {
 **要点**：
 - `BridgeApiImpl` 改为单例模式，通过 `BridgeApiImpl.instance` 访问
 - 单例由 `DcbLib.init()` 内部初始化，外部不直接构造
-- enum / data_class / wire helper 全部放在此文件（全局共享）
+- enum / wire helper 全部放在此文件（全局共享）；data_class 定义跟随其头文件对应的 API 文件
 
 ---
 
@@ -203,7 +190,20 @@ final class DcbLib {
 import 'dart:async';
 import '../gcm_generated.dart';
 
-export '../gcm_generated.dart' show OrderStatus, Point, Rect;
+export '../gcm_generated.dart' show OrderStatus;
+
+// ═══════════════════════════════════════════
+// Data classes（定义在本文件，跟随源码头文件）
+// ═══════════════════════════════════════════
+
+final class Point {
+  const Point({required this.x, required this.y});
+  final double x;
+  final double y;
+  // == / hashCode ...
+}
+
+final class Rect { ... }
 
 // ═══════════════════════════════════════════
 // Functions
@@ -417,7 +417,7 @@ dart_api_subdir: api
 | 问题 | 决策 |
 |------|------|
 | 管理类名 | `DcbLib`（Dart-Cpp Bridge Library） |
-| enum/data_class 位置 | 全部放 `gcm_generated.dart`（避免循环依赖） |
+| enum/data_class 位置 | enum 放 `gcm_generated.dart`；data_class 定义跟随头文件对应的 API 文件（codec helper 仍在 impl 文件，通过 import 引用类型） |
 | 无参数函数 | 不加 `{}`，直接 `()` |
 | optional 参数 | Dart 侧为 `T?`，不加 `required` |
 | 元组参数 | 整个元组作为一个命名参数，必选加 `required`，可选不加 |

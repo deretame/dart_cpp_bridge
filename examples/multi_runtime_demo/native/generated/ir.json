@@ -13,7 +13,7 @@
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\codegen\\stubs"
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
   ],
   "enums": [],
   "classes": [],

@@ -8,7 +8,6 @@ import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
 
 
-
 /// Wire-level API singleton. Access via [BridgeApiImpl.instance].
 final class BridgeApiImpl {
   BridgeApiImpl._(this.bridge);
