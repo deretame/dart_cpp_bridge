@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-22
+> 更新日期：2026-07-26
 
 ---
 
@@ -115,9 +115,18 @@ copy "$src\VCRUNTIME140_1.dll" $dst
 
 也可以将上述 DLL 复制到 `dart/` 目录（`dart test` 的当前目录），但优先级低于 `dart.exe` 所在目录。
 
-### 5.4 彻底解决
+### 5.4 彻底解决（推荐）
 
-安装最新版本的 **Visual C++ Redistributable**（14.40+，即 VC145 运行时），确保系统 `MSVCP140.dll` 版本不低于构建时使用的版本。
+`dcb_shared` 目标已改为 **静态 CRT（/MT）**，不再依赖系统 MSVCP140.dll：
+
+```cmake
+# dart/native/CMakeLists.txt — dcb_shared 目标
+set_property(TARGET dcb_shared PROPERTY
+  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+```
+
+此方案使 hook 构建出的 `dart_cpp_bridge.dll` 完全自包含，无需用户安装任何 VC Redist。  
+若仍使用 `/MD` 动态链接（如 base_demo 的旧 CMake 路径），则需安装最新 **Visual C++ Redistributable**（14.40+，VC145）。
 
 ### 5.5 相关检查
 
@@ -138,9 +147,65 @@ copy "$src\VCRUNTIME140_1.dll" $dst
 
 ---
 
-## 7. 【环境依赖】Windows 上 Visual Studio 未将 CMake 加入 PATH
+## 7. 【已解决】@Native 路径下 std::mutex::lock() 崩溃（MSVCP140.dll ABI 不兼容）
 
 ### 7.1 现象
+
+Phase C 将 base 包绑定层迁移到 `@Native(assetId:)` 后，任何涉及 `std::mutex` 的 C++ 代码经 @Native 调用都会崩溃（访问违例 `0xC0000005`），而同一 DLL 经 `DynamicLibrary.open()` + `lookupFunction` 路径完全正常。
+
+```text
+===== CRASH =====
+ExceptionCode=-1073741819
+pc 0x00007ffa... C:\Windows\SYSTEM32\MSVCP140.dll+0x18c34  (mtx_do_lock)
+```
+
+### 7.2 调试路径
+
+| 步骤 | 实验 | 结论 |
+|------|------|------|
+| 1 | `Runtime::start()` 委托为自由函数 | 仍崩 → 不是成员函数的问题 |
+| 2 | 绕过 Runtime，手动 start/stop | 通过 → `dcb_shutdown` 是触发器 |
+| 3 | 只调 `close_all()` 不 start | 仍崩 → `close_all` 内的 mutex |
+| 4 | 全局 `std::mutex` + `lock()` | 仍崩 → 任何 mutex 都崩 |
+| 5 | 堆上 `new std::mutex` | 仍崩 → 与存储位置无关 |
+| 6 | `dumpbin /DEPENDENTS` + 版本检查 | MSVCP140.dll = 14.00（VS 2015） |
+
+### 7.3 根因
+
+系统 `MSVCP140.dll`（14.00.24215.1，VS 2015）中 `mtx_do_lock` 的内部实现与 MSVC 19.51（VS 2026）编译出的 `std::mutex` 对象布局不兼容。在 `DynamicLibrary.open` 路径下，Dart VM 的 DLL 搜索顺序可能先找到同目录的新版运行时；而 @Native code asset 的加载路径不同，最终解析到系统旧版 DLL，导致 ABI 冲突。
+
+### 7.4 修复
+
+为 `dcb_shared` 目标强制使用 **静态 CRT（/MT）**：
+
+```cmake
+# dart/native/CMakeLists.txt
+if(WIN32)
+  set_property(TARGET dcb_shared PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+```
+
+编译后 DLL 不再依赖外部 MSVCP140.dll / VCRUNTIME140.dll，所有 CRT 代码（含 mutex）内联到 DLL 中。
+
+### 7.5 验证
+
+- `dart/test/ffi_native_test.dart`（@Native 冒烟）：通过
+- `examples/base_demo`（DynamicLibrary.open 兼容路径）：79 测试通过
+- `examples/codegen_demo`：62 测试通过
+- `examples/hook_demo`（纯 @Native）：3 测试通过
+
+### 7.6 教训
+
+- Windows 上如果系统存在旧版 VC Redist，**任何**使用 C++ 标准库线程/互斥设施的 DLL 经 @Native 加载都可能崩溃。
+- 对于通过 Native Assets hook 分发的共享库，**强烈建议**使用 `/MT` 静态 CRT，避免对终端用户环境的隐式依赖。
+- `DynamicLibrary.open` 与 @Native 的 DLL 搜索路径不同，同一 DLL 在两条路径下行为可能不一致。
+
+---
+
+## 8. 【环境依赖】Windows 上 Visual Studio 未将 CMake 加入 PATH
+
+### 8.1 现象
 
 在 Windows 上执行项目文档中的 `cmake` 命令时，PowerShell / CMD 可能提示找不到 `cmake`：
 
@@ -154,11 +219,11 @@ cmake : 无法将“cmake”项识别为 cmdlet、函数、脚本文件或可运
 C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
 ```
 
-### 7.2 原因
+### 8.2 原因
 
 Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单独安装的 CMake（例如从 cmake.org 下载）或某些工作负载才会注册到 PATH。
 
-### 7.3 临时解决
+### 8.3 临时解决
 
 使用 VS 自带的 CMake 绝对路径，或切换到 Developer PowerShell / Developer Command Prompt for VS：
 
@@ -169,7 +234,7 @@ Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单�
 
 或在 VS 的 **Developer PowerShell for VS 2026** 中执行，该环境已配置好 CMake 路径。
 
-### 7.4 彻底解决
+### 8.4 彻底解决
 
 单独安装 CMake（>= 3.24）并确保安装程序勾选“Add CMake to the system PATH for all users / current user”。
 

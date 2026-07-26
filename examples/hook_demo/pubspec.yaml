@@ -1,0 +1,19 @@
+name: hook_demo
+description: >
+  Minimal Native Assets build-hook demo for dart_cpp_bridge. Compiles a tiny
+  C library via CMake from hook/build.dart and calls it through @Native.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  code_assets: ^1.2.1
+  dart_cpp_bridge:
+    path: ../../dart
+  hooks: ^2.1.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.25.0

@@ -105,3 +105,38 @@ endif()
 
 # Alias for downstream users
 add_library(dart_cpp_bridge::runtime ALIAS dcb_runtime)
+
+# --- Optional: build the runtime directly as a SHARED library ---
+# Used by the Native Assets build hook (dart/hook/build.dart) to produce a
+# self-contained dart_cpp_bridge.{dll,so,dylib} whose dcb_* symbols are exported
+# (DCB_API -> dllexport because DART_CPP_BRIDGE_BUILD is defined) and loadable
+# via @Native. Downstream add_subdirectory users keep the STATIC + WHOLE_ARCHIVE
+# flow; this stays OFF by default so it is not triggered for them.
+option(DCB_BUILD_SHARED "Build dart_cpp_bridge runtime as a shared library" OFF)
+if(DCB_BUILD_SHARED)
+  add_library(dcb_shared SHARED
+    src/runtime/runtime.cpp
+    src/runtime/object_handle.cpp
+    src/foreign_runtime.cpp
+    src/ffi_entry.cpp
+    ${DCB_DART_API_DIR}/dart_api_dl.c
+  )
+  target_include_directories(dcb_shared
+    PUBLIC
+      ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+      ${DCB_DART_API_DIR}
+  )
+  target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
+  target_link_libraries(dcb_shared PRIVATE asio_iface async_simple_header_only)
+  if(WIN32)
+    target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
+    target_compile_options(dcb_shared PRIVATE /utf-8)
+    # Use static CRT (/MT) to avoid depending on the system MSVCP140.dll.
+    # The system copy (14.00, VS 2015) is incompatible with MSVC 19.51 code
+    # when called via Dart @Native — std::mutex::lock() crashes in mtx_do_lock.
+    set_property(TARGET dcb_shared PROPERTY
+      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  endif()
+  set_target_properties(dcb_shared PROPERTIES OUTPUT_NAME dart_cpp_bridge)
+endif()

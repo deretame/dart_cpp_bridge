@@ -13,6 +13,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <atomic>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -198,6 +199,14 @@ DCB_API void dcb_set_verbose_errors(uint8_t enabled) {
 
 DCB_API void dcb_set_pool_threads(uint32_t n) {
   dcb::Runtime::instance().set_pool_threads(n);
+}
+
+DCB_API void* dcb_session_finalizer_ptr(void) {
+  return reinterpret_cast<void*>(&dcb_session_finalizer);
+}
+
+DCB_API void* dcb_drop_object_ptr(void) {
+  return reinterpret_cast<void*>(&dcb_drop_object);
 }
 
 }  // extern "C"

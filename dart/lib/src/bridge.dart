@@ -78,7 +78,9 @@ final class DartCppBridge implements Finalizable {
   static Future<DartCppBridge> init({String? libraryPath, int poolThreads = 4}) async {
     if (_instance != null) return _instance!;
 
-    final b = NativeBindings(NativeBindings.openDefault(path: libraryPath));
+    final b = libraryPath != null
+        ? NativeBindings.fromLibrary(DynamicLibrary.open(libraryPath))
+        : NativeBindings.native();
     _sharedFinalizer ??= NativeFinalizer(b.sessionFinalizer);
 
     final rc = b.initDartApi(NativeApi.initializeApiDLData);
