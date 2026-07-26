@@ -273,6 +273,8 @@ dart test
 1. 按上述 Phase 2 顺序逐个实现并跑通 `examples/codegen_demo` 端到端测试。
 2. **Phase 3**：Native Assets hook；CMake export。
 3. 可选：`spawn_blocking` 复用 oneshot；跨平台 CI。
+4. 完善 `dcb_gen` 的逻辑，优化操作。
+5. 完善文档。
 
 ---
 

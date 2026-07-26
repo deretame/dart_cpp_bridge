@@ -10,6 +10,8 @@
 
 #include <async_simple/Try.h>
 #include <async_simple/coro/Lazy.h>
+#include <async_simple/coro/Sleep.h>
+#include <async_simple/coro/SyncAwait.h>
 
 #include <atomic>
 #include <chrono>
@@ -254,6 +256,312 @@ void test_dartfn_async_e2e_simulated_reply() {
   g_dartfn_sim.reset();
 }
 
+// ---------------------------------------------------------------------------
+// spawn / spawn_blocking
+// ---------------------------------------------------------------------------
+
+// Free coroutine functions: parameters are copied into the coroutine frame,
+// which avoids the dangling-lambda-capture problem that a coroutine lambda
+// passed by value would have.
+async_simple::coro::Lazy<int> return_value(int v) {
+  co_return v;
+}
+
+async_simple::coro::Lazy<int> signal_and_return(std::shared_ptr<std::promise<int>> done, int v) {
+  done->set_value(v);
+  co_return v;
+}
+
+void test_spawn_fire_and_forget() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<int>>();
+  auto fut = done->get_future();
+  // Fire-and-forget: start and ignore the result; the coroutine still runs and
+  // signals through the promise it captured.
+  dcb::spawn_detached(signal_and_return(done, 99));
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn fire-and-forget timed out");
+  }
+  if (fut.get() != 99) {
+    Runtime::instance().stop();
+    fail("spawn fire-and-forget wrong value");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn fire-and-forget ok\n");
+}
+
+void test_spawn_wait_result() {
+  using namespace dcb;
+  Runtime::instance().start();
+  // Block this (main, non-io) thread until the coroutine on io finishes.
+  // syncAwait returns the value or rethrows the coroutine's exception — no
+  // std::promise/future plumbing needed on the caller side.
+  int v = async_simple::coro::syncAwait(dcb::spawn(return_value(7)));
+  if (v != 7) {
+    Runtime::instance().stop();
+    fail("spawn wait wrong value");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn wait ok\n");
+}
+
+async_simple::coro::Lazy<int> throw_value() {
+  if (true) {
+    throw std::runtime_error("sync-boom");
+  }
+  co_return 0;
+}
+
+void test_spawn_syncawait_exception() {
+  using namespace dcb;
+  Runtime::instance().start();
+  std::string what;
+  try {
+    (void)async_simple::coro::syncAwait(dcb::spawn(throw_value()));
+    what = "no-throw";
+  } catch (const std::exception& e) {
+    what = e.what();
+  }
+  if (what != "sync-boom") {
+    Runtime::instance().stop();
+    fail("spawn syncAwait exception not propagated");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn syncAwait exception propagation ok\n");
+}
+
+void test_syncawait_rejected_on_io_thread() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<bool>>();
+  auto fut = done->get_future();
+  // Run a coroutine ON the io thread that tries to syncAwait another io-bound
+  // Lazy. The deadlock guard (AsioExecutor::currentThreadInExecutor) must
+  // reject it with std::logic_error instead of letting the io thread block on
+  // itself (which would deadlock and hang the runtime).
+  Runtime::instance().spawn_on_asio([done]() -> async_simple::coro::Lazy<> {
+    bool rejected = false;
+    try {
+      (void)async_simple::coro::syncAwait(dcb::spawn(return_value(1)));
+    } catch (const std::logic_error&) {
+      rejected = true;
+    }
+    done->set_value(rejected);
+    co_return;
+  });
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("syncAwait-on-io timed out (deadlock guard did not fire)");
+  }
+  if (!fut.get()) {
+    Runtime::instance().stop();
+    fail("syncAwait on io thread was not rejected");
+  }
+  Runtime::instance().stop();
+  std::printf("syncAwait rejected on io thread ok\n");
+}
+
+void test_spawn_blocking_awaited_no_block_io() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<int>>();
+  auto fut = done->get_future();
+  std::atomic<int> side_work{0};
+
+  // A coroutine on io co_awaits spawn_blocking (150ms sleep on the pool).
+  Runtime::instance().spawn_on_asio([done]() -> async_simple::coro::Lazy<> {
+    auto v = co_await dcb::spawn_blocking([] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+      return 42;
+    });
+    done->set_value(v);
+    co_return;
+  });
+
+  // While the pool thread is sleeping, io must stay responsive.
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  for (int i = 0; i < 5; ++i) {
+    asio::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  if (side_work.load() != 5) {
+    Runtime::instance().stop();
+    fail("io blocked while spawn_blocking awaiting");
+  }
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking awaited timed out");
+  }
+  if (fut.get() != 42) {
+    Runtime::instance().stop();
+    fail("spawn_blocking awaited wrong value");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking awaited (io not blocked) ok\n");
+}
+
+void test_spawn_blocking_fire_and_forget() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<int>>();
+  auto fut = done->get_future();
+  dcb::spawn_blocking([] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    return 123;
+  })
+      .via(Runtime::instance().executor())
+      .start([done](async_simple::Try<int>&& t) {
+        try {
+          if (t.hasError()) {
+            done->set_exception(t.getException());
+          } else {
+            done->set_value(t.value());
+          }
+        } catch (...) {
+        }
+      });
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking fire-and-forget timed out");
+  }
+  if (fut.get() != 123) {
+    Runtime::instance().stop();
+    fail("spawn_blocking fire-and-forget wrong value");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking fire-and-forget ok\n");
+}
+
+void test_spawn_blocking_exception() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<std::string>>();
+  auto fut = done->get_future();
+  Runtime::instance().spawn_on_asio([done]() -> async_simple::coro::Lazy<> {
+    try {
+      co_await dcb::spawn_blocking([]() -> int { throw std::runtime_error("boom"); });
+      done->set_value("no-throw");
+    } catch (const std::exception& e) {
+      done->set_value(e.what());
+    }
+    co_return;
+  });
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking exception timed out");
+  }
+  if (fut.get() != "boom") {
+    Runtime::instance().stop();
+    fail("spawn_blocking exception not propagated");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking exception propagation ok\n");
+}
+
+void test_spawn_blocking_void() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<bool>>();
+  auto fut = done->get_future();
+  auto flag = std::make_shared<std::atomic<bool>>(false);
+  Runtime::instance().spawn_on_asio([done, flag]() -> async_simple::coro::Lazy<> {
+    co_await dcb::spawn_blocking([flag] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      flag->store(true);
+    });
+    done->set_value(flag->load());
+    co_return;
+  });
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking void timed out");
+  }
+  if (!fut.get()) {
+    Runtime::instance().stop();
+    fail("spawn_blocking void did not run");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking void ok\n");
+}
+
+// A void callable that throws must still propagate the exception to the
+// awaiter. This exercises the Unit bridge in spawn_blocking: awaiting a
+// Future<Unit> goes through Future::value(), which rethrows, whereas a bare
+// Future<void> co_await would silently drop the exception.
+void test_spawn_blocking_void_exception() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<std::string>>();
+  auto fut = done->get_future();
+  Runtime::instance().spawn_on_asio([done]() -> async_simple::coro::Lazy<> {
+    try {
+      co_await dcb::spawn_blocking([]() -> void { throw std::runtime_error("void-boom"); });
+      done->set_value("no-throw");
+    } catch (const std::exception& e) {
+      done->set_value(e.what());
+    }
+    co_return;
+  });
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking void exception timed out");
+  }
+  if (fut.get() != "void-boom") {
+    Runtime::instance().stop();
+    fail("spawn_blocking void exception not propagated");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking void exception propagation ok\n");
+}
+
+// coro::sleep must suspend the coroutine on a real event-loop timer: the io
+// thread stays responsive during the sleep, and the coroutine resumes only
+// after the requested duration. This exercises the 4-arg
+// schedule(Func, Duration, ...) override in AsioExecutor — without it,
+// async_simple falls back to spawning a thread that blocks for the whole
+// sleep.
+void test_coro_sleep_no_block_io() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<long long>>();
+  auto fut = done->get_future();
+  std::atomic<int> side_work{0};
+
+  auto t0 = std::chrono::steady_clock::now();
+  Runtime::instance().spawn_on_asio([done, t0]() -> async_simple::coro::Lazy<> {
+    co_await async_simple::coro::sleep(std::chrono::milliseconds(150));
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       std::chrono::steady_clock::now() - t0)
+                       .count();
+    done->set_value(static_cast<long long>(elapsed));
+    co_return;
+  });
+
+  // While the coroutine is sleeping on the timer, io must stay responsive.
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  for (int i = 0; i < 5; ++i) {
+    asio::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(40));
+  if (side_work.load() != 5) {
+    Runtime::instance().stop();
+    fail("io blocked while coro::sleep awaiting");
+  }
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("coro::sleep timed out");
+  }
+  auto elapsed = fut.get();
+  if (elapsed < 140) {  // small scheduling slack below the requested 150ms
+    Runtime::instance().stop();
+    fail("coro::sleep resumed too early");
+  }
+  Runtime::instance().stop();
+  std::printf("coro::sleep (io not blocked, ~%lldms) ok\n", elapsed);
+}
+
 }  // namespace
 
 int main() {
@@ -261,6 +569,16 @@ int main() {
   test_oneshot_cross_thread_wake();
   test_io_not_blocked_while_awaiting();
   test_dartfn_async_e2e_simulated_reply();
+  test_spawn_fire_and_forget();
+  test_spawn_wait_result();
+  test_spawn_syncawait_exception();
+  test_syncawait_rejected_on_io_thread();
+  test_spawn_blocking_awaited_no_block_io();
+  test_spawn_blocking_fire_and_forget();
+  test_spawn_blocking_exception();
+  test_spawn_blocking_void();
+  test_spawn_blocking_void_exception();
+  test_coro_sleep_no_block_io();
 
   Runtime::instance().start();
   g_add_done = std::make_shared<std::promise<int>>();

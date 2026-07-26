@@ -98,6 +98,69 @@ Runtime (simplified):
 
 ---
 
+## C++ coroutine launch API (`spawn` family)
+
+`dart_cpp_bridge/runtime.hpp` provides three helpers for launching `async_simple::coro::Lazy<T>` from **non-coroutine** code. Inside a coroutine running on io, none of them are needed — just `co_await std::move(lazy)` directly (it inherits the current executor and rethrows exceptions).
+
+| Helper | Returns | Purpose |
+|--------|---------|---------|
+| `dcb::spawn(lazy)` | `RescheduleLazy<T>` (lazy, not started) | Bind the coroutine to the io executor; the caller chooses how to trigger it |
+| `dcb::spawn_detached(lazy)` | `void` | Fire-and-forget: starts immediately on io, discards value **and** exception |
+| `dcb::spawn_blocking(f)` | `Lazy<T>` | Run a blocking callable on the thread pool; awaiting it never blocks io |
+
+### `spawn` — three ways to trigger
+
+`spawn` returns a `RescheduleLazy` that is bound to io but **not yet started** (it is `[[nodiscard]]` and lazy — dropping it means the coroutine never runs). Pick one:
+
+```cpp
+#include <async_simple/coro/SyncAwait.h>
+
+// 1) Block a normal (NON-io) thread until ready; returns the value or
+//    rethrows the coroutine's exception. No std::promise/future plumbing.
+int v = async_simple::coro::syncAwait(dcb::spawn(std::move(lazy)));
+
+// 2) Fire-and-forget (discard value and exception):
+dcb::spawn_detached(std::move(lazy));
+
+// 3) Custom completion callback (Try<T> carries value-or-exception):
+dcb::spawn(std::move(lazy)).start([](async_simple::Try<int>&& t) { /* ... */ });
+```
+
+### `spawn_blocking` — offload blocking work
+
+```cpp
+// inside a coroutine on io — io thread keeps running while f() blocks a pool thread:
+auto v = co_await dcb::spawn_blocking([&] { return heavyComputation(); });
+
+// block a normal thread for the result:
+auto v = async_simple::coro::syncAwait(dcb::spawn(dcb::spawn_blocking(f)));
+
+// fire-and-forget from non-coroutine code:
+dcb::spawn_detached(dcb::spawn_blocking(f));
+```
+
+Exceptions thrown by the callable are captured on the pool thread (`Promise::setException`) and rethrown at the awaiter. Void callables are supported (bridged through `async_simple::Unit` so exceptions still propagate — a bare `co_await Future<void>` would silently drop them).
+
+### Timer / sleep
+
+For delays inside a coroutine, use the standard async_simple API — no bridge wrapper needed:
+
+```cpp
+#include <async_simple/coro/Sleep.h>
+
+co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
+```
+
+This suspends on an `asio::steady_timer` on the io event loop (via `AsioExecutor`'s timed `schedule` override): the io thread stays responsive while waiting and no pool/OS thread is occupied — so don't hand-roll a `Promise` + timer wrapper.
+
+### Safety constraints
+
+- **Never `syncAwait` on the io thread.** It blocks its caller, and the awaited Lazy needs the io thread to make progress — self-deadlock. `AsioExecutor::currentThreadInExecutor()` identifies the io thread, and `syncAwait` refuses with an assertion there. From io, `co_await` instead.
+- **Do not use async_simple's `RescheduleLazy::detach()`.** Its completion callback rethrows the coroutine's exception *on the io thread*, which escapes into the event loop and terminates it. Use `dcb::spawn_detached` (empty callback) instead.
+- **Keep coroutine lambdas alive.** A coroutine lambda's captures live in the lambda object, not the coroutine frame. `Runtime::spawn_on_asio` keeps the factory alive via a shared holder; with raw `spawn(...).start(...)` prefer free coroutine functions (parameters are copied into the frame) or ensure captures outlive the coroutine.
+
+---
+
 ## Quick start
 
 ### Requirements

@@ -28,6 +28,9 @@ void Runtime::start() {
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
+  // Tell the executor which thread runs the io_context so that
+  // currentThreadInExecutor() (used by syncAwait's deadlock guard) is accurate.
+  executor_->set_io_thread_id(io_thread_->get_id());
 }
 
 void Runtime::stop() {

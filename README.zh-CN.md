@@ -98,6 +98,69 @@
 
 ---
 
+## C++ 协程启动 API（`spawn` 家族）
+
+`dart_cpp_bridge/runtime.hpp` 提供三个辅助函数，用于从**非协程**环境启动 `async_simple::coro::Lazy<T>`。如果已经在 io 上运行的协程内部，三个都不需要——直接 `co_await std::move(lazy)`（会继承当前 executor，异常直接重抛）。
+
+| 辅助函数 | 返回 | 用途 |
+|--------|---------|---------|
+| `dcb::spawn(lazy)` | `RescheduleLazy<T>`（惰性，未启动） | 把协程绑定到 io executor；由调用方选择如何触发 |
+| `dcb::spawn_detached(lazy)` | `void` | 发射后不理：立即在 io 上启动，值**和**异常都丢弃 |
+| `dcb::spawn_blocking(f)` | `Lazy<T>` | 在线程池上跑阻塞 callable；等待它时不会阻塞 io |
+
+### `spawn` —— 三种触发方式
+
+`spawn` 返回的 `RescheduleLazy` 已绑定 io 但**尚未启动**（它是 `[[nodiscard]]` 且惰性的——直接丢弃意味着协程永远不会运行）。三选一：
+
+```cpp
+#include <async_simple/coro/SyncAwait.h>
+
+// 1) 阻塞一个普通（非 io）线程直到就绪；返回值，或重抛协程异常。
+//    不需要 std::promise/future 手工接线。
+int v = async_simple::coro::syncAwait(dcb::spawn(std::move(lazy)));
+
+// 2) 发射后不理（值和异常都丢弃）：
+dcb::spawn_detached(std::move(lazy));
+
+// 3) 自定义完成回调（Try<T> 携带值或异常）：
+dcb::spawn(std::move(lazy)).start([](async_simple::Try<int>&& t) { /* ... */ });
+```
+
+### `spawn_blocking` —— 卸载阻塞工作
+
+```cpp
+// 在 io 上的协程内部——f() 阻塞线程池线程期间，io 线程照常运行：
+auto v = co_await dcb::spawn_blocking([&] { return heavyComputation(); });
+
+// 阻塞一个普通线程等结果：
+auto v = async_simple::coro::syncAwait(dcb::spawn(dcb::spawn_blocking(f)));
+
+// 从非协程环境发射后不理：
+dcb::spawn_detached(dcb::spawn_blocking(f));
+```
+
+callable 抛出的异常会在线程池线程上被捕获（`Promise::setException`），并在等待处重抛。支持 void callable（通过 `async_simple::Unit` 桥接，保证异常照样传播——裸的 `co_await Future<void>` 会静默吞掉异常）。
+
+### 定时器 / sleep
+
+协程内延时直接用 async_simple 标准 API——不需要桥的包装：
+
+```cpp
+#include <async_simple/coro/Sleep.h>
+
+co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
+```
+
+它通过 `AsioExecutor` 的定时 `schedule` 重载挂在 io 事件循环的 `asio::steady_timer` 上：等待期间 io 线程照常响应，也不占用线程池/OS 线程——所以不要手写 `Promise` + 定时器的轮子。
+
+### 安全约束
+
+- **不要在 io 线程上 `syncAwait`。** 它会阻塞调用者，而被等待的 Lazy 又需要 io 线程才能推进——自我死锁。`AsioExecutor::currentThreadInExecutor()` 会识别 io 线程，`syncAwait` 在其上会断言拒绝。在 io 上请用 `co_await`。
+- **不要用 async_simple 自带的 `RescheduleLazy::detach()`。** 它的完成回调会在 *io 线程上*重抛协程异常，异常会冲进事件循环并终结 io 线程。请用 `dcb::spawn_detached`（空回调）。
+- **保活协程 lambda。** 协程 lambda 的捕获存在于 lambda 对象而非协程帧中。`Runtime::spawn_on_asio` 用 shared holder 保活 factory；裸用 `spawn(...).start(...)` 时优先用自由协程函数（参数会拷贝进协程帧），或确保捕获活过协程。
+
+---
+
 ## 快速开始
 
 ### 环境
