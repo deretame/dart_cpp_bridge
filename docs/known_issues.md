@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-26
+> 更新日期：2026-07-27
 
 ---
 
@@ -236,5 +236,176 @@ Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单�
 
 ### 8.4 彻底解决
 
-单独安装 CMake（>= 3.24）并确保安装程序勾选“Add CMake to the system PATH for all users / current user”。
+单独安装 CMake（>= 3.24）并确保安装程序勾选"Add CMake to the system PATH for all users / current user"。
+
+---
+
+## 9. 【已解决】CI 上 codegen 生成容器类型退化为 i32
+
+### 9.1 现象
+
+CI（GitHub Actions）上运行 `dcb_gen generate` 后，生成的 `wire_dispatch.cpp` 编译失败：
+
+```text
+error C2664: 'async_simple::coro::Lazy<int32_t> demo::api::sum_scores(std::unordered_map<...>)':
+cannot convert argument 1 from 'int' to 'std::unordered_map<...>'
+
+error C2664: 'void dcb::ByteWriter::i32(int32_t)':
+cannot convert argument 1 from 'async_simple::coro::Lazy<int32_t>' to 'int32_t'
+```
+
+但本地运行相同的 codegen 命令生成的代码完全正确。
+
+### 9.2 根因
+
+**CI 流程顺序问题**：CI 在 cmake 之前运行 codegen：
+
+```yaml
+# .github/workflows/push-build.yml
+- name: codegen 生成 + 构建 + 测试
+  run: |
+    dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+    cmake -S . -B build  # <-- codegen 时 build/_deps 还不存在！
+```
+
+**依赖链**：用户 API 头文件间接包含 async_simple 头文件：
+
+```text
+bridge_api.h
+  → dart_cpp_bridge/stream_sink.hpp
+    → dart_cpp_bridge/session.hpp
+      → dart_cpp_bridge/runtime.hpp
+        → <async_simple/Future.h>   ← 缺失！
+        → <async_simple/Promise.h>  ← 缺失！
+        → <async_simple/Unit.h>     ← 缺失！
+```
+
+**类型退化机制**：当 libclang 无法解析这些头文件时，产生的解析错误会导致后续模板类型（如 `std::vector<T>`、`std::unordered_map<K,V>`）在 AST 中退化为 `int`。IR 中记录的类型变成 `{"kind": "i32"}` 而非正确的容器类型，最终生成的代码传入 `int` 而非容器。
+
+**本地为何正常**：本地曾运行过 cmake，`build/_deps` 目录存在，包含 FetchContent 下载的完整 async-simple/asio 头文件。
+
+### 9.3 解决方案
+
+补全 `dcb_gen_tool/stubs/async_simple/` 目录下的 stub 头文件，使 codegen 完全独立于 cmake 构建：
+
+```text
+dcb_gen_tool/stubs/async_simple/
+├── Executor.h          # 更新：补充 Context/ScheduleOptions/ExecutorStat/IOExecutor/Slot
+├── Future.h            # 新增
+├── Promise.h           # 新增
+├── Unit.h              # 新增
+└── coro/
+    ├── Lazy.h          # 已有
+    └── FutureAwaiter.h # 新增
+```
+
+这些 stub 提供最小化的类型定义，仅满足 libclang 解析所需，不包含实际实现。
+
+### 9.4 示例：stub 头文件
+
+`async_simple/Future.h`：
+
+```cpp
+#pragma once
+// Parse-only stub for codegen (real build uses FetchContent async-simple).
+#include <exception>
+#include <utility>
+
+namespace async_simple {
+
+template <typename T>
+class Future {
+ public:
+  Future() = default;
+  Future(Future&&) = default;
+  Future& operator=(Future&&) = default;
+
+  bool valid() const { return true; }
+  T& value() { return val_; }
+  const T& value() const { return val_; }
+
+ private:
+  T val_{};
+};
+
+}  // namespace async_simple
+```
+
+`async_simple/Executor.h`（需包含 `AsioExecutor` 使用的全部类型）：
+
+```cpp
+#pragma once
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+
+namespace async_simple {
+
+class IOExecutor;
+class Slot;
+using Context = void*;
+
+struct ScheduleOptions {
+  bool prompt = true;
+};
+
+struct ExecutorStat {
+  size_t pendingTaskCount = 0;
+};
+
+class Executor {
+ public:
+  using Func = std::function<void()>;
+  using Duration = std::chrono::nanoseconds;
+
+  enum class Priority : uint8_t { YIELD = 0, DEFAULT = 1, HIGH = 2 };
+
+  virtual ~Executor() = default;
+  virtual bool schedule(Func func) = 0;
+  virtual bool schedule(Func func, uint64_t schedule_info);
+  virtual bool checkin(Func func, Context, ScheduleOptions);
+  virtual void* checkout();
+  virtual ExecutorStat stat() const;
+  virtual IOExecutor* getIOExecutor();
+  virtual bool currentThreadInExecutor() const;
+  virtual size_t currentContextId() const;
+
+ protected:
+  virtual void schedule(Func func, Duration dur, uint64_t, Slot*);
+};
+
+class IOExecutor { public: virtual ~IOExecutor() = default; };
+class Slot { public: virtual ~Slot() = default; };
+
+}  // namespace async_simple
+```
+
+### 9.5 验证
+
+移除 `build/_deps` 后运行 codegen，IR 中容器类型正确：
+
+```python
+# 验证脚本
+import json
+ir = json.load(open("native/generated/ir.json"))
+fn = [f for f in ir["functions"] if f["name"] == "sum_scores"][0]
+assert fn["args"][0]["type"]["kind"] == "map"  # 而非 "i32"
+```
+
+生成的 `wire_dispatch.cpp` 正确使用容器解码：
+
+```cpp
+// 正确 ✓
+const auto scores = r.map<std::string, std::int32_t>(...);
+
+// 错误 ✗（修复前）
+const auto scores = r.i32();
+```
+
+### 9.6 教训
+
+- **codegen 必须独立于构建系统**：codegen 工具不应依赖 cmake FetchContent 的产物，stubs 必须完整覆盖所有间接依赖。
+- **libclang 解析错误会级联**：即使错误发生在无关的头文件中，也可能导致后续模板类型退化。`-ferror-limit=0` 只能防止错误数量截断，不能防止类型退化。
+- **CI 与本地环境差异**：本地残留的构建产物（如 `build/_deps`）可能掩盖问题，CI 的干净环境反而能暴露依赖缺失。
 
