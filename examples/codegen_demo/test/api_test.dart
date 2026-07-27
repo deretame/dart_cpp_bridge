@@ -4,29 +4,36 @@ import 'dart:io';
 import 'package:codegen_demo/codegen_demo.dart';
 import 'package:test/test.dart';
 
-/// Resolves the hook-built DLL from .dart_tool, or falls back to manual build.
+/// Resolves the hook-built library from .dart_tool, or falls back to manual build.
 String resolveDemoLibrary() {
+  final isWindows = Platform.isWindows;
+  final libName = isWindows ? 'dcb_codegen_demo.dll' : 'libdcb_codegen_demo.so';
+
   // 1. Hook-built asset (Native Assets pipeline).
   final dartTool = Directory('.dart_tool');
   if (dartTool.existsSync()) {
     for (final entity in dartTool.listSync(recursive: true)) {
-      if (entity is File && entity.path.endsWith('dcb_codegen_demo.dll')) {
+      if (entity is File && entity.path.endsWith(libName)) {
         return entity.absolute.path;
       }
     }
   }
   // 2. Manual cmake build fallback.
-  const names = [
-    'build/Release/dcb_codegen_demo.dll',
-    'build/Debug/dcb_codegen_demo.dll',
-    'build/dcb_codegen_demo.dll',
-  ];
+  final names = isWindows
+      ? [
+          'build/Release/dcb_codegen_demo.dll',
+          'build/Debug/dcb_codegen_demo.dll',
+          'build/dcb_codegen_demo.dll',
+        ]
+      : [
+          'build/libdcb_codegen_demo.so',
+        ];
   for (final rel in names) {
     final f = File(rel);
     if (f.existsSync()) return f.absolute.path;
   }
   throw StateError(
-    'dcb_codegen_demo.dll not found. Run "dart test" (hook builds it) '
+    '$libName not found. Run "dart test" (hook builds it) '
     'or build manually with CMake.',
   );
 }

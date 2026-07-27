@@ -14,8 +14,9 @@ void main(List<String> args) async {
     }
     final config = switch (input.config.code.targetOS) {
       OS.windows => const WindowsConfig(),
+      OS.linux => const LinuxConfig(),
       final os => throw UnsupportedError(
-        'dart_cpp_bridge hook only supports Windows in this phase: $os',
+        'dart_cpp_bridge hook does not support: $os',
       ),
     };
     await DcbCMakeBuilder(

@@ -24,19 +24,28 @@ import 'package:hooks/hooks.dart';
 // Generator selection
 // ---------------------------------------------------------------------------
 
-/// CMake build-system generator for Windows.
+/// CMake build-system generator selection.
 enum CmakeGenerator {
   /// Visual Studio multi-config generator (MSBuild).
   ///
   /// Produces `Release/` and `Debug/` subdirectories. This is the CMake
   /// default on Windows and requires no extra environment setup.
+  /// Only applicable on Windows.
   msbuild,
 
   /// Ninja single-config generator.
   ///
-  /// Faster incremental builds. Requires the MSVC environment to be
-  /// initialized (the builder invokes `vcvarsall.bat` automatically).
+  /// Faster incremental builds. On Windows, requires the MSVC environment
+  /// to be initialized (the builder invokes `vcvarsall.bat` automatically).
+  /// On Linux, works out of the box if `ninja` is on PATH.
   ninja,
+
+  /// Unix Makefiles single-config generator.
+  ///
+  /// The CMake default on Linux when Ninja is not available. Slower than
+  /// Ninja for incremental builds but requires no additional tools.
+  /// Only applicable on Linux.
+  makefiles,
 }
 
 // ---------------------------------------------------------------------------
@@ -126,12 +135,78 @@ final class WindowsConfig extends DcbPlatformConfig {
   });
 }
 
-/// Linux configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
+/// Linux configuration for [DcbCMakeBuilder].
+///
+/// Linux uses single-config generators (Ninja or Unix Makefiles), so
+/// `CMAKE_BUILD_TYPE` is set at configure time from [DcbBuildOptions.debug].
+///
+/// By default, libstdc++ is statically linked into the output `.so` to
+/// produce a self-contained binary with no external C++ runtime dependency.
+/// This mirrors Flutter's own Linux engine build strategy (clang compiler +
+/// static libstdc++).
 final class LinuxConfig extends DcbPlatformConfig {
   @override
   final String cmake;
 
-  const LinuxConfig({this.cmake = 'cmake'});
+  /// CMake generator selection.
+  ///
+  /// - [CmakeGenerator.ninja]: faster builds, requires `ninja` on PATH.
+  /// - [CmakeGenerator.makefiles]: default Unix Makefiles, always available.
+  /// - `null`: let CMake auto-select (typically Unix Makefiles).
+  final CmakeGenerator? generator;
+
+  /// Explicit path to the generator executable.
+  ///
+  /// For [CmakeGenerator.ninja]: path to the `ninja` binary when it is not
+  /// on PATH (e.g. `/opt/ninja/bin/ninja`).
+  /// When `null`, resolved via PATH.
+  final String? generatorPath;
+
+  /// Path to the C++ compiler executable.
+  ///
+  /// Example: `/opt/llvm-18/bin/clang++` or `/usr/bin/g++-14`.
+  ///
+  /// When `null` (default), the system default compiler is used (usually
+  /// `g++` or whatever `cc`/`c++` resolves to).
+  ///
+  /// Passed as `-DCMAKE_CXX_COMPILER=<path>`. CMake will auto-detect the
+  /// corresponding C compiler and toolchain from the same directory.
+  final String? compiler;
+
+  /// Path to a CMake toolchain file for advanced cross-compilation or
+  /// custom sysroot scenarios.
+  ///
+  /// Example: `/opt/toolchains/aarch64-linux-gnu.cmake`
+  ///
+  /// When specified, passed as `-DCMAKE_TOOLCHAIN_FILE=<path>`.
+  /// This takes precedence over [compiler] — if both are set, the toolchain
+  /// file is responsible for compiler selection and [compiler] is ignored.
+  final String? toolchainFile;
+
+  /// Whether to statically link libstdc++ into the output shared library.
+  ///
+  /// Defaults to `true`. Produces a self-contained `.so` that does not
+  /// depend on the target system's `libstdc++.so.6` version. This avoids
+  /// `GLIBCXX_3.4.XX not found` errors when deploying to systems with an
+  /// older GCC runtime.
+  ///
+  /// Set to `false` to link dynamically against the system libstdc++
+  /// (smaller binary, but requires a compatible runtime on the target).
+  final bool staticLibStdCpp;
+
+  /// Extra definitions passed verbatim to the CMake configure step, e.g.
+  /// `['-DCMAKE_PREFIX_PATH=/opt/vcpkg']`.
+  final List<String> extraDefines;
+
+  const LinuxConfig({
+    this.cmake = 'cmake',
+    this.generator,
+    this.generatorPath,
+    this.compiler,
+    this.toolchainFile,
+    this.staticLibStdCpp = true,
+    this.extraDefines = const [],
+  });
 }
 
 /// Android configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
@@ -305,8 +380,9 @@ final class DcbCMakeBuilder {
         configureArgs.addAll(resolved.configureArgs);
         processEnvironment = resolved.environment;
 
-      case LinuxConfig():
-        throw UnsupportedError('DcbCMakeBuilder: Linux is not supported yet.');
+      case LinuxConfig cfg:
+        cmake = cfg.cmake;
+        configureArgs.addAll(_resolveLinuxArgs(cfg, buildType));
       case AndroidConfig():
         throw UnsupportedError(
           'DcbCMakeBuilder: Android is not supported yet.',
@@ -361,6 +437,64 @@ final class DcbCMakeBuilder {
   }
 
   // -------------------------------------------------------------------------
+  // Linux resolution
+  // -------------------------------------------------------------------------
+
+  /// Resolves Linux-specific configure arguments.
+  List<String> _resolveLinuxArgs(LinuxConfig cfg, String buildType) {
+    final args = <String>[];
+
+    // Single-config generator: build type is set at configure time.
+    args.add('-DCMAKE_BUILD_TYPE=$buildType');
+
+    // All code must be position-independent since the final output is a
+    // shared library (.so) that may incorporate static dependencies.
+    args.add('-DCMAKE_POSITION_INDEPENDENT_CODE=ON');
+
+    // Generator selection.
+    switch (cfg.generator) {
+      case CmakeGenerator.ninja:
+        args.addAll(['-G', 'Ninja']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.makefiles:
+        args.addAll(['-G', 'Unix Makefiles']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.msbuild:
+        throw DcbCMakeException(
+          'CmakeGenerator.msbuild is not valid on Linux. '
+          'Use CmakeGenerator.ninja or CmakeGenerator.makefiles.',
+        );
+
+      case null:
+        // Let CMake auto-select (typically Unix Makefiles).
+        break;
+    }
+
+    // Toolchain file takes precedence over individual compiler setting.
+    if (cfg.toolchainFile != null) {
+      args.add('-DCMAKE_TOOLCHAIN_FILE=${cfg.toolchainFile}');
+    } else if (cfg.compiler != null) {
+      args.add('-DCMAKE_CXX_COMPILER=${cfg.compiler}');
+    }
+
+    // Static libstdc++ linkage for self-contained .so output.
+    if (cfg.staticLibStdCpp) {
+      args.add('-DCMAKE_CXX_STANDARD_LIBRARIES=-static-libstdc++');
+    }
+
+    // User-supplied extra defines.
+    args.addAll(cfg.extraDefines);
+
+    return args;
+  }
+
+  // -------------------------------------------------------------------------
   // Windows resolution
   // -------------------------------------------------------------------------
 
@@ -387,6 +521,12 @@ final class DcbCMakeBuilder {
         args.add('-DCMAKE_BUILD_TYPE=$buildType');
         // Ninja requires the MSVC environment (cl.exe on PATH).
         env = _initVcEnvironment(cfg, vsRoot);
+
+      case CmakeGenerator.makefiles:
+        throw DcbCMakeException(
+          'CmakeGenerator.makefiles is not valid on Windows. '
+          'Use CmakeGenerator.msbuild or CmakeGenerator.ninja.',
+        );
 
       case null:
         // Let CMake auto-select (typically Visual Studio multi-config).
