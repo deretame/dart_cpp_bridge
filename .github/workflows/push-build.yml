@@ -193,7 +193,7 @@ jobs:
 
       - name: 安装 NDK 29 + CMake
         run: |
-          sdkmanager --install "ndk;29.0.14206865" "cmake;3.22.1"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;29.0.14206865" "cmake;3.22.1"
           echo "NIX_DCB_CMAKE=$ANDROID_HOME/cmake/3.22.1/bin/cmake" >> $GITHUB_ENV
 
       - name: 获取 Dart API DL 头文件

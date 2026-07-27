@@ -15,5 +15,5 @@ void main() {
     expect(identical(DartCppBridge.instance, bridge), isTrue);
     // Stop the process-wide runtime and close the session.
     bridge.shutdown();
-  });
+  }, skip: 'Requires dart/hook/build.dart (removed; source-only distribution)');
 }
