@@ -112,9 +112,12 @@ jobs:
           dart pub get
           dart test
 
-      - name: codegen demo 构建 + 测试
+      - name: codegen 生成 + 构建 + 测试
         run: |
-          cd examples/codegen_demo
+          cd dcb_gen_tool
+          dart pub get
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
           dart pub get
@@ -162,9 +165,12 @@ jobs:
           dart pub get
           dart test
 
-      - name: codegen demo 构建 + 测试
+      - name: codegen 生成 + 构建 + 测试
         run: |
-          cd examples/codegen_demo
+          cd dcb_gen_tool
+          dart pub get
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
           dart pub get

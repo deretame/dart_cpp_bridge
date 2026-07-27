@@ -279,6 +279,10 @@ def _cpp_type(t: dict[str, Any]) -> str:
         if not q.startswith("::"):
             q = "::" + q
         return q
+    if k == "dart_fn":
+        sig_ret = _cpp_type(t["return"])
+        sig_args = [_cpp_type(a) for a in t.get("args", [])]
+        return f"dcb::DartFn<{sig_ret}({', '.join(sig_args)})>"
     raise ValueError(f"unsupported C++ type: {t}")
 
 
@@ -489,11 +493,12 @@ def _cpp_data_class_helpers(classes: list[dict[str, Any]]) -> str:
 
 def _cpp_class_method_cases(
     classes: list[dict[str, Any]],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Generate C++ dispatch cases for opaque class methods (constructor,
     instance, static)."""
     cases: list[str] = []
     sync_cases: list[str] = []
+    coro_fns: list[str] = []
 
     for cls in classes:
         if cls.get("kind") != "opaque_class":
@@ -610,36 +615,75 @@ def _cpp_class_method_cases(
                 sync_cases.append(sync_body)
 
             elif kind == "async":
-                move_caps = ", ".join(
-                    f"{a['name']} = std::move({a['name']})"
-                    if a["type"].get("kind") == "string"
-                    else a["name"]
-                    for a in non_sink_args
-                )
-                handle_cap = "handle, obj, " if not is_static else ""
-                if move_caps:
-                    captures = handle_cap + move_caps
+                # Generate a static coroutine function to avoid MSVC 19.51+
+                # coroutine-lambda bug with complex type captures.
+                coro_fn_name = f"_coro_{class_name}_{m['name']}"
+                coro_params = [
+                    "const std::shared_ptr<Session>& session",
+                    "std::uint64_t gen",
+                    "std::uint64_t req",
+                    "std::uint32_t method",
+                    "std::uint64_t session_id",
+                ]
+                if not is_static:
+                    coro_params.append("std::shared_ptr<void> obj")
+                for a in non_sink_args:
+                    coro_params.append(f"{_cpp_type(a['type'])} {a['name']}")
+                params_str = ", ".join(coro_params)
+
+                # Build call with std::move for user args.
+                if is_static:
+                    call_args = ", ".join(f"std::move({a})" for a in arg_names)
+                    static_call = f"{class_q}::{m['name']}({call_args})"
                 else:
-                    captures = handle_cap.rstrip(", ")
-                call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
-                fn_label = f"{class_name}::{m['name']}"
+                    call_args = ", ".join(f"std::move({a})" for a in arg_names)
+                    static_call = f"static_cast<{class_q}*>(obj.get())->{m['name']}({call_args})"
+
+                if ret.get("kind") == "void":
+                    call_stmt = f"co_await {static_call};"
+                else:
+                    call_stmt = f"auto out = co_await {static_call};"
+
+                coro_body = (
+                    f"async_simple::coro::Lazy<> {coro_fn_name}({params_str}) {{\n"
+                    f"  try {{\n"
+                    f"    {call_stmt}\n"
+                    f"    ByteWriter w;\n"
+                    f"    {write}\n"
+                    f"    post_ok(session, gen, req, method, w.raw());\n"
+                    f"  }} catch (const std::exception& e) {{\n"
+                    f"    post_err(session, gen, req, method, \"{fn_label}\", e.what());\n"
+                    f"  }} catch (...) {{\n"
+                    f"    post_err(session, gen, req, method, \"{fn_label}\", \"unknown\");\n"
+                    f"  }}\n"
+                    f"  co_return;\n"
+                    f"}}"
+                )
+                coro_fns.append(coro_body)
+
+                # Case body: decode args, dispatch non-coroutine lambda.
+                lambda_user_args = ", ".join(a["name"] for a in non_sink_args)
+                if not is_static:
+                    lambda_caps = "obj"
+                    if lambda_user_args:
+                        lambda_caps += ", " + lambda_user_args
+                else:
+                    lambda_caps = lambda_user_args
+
+                # Build args for the static coroutine function call.
+                coro_call_parts = ["session", "gen", "req", "method", "session_id"]
+                if not is_static:
+                    coro_call_parts.append("obj")
+                coro_call_parts.extend(a["name"] for a in non_sink_args)
+                coro_call_args = ", ".join(coro_call_parts)
+
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {handle_block}
         Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, session_id, {captures}]() -> async_simple::coro::Lazy<> {{
-              try {{
-                {call_stmt}
-                ByteWriter w;
-                {write}
-                post_ok(session, gen, req, method, w.raw());
-              }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, "{fn_label}", e.what());
-              }} catch (...) {{
-                post_err(session, gen, req, method, "{fn_label}", "unknown");
-              }}
-              co_return;
+            [session, gen, req, method, session_id, {lambda_caps}]() {{
+              return {coro_fn_name}({coro_call_args});
             }});
         break;
       }}"""
@@ -720,7 +764,7 @@ def _cpp_class_method_cases(
             else:
                 raise ValueError(f"kind not supported yet: {kind}")
 
-    return cases, sync_cases
+    return cases, sync_cases, coro_fns
 
 
 def _dart_data_class_defs(
@@ -1450,8 +1494,9 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 }  // namespace dcb
 """
     inc_lines = "\n".join(f'#include "{p}"' for p in api_includes)
-    cases = []
-    sync_cases = []
+    cases: list[str] = []
+    sync_cases: list[str] = []
+    coro_fns: list[str] = []
 
     for fn in fns:
         mid = fn["method_id"]
@@ -1497,6 +1542,66 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             sync_cases.append(sync_body)
 
         elif kind == "async":
+            # Generate a static coroutine function to avoid MSVC 19.51+
+            # coroutine-lambda bug with complex type captures.
+            coro_fn_name = f"_coro_{fn['name']}"
+            user_args = [
+                a for a in fn["args"]
+                if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
+            ]
+            coro_params = [
+                "const std::shared_ptr<Session>& session",
+                "std::uint64_t gen",
+                "std::uint64_t req",
+                "std::uint32_t method",
+            ]
+            for a in user_args:
+                coro_params.append(f"{_cpp_type(a['type'])} {a['name']}")
+            if opt_sink_arg:
+                sink_inner = opt_sink_arg["type"]["inner"]["inner"]
+                coro_params.append(
+                    f"std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink"
+                )
+            params_str = ", ".join(coro_params)
+
+            # Build call with std::move for all user args.
+            static_call_parts = []
+            for a in fn["args"]:
+                if a["type"].get("kind") == "stream_sink":
+                    continue
+                if _is_optional_sink_arg(a):
+                    static_call_parts.append("std::move(sink)")
+                else:
+                    static_call_parts.append(f"std::move({a['name']})")
+            q = fn["qualified"]
+            if not q.startswith("::"):
+                q = "::" + q
+            static_call = f"{q}({', '.join(static_call_parts)})"
+
+            ret_kind = fn["return"].get("kind")
+            if ret_kind == "void":
+                call_stmt = f"co_await {static_call};"
+            else:
+                call_stmt = f"auto out = co_await {static_call};"
+
+            coro_body = (
+                f"async_simple::coro::Lazy<> {coro_fn_name}({params_str}) {{\n"
+                f"  try {{\n"
+                f"    {call_stmt}\n"
+                f"    ByteWriter w;\n"
+                f"    {write}\n"
+                f"    post_ok(session, gen, req, method, w.raw());\n"
+                f"  }} catch (const std::exception& e) {{\n"
+                f"    post_err(session, gen, req, method, \"{fn['name']}\", e.what());\n"
+                f"  }} catch (...) {{\n"
+                f"    post_err(session, gen, req, method, \"{fn['name']}\", \"unknown\");\n"
+                f"  }}\n"
+                f"  co_return;\n"
+                f"}}"
+            )
+            coro_fns.append(coro_body)
+
+            # Lambda capture expressions for the dispatch case.
             move_caps = ", ".join(
                 f"{a['name']} = std::move({a['name']})"
                 if a["type"].get("kind") == "string"
@@ -1525,29 +1630,18 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         }}"""
                 sink_capture = ", sink = std::move(sink)"
 
-            ret_kind = fn["return"].get("kind")
-            if ret_kind == "void":
-                call_stmt = f"co_await {call};"
-            else:
-                call_stmt = f"auto out = co_await {call};"
+            # Case body: decode args, dispatch non-coroutine lambda.
+            lambda_args = ", ".join(a["name"] for a in user_args)
+            if opt_sink_arg:
+                lambda_args += ", std::move(sink)" if lambda_args else "std::move(sink)"
 
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {reads}{sink_setup}
         Runtime::instance().spawn_on_asio(
-            [session, gen, req, method{move_caps}{sink_capture}]() -> async_simple::coro::Lazy<> {{
-              try {{
-                {call_stmt}
-                ByteWriter w;
-                {write}
-                post_ok(session, gen, req, method, w.raw());
-              }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, "{fn['name']}", e.what());
-              }} catch (...) {{
-                post_err(session, gen, req, method, "{fn['name']}", "unknown");
-              }}
-              co_return;
+            [session, gen, req, method{move_caps}{sink_capture}]() {{
+              return {coro_fn_name}(session, gen, req, method{', ' + lambda_args if lambda_args else ''});
             }});
         break;
       }}"""
@@ -1652,12 +1746,14 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         else:
             raise ValueError(f"kind not supported yet: {kind}")
 
-    class_cases, class_sync_cases = _cpp_class_method_cases(ir.get("classes", []))
+    class_cases, class_sync_cases, class_coro_fns = _cpp_class_method_cases(ir.get("classes", []))
     cases.extend(class_cases)
     sync_cases.extend(class_sync_cases)
+    coro_fns.extend(class_coro_fns)
 
     cases_s = "\n".join(cases) if cases else ""
     sync_s = "\n".join(sync_cases) if sync_cases else ""
+    coro_fns_s = "\n\n".join(coro_fns) if coro_fns else ""
 
     cpp = f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 #include "wire_dispatch.hpp"
@@ -1708,6 +1804,8 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 {alive_counters}
 
 {cpp_helpers}
+
+{coro_fns_s}
 
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len) {{
