@@ -4,36 +4,30 @@ import 'dart:io';
 import 'package:codegen_demo/codegen_demo.dart';
 import 'package:test/test.dart';
 
+/// Resolves the hook-built DLL from .dart_tool, or falls back to manual build.
 String resolveDemoLibrary() {
-  const fromDefine = String.fromEnvironment('DCB_LIBRARY_PATH');
-  if (fromDefine.isNotEmpty) return fromDefine;
-  final fromEnv = Platform.environment['DCB_LIBRARY_PATH'];
-  if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
-
-  final roots = [
-    Directory.current,
-    Directory.current.parent,
-    Directory.current.parent.parent,
-  ];
-  final names = [
-    if (Platform.isWindows) ...[
-      'build/Release/dcb_codegen_demo.dll',
-      'build/Debug/dcb_codegen_demo.dll',
-      'build/dcb_codegen_demo.dll',
-    ],
-    if (Platform.isLinux) 'build/libdcb_codegen_demo.so',
-    if (Platform.isMacOS) 'build/libdcb_codegen_demo.dylib',
-  ];
-  for (final root in roots) {
-    for (final rel in names) {
-      final f = File(
-        '${root.path}${Platform.pathSeparator}${rel.replaceAll('/', Platform.pathSeparator)}',
-      );
-      if (f.existsSync()) return f.path;
+  // 1. Hook-built asset (Native Assets pipeline).
+  final dartTool = Directory('.dart_tool');
+  if (dartTool.existsSync()) {
+    for (final entity in dartTool.listSync(recursive: true)) {
+      if (entity is File && entity.path.endsWith('dcb_codegen_demo.dll')) {
+        return entity.absolute.path;
+      }
     }
   }
+  // 2. Manual cmake build fallback.
+  const names = [
+    'build/Release/dcb_codegen_demo.dll',
+    'build/Debug/dcb_codegen_demo.dll',
+    'build/dcb_codegen_demo.dll',
+  ];
+  for (final rel in names) {
+    final f = File(rel);
+    if (f.existsSync()) return f.absolute.path;
+  }
   throw StateError(
-    'dcb_codegen_demo library not found. Build examples/codegen_demo first.',
+    'dcb_codegen_demo.dll not found. Run "dart test" (hook builds it) '
+    'or build manually with CMake.',
   );
 }
 
