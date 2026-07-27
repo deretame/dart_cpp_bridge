@@ -462,8 +462,14 @@ final class DcbCMakeBuilder {
       case AndroidConfig cfg:
         cmake = cfg.cmake;
         configureArgs.addAll(_resolveAndroidArgs(cfg, buildType));
-      case MacosConfig():
-        throw UnsupportedError('DcbCMakeBuilder: macOS is not supported yet.');
+      case MacosConfig cfg:
+        cmake = cfg.cmake;
+        // Single-config generator: build type set at configure time.
+        configureArgs.add('-DCMAKE_BUILD_TYPE=$buildType');
+        configureArgs.add('-DCMAKE_POSITION_INDEPENDENT_CODE=ON');
+        if (cfg.universal) {
+          configureArgs.add('-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64');
+        }
       case IosConfig():
         throw UnsupportedError('DcbCMakeBuilder: iOS is not supported yet.');
     }
