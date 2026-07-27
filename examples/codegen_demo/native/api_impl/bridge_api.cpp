@@ -160,6 +160,7 @@ async_simple::coro::Lazy<Point> scale(Point p, double factor) {
   Point r;
   r.x = p.x * factor;
   r.y = p.y * factor;
+  r.label = p.label;
   co_return r;
 }
 

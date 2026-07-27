@@ -16,23 +16,26 @@ final class Point {
   const Point({
     required this.x,
     required this.y,
+    this.label,
   });
 
   final double x;
   final double y;
+  final String? label;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Point &&
         x == other.x &&
-        y == other.y);
+        y == other.y &&
+        label == other.label);
 
   @override
-  int get hashCode => Object.hash(x, y);
+  int get hashCode => Object.hash(x, y, label);
 
   @override
-  String toString() => 'Point(x: $x, y: $y)';
+  String toString() => 'Point(x: $x, y: $y, label: $label)';
 }
 
 /// Generated data class for `demo::api::Rect`.

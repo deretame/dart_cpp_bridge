@@ -213,12 +213,12 @@ void main() {
 
   test('data class toString (default + custom dart_code)', () {
     const p = Point(x: 1.0, y: 2.0);
-    expect(p.toString(), 'Point(x: 1.0, y: 2.0)');
+    expect(p.toString(), 'Point(x: 1.0, y: 2.0, label: null)');
     const r = Rect(
       topLeft: Point(x: 0.0, y: 0.0),
       bottomRight: Point(x: 3.0, y: 4.0),
     );
-    expect(r.toString(), 'Rect[Point(x: 0.0, y: 0.0) -> Point(x: 3.0, y: 4.0)]');
+    expect(r.toString(), 'Rect[Point(x: 0.0, y: 0.0, label: null) -> Point(x: 3.0, y: 4.0, label: null)]');
   });
 
   test('data class scale', () async {
@@ -226,6 +226,15 @@ void main() {
     final scaled = await scale(p: p, factor: 2.0);
     expect(scaled.x, closeTo(3.0, 1e-9));
     expect(scaled.y, closeTo(-4.0, 1e-9));
+    expect(scaled.label, isNull);
+  });
+
+  test('data class optional field round-trip', () async {
+    final p = const Point(x: 1.0, y: 2.0, label: 'hello');
+    final scaled = await scale(p: p, factor: 3.0);
+    expect(scaled.x, closeTo(3.0, 1e-9));
+    expect(scaled.y, closeTo(6.0, 1e-9));
+    expect(scaled.label, 'hello');
   });
 
   test('data class bounding_box', () async {

@@ -15,7 +15,9 @@
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
     "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\async_simple-src",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include"
   ],
   "enums": [
     {
@@ -443,6 +445,15 @@
           "type": {
             "kind": "f64"
           }
+        },
+        {
+          "name": "label",
+          "type": {
+            "kind": "optional",
+            "inner": {
+              "kind": "string"
+            }
+          }
         }
       ],
       "methods": [],
@@ -459,7 +470,7 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point",
-            "loc": "bridge_api.h:31"
+            "loc": "bridge_api.h:32"
           }
         },
         {
@@ -468,7 +479,7 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point",
-            "loc": "bridge_api.h:32"
+            "loc": "bridge_api.h:33"
           }
         }
       ],

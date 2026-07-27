@@ -58,12 +58,14 @@ static AliveCounter_Counter g_Counter_alive_count;
 inline void encode_Point(ByteWriter& w, const ::demo::api::Point& v) {
   w.f64(v.x);
   w.f64(v.y);
+  w.opt(v.label, [&](const auto& v) { w.str(v); });
 }
 
 inline ::demo::api::Point decode_Point(ByteReader& r) {
   ::demo::api::Point v;
   v.x = r.f64();
   v.y = r.f64();
+  v.label = r.opt<std::string>([&]() { return r.str(); });
   return v;
 }
 inline void encode_Rect(ByteWriter& w, const ::demo::api::Rect& v) {

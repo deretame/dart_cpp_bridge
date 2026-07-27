@@ -25,6 +25,7 @@ inline std::int32_t internal_helper() { return -1; }
 struct BRIDGE_DATA_CLASS Point {
     double x;
     double y;
+    std::optional<std::string> label;
 };
 
 struct BRIDGE_DATA_CLASS Rect {
@@ -45,7 +46,7 @@ BRIDGE_NORMAL
 std::string sleep_greeting(std::string name);
 
 // enum test
-enum class OrderStatus : std::int32_t {
+enum class BRIDGE_EXPORT OrderStatus : std::int32_t {
   kCreated = 0,
   kPaid = 1,
   kShipped = 2,

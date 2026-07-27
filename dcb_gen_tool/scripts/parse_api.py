@@ -81,7 +81,7 @@ def _enum_constant_name_to_dart(name: str) -> str:
 
 
 def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
-    """Collect enum declarations from a translation unit."""
+    """Collect enum declarations marked with BRIDGE_EXPORT from a translation unit."""
     out: list[dict[str, Any]] = []
     header_s = str(header_path.resolve())
 
@@ -98,10 +98,26 @@ def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
                 return
             if Path(loc.file.name).resolve() != Path(header_s):
                 return
+            # Only export enums explicitly marked with BRIDGE_EXPORT.
+            attrs = _cursor_attrs(cursor)
+            if ATTR_EXPORT not in attrs:
+                return
             qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
             values = []
             for ch in cursor.get_children():
                 if ch.kind == CursorKind.ENUM_CONSTANT_DECL:
+                    # Require explicit value assignment (e.g. kFoo = 0).
+                    try:
+                        toks = [t.spelling for t in ch.get_tokens()]
+                    except Exception:
+                        toks = []
+                    if "=" not in toks:
+                        raise SystemExit(
+                            f"\nCODEGEN ERROR: enum `{qname}` constant "
+                            f"`{ch.spelling}` has no explicit value.\n"
+                            f"  All enum constants must specify an explicit "
+                            f"integer value, e.g. {ch.spelling} = 0.\n"
+                        )
                     values.append(
                         {
                             "name": ch.spelling,
@@ -109,7 +125,7 @@ def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
                             "value": ch.enum_value,
                         }
                     )
-            # underlying type: prefer enum's integer type, else int32_t
+            # underlying type: must be std::int32_t
             underlying = cursor.enum_type.spelling if cursor.enum_type else "std::int32_t"
             out.append(
                 {
@@ -1202,6 +1218,17 @@ def parse_project(config_path: Path) -> dict[str, Any]:
             if d.severity >= 3:
                 diags_out.append(f"{h}: {d.spelling}")
         enums.extend(_collect_enums(tu, h))
+
+    # Validate enum underlying type: only std::int32_t (or 'int') is allowed.
+    _ALLOWED_ENUM_UNDERLYING = {"int", "std::int32_t", "int32_t", "signed int"}
+    for e in enums:
+        if e["underlying"] not in _ALLOWED_ENUM_UNDERLYING:
+            raise SystemExit(
+                f"\nCODEGEN ERROR: enum `{e['qualified']}` has underlying type "
+                f"`{e['underlying']}`.\n"
+                f"  Only `std::int32_t` is supported as enum underlying type.\n"
+                f"  Fix: enum class {e['name']} : std::int32_t {{ ... }};\n"
+            )
 
     enum_by_qualified = {e["qualified"]: e for e in enums}
     # If multiple enums share a short name, the last one wins; codegen will

@@ -854,6 +854,94 @@ class BRIDGE_OPAQUE Widget {
         )
 
 
+# ---------------------------------------------------------------------------
+# E: Enum validation tests
+# ---------------------------------------------------------------------------
+def test_e01_enum_without_export_not_in_ir() -> None:
+    """Enum without BRIDGE_EXPORT should not appear in IR."""
+    header = HEADER_PREAMBLE + """
+enum class Color : std::int32_t {
+  kRed = 0,
+  kGreen = 1,
+};
+
+BRIDGE_SYNC
+std::int32_t dummy(std::int32_t x);
+"""
+    import json as _json
+
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "E01: unmarked enum not exported",
+                False,
+                f"codegen failed unexpectedly: exit={r.returncode}\n{combined[:500]}",
+            )
+            return
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        enum_names = [e["name"] for e in ir.get("enums", [])]
+        passed = "Color" not in enum_names
+        _record(
+            "E01: unmarked enum not exported",
+            passed,
+            f"enums in IR: {enum_names}",
+        )
+
+
+def test_e02_enum_wrong_underlying_type() -> None:
+    """Enum with non-int32_t underlying type should be rejected."""
+    header = HEADER_PREAMBLE + """
+enum class BRIDGE_EXPORT SmallEnum : std::uint8_t {
+  kA = 0,
+  kB = 1,
+};
+
+BRIDGE_SYNC
+std::int32_t dummy(std::int32_t x);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and (
+            "underlying" in combined.lower() or "int32" in combined
+        )
+        _record(
+            "E02: enum wrong underlying type rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+def test_e03_enum_missing_explicit_value() -> None:
+    """Enum constant without explicit value should be rejected."""
+    header = HEADER_PREAMBLE + """
+enum class BRIDGE_EXPORT Status : std::int32_t {
+  kOk,
+  kError,
+};
+
+BRIDGE_SYNC
+std::int32_t dummy(std::int32_t x);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and (
+            "explicit" in combined.lower() or "no explicit value" in combined
+        )
+        _record(
+            "E03: enum missing explicit value rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
 def main() -> int:
     print("=" * 60)
     print("Codegen Parser Defensive Tests")
@@ -889,6 +977,10 @@ def main() -> int:
         test_ts03_to_string_with_args,
         test_ts04_to_string_static,
         test_ts05_to_string_async,
+        # Enum validation
+        test_e01_enum_without_export_not_in_ir,
+        test_e02_enum_wrong_underlying_type,
+        test_e03_enum_missing_explicit_value,
     ]
 
     workers = int(os.environ.get("DCB_TEST_WORKERS", "0")) or min(len(tests), os.cpu_count() or 4)

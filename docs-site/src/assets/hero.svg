@@ -1,0 +1,39 @@
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="300" rx="16" fill="#f8fafc"/>
+  
+  <!-- Dart side -->
+  <g transform="translate(60, 100)">
+    <rect x="0" y="0" width="100" height="100" rx="20" fill="#0175C2" opacity="0.1"/>
+    <path d="M50 20 L80 50 L50 80 L35 65 L50 50 L35 35 Z" fill="#0175C2"/>
+    <text x="50" y="95" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="#0175C2">Dart</text>
+  </g>
+  
+  <!-- C++ side -->
+  <g transform="translate(240, 100)">
+    <rect x="0" y="0" width="100" height="100" rx="20" fill="#00599C" opacity="0.1"/>
+    <text x="50" y="58" text-anchor="middle" font-family="system-ui" font-size="32" font-weight="700" fill="#00599C">C++</text>
+    <text x="50" y="95" text-anchor="middle" font-family="system-ui" font-size="14" font-weight="600" fill="#00599C">Native</text>
+  </g>
+  
+  <!-- Bridge connection -->
+  <g transform="translate(160, 130)">
+    <!-- Bridge arrows -->
+    <path d="M0 20 H80" stroke="#6366f1" stroke-width="3" stroke-linecap="round"/>
+    <path d="M70 10 L80 20 L70 30" stroke="#6366f1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path d="M80 20 H0" stroke="#8b5cf6" stroke-width="3" stroke-linecap="round" transform="translate(0, 20)"/>
+    <path d="M10 30 L0 40 L10 50" stroke="#8b5cf6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    
+    <!-- FFI label -->
+    <rect x="20" y="-5" width="40" height="20" rx="4" fill="#6366f1"/>
+    <text x="40" y="9" text-anchor="middle" font-family="monospace" font-size="10" fill="white">FFI</text>
+  </g>
+  
+  <!-- Decorative elements -->
+  <circle cx="50" cy="50" r="8" fill="#0175C2" opacity="0.2"/>
+  <circle cx="350" cy="250" r="12" fill="#00599C" opacity="0.2"/>
+  <circle cx="320" cy="60" r="6" fill="#6366f1" opacity="0.3"/>
+  
+  <!-- Bottom label -->
+  <text x="200" y="260" text-anchor="middle" font-family="system-ui" font-size="13" fill="#64748b">Effortless Interoperability</text>
+</svg>

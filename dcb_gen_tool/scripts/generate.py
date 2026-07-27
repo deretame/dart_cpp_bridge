@@ -744,7 +744,11 @@ def _dart_data_class_defs(
         hash_fields = []
         for f in fields:
             dart_name = _dart_param_name(f["name"])
-            ctor_lines.append(f"    required this.{dart_name},")
+            is_nullable = f["type"].get("kind") == "optional"
+            if is_nullable:
+                ctor_lines.append(f"    this.{dart_name},")
+            else:
+                ctor_lines.append(f"    required this.{dart_name},")
             field_lines.append(f"  final {_dart_type(f['type'])} {dart_name};")
             equals_parts.append(
                 f"        {dart_name} == other.{dart_name}"
@@ -1011,7 +1015,7 @@ def _dart_write_item(
         inner = t["inner"]
         return [
             f"{indent}if ({expr} == null) {{ {writer}.u8(0); }} else {{ {writer}.u8(1);",
-            *_dart_write_item(inner, expr, indent + "  ", writer),
+            *_dart_write_item(inner, f"{expr}!", indent + "  ", writer),
             f"{indent}}}",
         ]
     if k == "vector":

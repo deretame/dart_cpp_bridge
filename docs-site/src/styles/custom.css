@@ -1,0 +1,64 @@
+/* Hero 渐变背景（类似 Starlight 官网） */
+main .content-panel:first-child {
+  position: relative;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(136, 100, 255, 0.16), transparent 70%),
+    radial-gradient(ellipse 40% 40% at 85% 20%, rgba(255, 170, 80, 0.07), transparent 60%),
+    radial-gradient(ellipse 50% 50% at 10% 40%, rgba(100, 140, 255, 0.08), transparent 60%);
+}
+
+:root[data-theme='dark'] main .content-panel:first-child {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(136, 100, 255, 0.22), transparent 70%),
+    radial-gradient(ellipse 40% 40% at 85% 20%, rgba(255, 170, 80, 0.08), transparent 60%),
+    radial-gradient(ellipse 50% 50% at 10% 40%, rgba(100, 140, 255, 0.1), transparent 60%);
+}
+
+/* 星点装饰 */
+main .content-panel:first-child::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 25%, rgba(255, 200, 80, 0.5) 50%, transparent 50%),
+    radial-gradient(1px 1px at 40% 15%, rgba(160, 120, 255, 0.45) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 65% 35%, rgba(255, 200, 80, 0.4) 50%, transparent 50%),
+    radial-gradient(1px 1px at 80% 12%, rgba(160, 120, 255, 0.5) 50%, transparent 50%),
+    radial-gradient(1px 1px at 90% 45%, rgba(255, 200, 80, 0.35) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 25% 55%, rgba(160, 120, 255, 0.35) 50%, transparent 50%),
+    radial-gradient(1px 1px at 55% 60%, rgba(255, 200, 80, 0.3) 50%, transparent 50%),
+    radial-gradient(1px 1px at 10% 70%, rgba(160, 120, 255, 0.3) 50%, transparent 50%),
+    radial-gradient(1.5px 1.5px at 72% 68%, rgba(255, 200, 80, 0.35) 50%, transparent 50%),
+    radial-gradient(1px 1px at 45% 80%, rgba(160, 120, 255, 0.25) 50%, transparent 50%);
+}
+
+/* 修复 CardGrid 布局对齐 */
+.card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+}
+
+.card-grid .card {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* 响应式：小屏幕改为 2 列 */
+@media (max-width: 900px) {
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* 响应式：手机改为 1 列 */
+@media (max-width: 600px) {
+  .card-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

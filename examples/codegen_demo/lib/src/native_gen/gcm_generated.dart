@@ -18,12 +18,16 @@ enum OrderStatus {
 void _writeDataClass_Point(ByteWriter w, Point v) {
   w.f64(v.x);
   w.f64(v.y);
+  if (v.label == null) { w.u8(0); } else { w.u8(1);
+    w.str(v.label!);
+  }
 }
 
 Point _readDataClass_Point(ByteReader _r) {
   return Point(
     x: _r.f64(),
     y: _r.f64(),
+    label: ((_r.u8() != 0) ? _r.str() : null),
   );
 }
 void _writeDataClass_Rect(ByteWriter w, Rect v) {
@@ -496,7 +500,7 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.u64(self.handle);
     if (value == null) { _payload.u8(0); } else { _payload.u8(1);
-      _payload.i32(value);
+      _payload.i32(value!);
     }
     final _payloadBytes = _payload.takeBytes();
     await bridge.invokeAsyncMethod(counterSetValueId, _payloadBytes);
