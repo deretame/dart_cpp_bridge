@@ -1,34 +1,40 @@
 # =============================================================================
-# dart_cpp_bridge — 基础运行时库
+# dart_cpp_bridge — Base runtime library
 # =============================================================================
 #
-# 本目录是基础运行时库。下游项目通过 add_subdirectory / FetchContent 接入，
-# 并链接 dart_cpp_bridge::runtime 目标（STATIC 库）。
+# This directory contains the base runtime library. Downstream projects
+# integrate via add_subdirectory / FetchContent and link against the
+# dart_cpp_bridge::runtime target (STATIC library).
 #
-# 为什么下游必须用 WHOLE_ARCHIVE 链接：
-#   ffi_entry.cpp 里的 dcb_* 导出函数只被 Dart 经 FFI 调用，C++ 侧没有任何
-#   引用。普通 STATIC 链接时，链接器不会把"未被引用"的 ffi_entry.obj 拉进
-#   最终 DLL，导致 dcb_* 导出符号丢失、Dart FFI 查找失败。因此下游必须用
-#   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> 链接，强制链入全部
-#   对象。该 genex 需要 CMake 3.24+（OBJECT 库可免此步骤，但不可安装分发）。
+# Why downstream MUST link with WHOLE_ARCHIVE:
+#   The dcb_* exported functions in ffi_entry.cpp are only called from Dart
+#   via FFI — there are no C++ references to them. With normal STATIC linking,
+#   the linker will not pull in the "unreferenced" ffi_entry.obj into the final
+#   DLL, causing dcb_* symbols to be missing and Dart FFI lookups to fail.
+#   Therefore downstream must link with
+#   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> to force all objects
+#   to be included. This genex requires CMake 3.24+ (OBJECT libraries avoid
+#   this step but cannot be installed/distributed).
 #
-# 依赖版本单点真相：
-#   asio / async-simple 的版本只在本文件钉死。下游链接 dart_cpp_bridge::runtime
-#   时会传递获得二者的 include 路径与编译定义，无需自行声明，不会版本漂移。
+# Single source of truth for dependency versions:
+#   asio / async-simple versions are pinned only in this file. Downstream
+#   targets linking dart_cpp_bridge::runtime transitively receive both include
+#   paths and compile definitions — no need to declare them separately, no
+#   version drift.
 #
-# 使用方式（monorepo 内下游项目）：
+# Usage (monorepo downstream project):
 #   set(DCB_ROOT "<path-to>/dart/native")
 #   add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 #   add_library(my_bridge SHARED <your wire_dispatch.cpp> <your impl.cpp>)
 #   target_link_libraries(my_bridge PRIVATE
 #     $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 #
-# 使用方式（外部项目，Phase 3 产品化后推荐）：
+# Usage (external project, recommended after Phase 3 productization):
 #   include(FetchContent)
 #   FetchContent_Declare(
 #     dart_cpp_bridge
 #     GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#     GIT_TAG        main  # 或钉死 tag/commit
+#     GIT_TAG        main  # or pin a tag/commit
 #   )
 #   FetchContent_MakeAvailable(dart_cpp_bridge)
 #   target_link_libraries(my_bridge PRIVATE
@@ -58,9 +64,10 @@ target_include_directories(asio_iface INTERFACE ${asio_SOURCE_DIR}/asio/include)
 target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
 
 # --- async-simple (header-only) ---
-# MakeAvailable 会执行其 CMakeLists，提供官方 async_simple_header_only
-# INTERFACE 目标（include 目录 + Threads + cxx_std_20）。Windows 上 UTHREAD=OFF，
-# async_simple 退化为纯 INTERFACE 库，零额外编译开销。
+# MakeAvailable runs its CMakeLists, providing the official
+# async_simple_header_only INTERFACE target (include dirs + Threads +
+# cxx_std_20). On Windows with UTHREAD=OFF, async_simple degrades to a
+# pure INTERFACE library with zero extra compilation overhead.
 set(ASYNC_SIMPLE_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 set(ASYNC_SIMPLE_BUILD_DEMO_EXAMPLE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -79,7 +86,7 @@ if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
     "Missing third_party/dart_api. Run: cmake -P ../fetch_dart_api.cmake")
 endif()
 
-# --- 基础运行时（STATIC 库，下游以 WHOLE_ARCHIVE 链接） ---
+# --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---
 add_library(dcb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/object_handle.cpp

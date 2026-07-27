@@ -209,18 +209,72 @@ final class LinuxConfig extends DcbPlatformConfig {
   });
 }
 
-/// Android configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
+/// Android configuration for [DcbCMakeBuilder].
+///
+/// Uses the NDK's CMake toolchain file for cross-compilation. The NDK ships
+/// its own clang toolchain and libc++, so no separate compiler selection is
+/// needed.
+///
+/// By default, libc++ is statically linked (`c++_static`). When multiple
+/// native `.so` libraries coexist in the same APK, consider switching to
+/// `c++_shared` to reduce APK size and avoid duplicated C++ runtime state.
+/// Note: using `c++_shared` requires the shared library to be packaged into
+/// the APK (AGP handles this automatically when using `externalNativeBuild`).
 final class AndroidConfig extends DcbPlatformConfig {
   @override
   final String cmake;
 
-  /// Optional path to the Android NDK (forwarded as `CMAKE_ANDROID_NDK`).
-  final String? ndkPath;
+  /// Path to the Android NDK root directory.
+  ///
+  /// Example: `r'C:\Users\user\AppData\Local\Android\Sdk\ndk\29.0.14206865'`
+  /// or `/opt/android-ndk-r29`.
+  ///
+  /// The builder derives the toolchain file from this path:
+  /// `<ndkPath>/build/cmake/android.toolchain.cmake`.
+  final String ndkPath;
 
-  /// Optional minimum Android API level (forwarded as `ANDROID_PLATFORM`).
-  final int? androidPlatform;
+  /// Target ABI (Android Binary Interface).
+  ///
+  /// Supported values: `'arm64-v8a'` (default), `'armeabi-v7a'`, `'x86_64'`,
+  /// `'x86'`. Passed as `-DANDROID_ABI=<abi>`.
+  final String abi;
 
-  const AndroidConfig({this.cmake = 'cmake', this.ndkPath, this.androidPlatform});
+  /// Minimum Android API level.
+  ///
+  /// Defaults to 21 (Android 5.0 Lollipop). Passed as
+  /// `-DANDROID_PLATFORM=android-<level>`.
+  ///
+  /// Flutter's default `minSdkVersion` is typically 21 or 23. Match your
+  /// app's `build.gradle` setting.
+  final int androidPlatform;
+
+  /// C++ STL linkage strategy.
+  ///
+  /// - `true` (default): static link libc++ (`-DANDROID_STL=c++_static`).
+  ///   The output `.so` is self-contained with no external C++ dependency.
+  /// - `false`: shared link libc++ (`-DANDROID_STL=c++_shared`).
+  ///   Requires `libc++_shared.so` to be packaged in the APK. Use this when
+  ///   multiple native libraries in the same app share C++ state.
+  final bool staticStl;
+
+  /// CMake generator selection.
+  ///
+  /// Defaults to [CmakeGenerator.ninja] (NDK bundles ninja).
+  /// Set to `null` to let CMake auto-select.
+  final CmakeGenerator? generator;
+
+  /// Extra definitions passed verbatim to the CMake configure step.
+  final List<String> extraDefines;
+
+  const AndroidConfig({
+    this.cmake = 'cmake',
+    required this.ndkPath,
+    this.abi = 'arm64-v8a',
+    this.androidPlatform = 21,
+    this.staticStl = true,
+    this.generator = CmakeGenerator.ninja,
+    this.extraDefines = const [],
+  });
 }
 
 /// macOS configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
@@ -250,19 +304,19 @@ final class IosConfig extends DcbPlatformConfig {
 final class DcbBuildOptions {
   /// Whether to produce a Debug build.
   ///
-  /// Defaults to `bool.fromEnvironment('dart.library.developer')`, which is
-  /// `true` during `dart run` / `dart test` and `false` in AOT-compiled or
-  /// release builds.
+  /// When `null` (the default), the build type is inferred at runtime from
+  /// `input.config.linkingEnabled`:
+  /// - `linkingEnabled == true` → AOT / release → `Release`
+  /// - `linkingEnabled == false` → JIT / debug → `Debug`
+  ///
+  /// Set explicitly to override auto-detection.
   ///
   /// Controls `CMAKE_BUILD_TYPE` (single-config generators) or `--config`
   /// (multi-config generators), and selects the debug or release CRT variant
   /// (`/MDd` vs `/MD`, `/MTd` vs `/MT`).
-  final bool debug;
+  final bool? debug;
 
-  const DcbBuildOptions({
-    bool? debug,
-  }) : debug = debug ??
-            const bool.fromEnvironment('dart.library.developer');
+  const DcbBuildOptions({this.debug});
 }
 
 // ---------------------------------------------------------------------------
@@ -316,8 +370,16 @@ final class DcbCMakeBuilder {
   /// The code-asset name within the package, e.g. `'hook_demo.dart'`.
   ///
   /// This becomes the runtime identifier
-  /// `@Native(assetId: 'package:<package>/<assetName>')`.
+  /// `@Native(assetId: 'package:<assetPackage>/<assetName>')`.
   final String assetName;
+
+  /// The package namespace for the emitted code asset.
+  ///
+  /// Defaults to the building package's own name. Set this to
+  /// `'dart_cpp_bridge'` when your downstream library embeds the runtime
+  /// (via WHOLE_ARCHIVE) and wants `@Native(assetId: 'package:dart_cpp_bridge/...')`
+  /// annotations to resolve to your combined library.
+  final String? assetPackage;
 
   /// The CMake source directory (`cmake -S`), relative to the package root.
   /// Defaults to the package root.
@@ -338,6 +400,7 @@ final class DcbCMakeBuilder {
   const DcbCMakeBuilder({
     required this.config,
     required this.assetName,
+    this.assetPackage,
     this.sourceDir,
     this.libName,
     this.extraDefines = const [],
@@ -358,6 +421,7 @@ final class DcbCMakeBuilder {
 
     final targetOS = input.config.code.targetOS;
     final packageName = input.packageName;
+    final effectiveAssetPackage = assetPackage ?? packageName;
     final libBaseName = libName ?? packageName;
 
     final sourceRoot = sourceDir == null
@@ -366,7 +430,19 @@ final class DcbCMakeBuilder {
     final buildDir = input.outputDirectory.resolve('dcb_build/');
     Directory.fromUri(buildDir).createSync(recursive: true);
 
-    final buildType = buildOptions.debug ? 'Debug' : 'Release';
+    // Infer debug/release: explicit override > linkingEnabled heuristic.
+    // linkingEnabled is true for AOT (release) builds, false for JIT (debug).
+    final isDebug = buildOptions.debug ?? !input.config.linkingEnabled;
+    final buildType = isDebug ? 'Debug' : 'Release';
+
+    // Resolve link mode from the hooks system preference.
+    // Flutter sets this per-platform: iOS → static, others → dynamic.
+    final linkMode = switch (input.config.code.linkModePreference) {
+      LinkModePreference.static ||
+      LinkModePreference.preferStatic => StaticLinking(),
+      _ => DynamicLoadingBundled(),
+    };
+    final isDynamic = linkMode is DynamicLoadingBundled;
 
     // Resolve platform-specific settings.
     final String cmake;
@@ -383,10 +459,9 @@ final class DcbCMakeBuilder {
       case LinuxConfig cfg:
         cmake = cfg.cmake;
         configureArgs.addAll(_resolveLinuxArgs(cfg, buildType));
-      case AndroidConfig():
-        throw UnsupportedError(
-          'DcbCMakeBuilder: Android is not supported yet.',
-        );
+      case AndroidConfig cfg:
+        cmake = cfg.cmake;
+        configureArgs.addAll(_resolveAndroidArgs(cfg, buildType));
       case MacosConfig():
         throw UnsupportedError('DcbCMakeBuilder: macOS is not supported yet.');
       case IosConfig():
@@ -394,13 +469,21 @@ final class DcbCMakeBuilder {
     }
 
     // 1. Configure.
+    // Invalidate the build directory when configure arguments change
+    // (e.g. switching between c++_static and c++_shared on Android).
+    final allConfigureArgs = [
+      '-DBUILD_SHARED_LIBS=${isDynamic ? 'ON' : 'OFF'}',
+      ...configureArgs,
+      ...extraDefines,
+    ];
+    _invalidateBuildOnConfigChange(buildDir, allConfigureArgs);
+
     await _runProcess(cmake, [
       '-S',
       sourceRoot.toFilePath(),
       '-B',
       buildDir.toFilePath(),
-      ...configureArgs,
-      ...extraDefines,
+      ...allConfigureArgs,
     ], environment: processEnvironment);
 
     // 2. Build.
@@ -411,13 +494,13 @@ final class DcbCMakeBuilder {
       buildType,
     ], environment: processEnvironment);
 
-    // 3. Locate the produced dynamic library.
-    final libFileName = targetOS.dylibFileName(libBaseName);
+    // 3. Locate the produced library.
+    final libFileName = targetOS.libraryFileName(libBaseName, linkMode);
     final libFile = _locateArtifact(buildDir, libFileName, buildType);
 
-    // 4. Bundle CRT DLLs if requested (Windows /MD only).
+    // 4. Bundle CRT DLLs if requested (Windows /MD, dynamic only).
     if (config case WindowsConfig cfg) {
-      if (cfg.dynamicCrt && cfg.bundleCrt) {
+      if (isDynamic && cfg.dynamicCrt && cfg.bundleCrt) {
         _bundleWindowsCrt(cfg, libFile);
       }
     }
@@ -425,15 +508,24 @@ final class DcbCMakeBuilder {
     // 5. Declare cache dependencies (CMakeLists + native sources).
     _declareDependencies(sourceRoot, output);
 
-    // 6. Emit the bundled code asset.
+    // 6. Emit the code asset with the resolved link mode.
     output.assets.code.add(
       CodeAsset(
-        package: packageName,
+        package: effectiveAssetPackage,
         name: assetName,
-        linkMode: DynamicLoadingBundled(),
+        linkMode: linkMode,
         file: libFile.uri,
       ),
     );
+
+    // 7. Bundle libc++_shared.so when using dynamic STL on Android.
+    //    Without this, dlopen fails at runtime because the shared C++ runtime
+    //    is not in the APK. AGP's externalNativeBuild handles this
+    //    automatically, but Native Assets hooks bypass AGP's native build
+    //    system, so we must register the dependency explicitly.
+    if (config case AndroidConfig cfg when !cfg.staticStl) {
+      _bundleAndroidSharedStl(cfg, effectiveAssetPackage, output);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -492,6 +584,111 @@ final class DcbCMakeBuilder {
     args.addAll(cfg.extraDefines);
 
     return args;
+  }
+
+  // -------------------------------------------------------------------------
+  // Android resolution
+  // -------------------------------------------------------------------------
+
+  /// Resolves Android-specific configure arguments using the NDK toolchain.
+  List<String> _resolveAndroidArgs(AndroidConfig cfg, String buildType) {
+    final args = <String>[];
+
+    // NDK toolchain file (the core of Android cross-compilation).
+    final toolchainFile = '${cfg.ndkPath}/build/cmake/android.toolchain.cmake';
+    if (!File(toolchainFile).existsSync()) {
+      throw DcbCMakeException(
+        'Android NDK toolchain file not found at: $toolchainFile\n'
+        'Verify ndkPath points to a valid NDK installation.',
+      );
+    }
+    args.add('-DCMAKE_TOOLCHAIN_FILE=$toolchainFile');
+
+    // Target ABI and platform level.
+    args.add('-DANDROID_ABI=${cfg.abi}');
+    args.add('-DANDROID_PLATFORM=android-${cfg.androidPlatform}');
+
+    // C++ STL linkage.
+    args.add('-DANDROID_STL=${cfg.staticStl ? 'c++_static' : 'c++_shared'}');
+
+    // Build type.
+    args.add('-DCMAKE_BUILD_TYPE=$buildType');
+
+    // Generator (Ninja is the standard for NDK builds).
+    switch (cfg.generator) {
+      case CmakeGenerator.ninja:
+        args.addAll(['-G', 'Ninja']);
+
+      case CmakeGenerator.makefiles:
+        args.addAll(['-G', 'Unix Makefiles']);
+
+      case CmakeGenerator.msbuild:
+        throw DcbCMakeException(
+          'CmakeGenerator.msbuild is not valid for Android cross-compilation.',
+        );
+
+      case null:
+        break;
+    }
+
+    // User-supplied extra defines.
+    args.addAll(cfg.extraDefines);
+
+    return args;
+  }
+
+  /// Bundles `libc++_shared.so` from the NDK as an additional code asset.
+  ///
+  /// Required when [AndroidConfig.staticStl] is `false` (dynamic STL linkage).
+  /// The NDK does not automatically package the shared C++ runtime into the
+  /// APK when building via Native Assets hooks (unlike AGP's
+  /// `externalNativeBuild`), so we register it explicitly.
+  void _bundleAndroidSharedStl(
+    AndroidConfig cfg,
+    String packageName,
+    BuildOutputBuilder output,
+  ) {
+    // Map ABI to the NDK's target triple directory name.
+    final abiDir = switch (cfg.abi) {
+      'arm64-v8a' => 'aarch64-linux-android',
+      'armeabi-v7a' => 'arm-linux-androideabi',
+      'x86_64' => 'x86_64-linux-android',
+      'x86' => 'i686-linux-android',
+      _ => throw DcbCMakeException(
+        'Unknown Android ABI: ${cfg.abi}. '
+        'Supported: arm64-v8a, armeabi-v7a, x86_64, x86.',
+      ),
+    };
+
+    // Detect the NDK prebuilt host tag.
+    final hostTag = _detectNdkHostTag();
+
+    final sharedStl = File(
+      '${cfg.ndkPath}/toolchains/llvm/prebuilt/$hostTag'
+      '/sysroot/usr/lib/$abiDir/libc++_shared.so',
+    );
+    if (!sharedStl.existsSync()) {
+      throw DcbCMakeException(
+        'libc++_shared.so not found at: ${sharedStl.path}\n'
+        'Verify ndkPath and abi are correct.',
+      );
+    }
+
+    output.assets.code.add(
+      CodeAsset(
+        package: packageName,
+        name: 'libc++_shared.so',
+        linkMode: DynamicLoadingBundled(),
+        file: sharedStl.uri,
+      ),
+    );
+  }
+
+  /// Detects the NDK prebuilt host tag (e.g. `windows-x86_64`, `linux-x86_64`).
+  String _detectNdkHostTag() {
+    if (Platform.isWindows) return 'windows-x86_64';
+    if (Platform.isMacOS) return 'darwin-x86_64';
+    return 'linux-x86_64';
   }
 
   // -------------------------------------------------------------------------
@@ -654,10 +851,10 @@ final class DcbCMakeBuilder {
     _log('initializing MSVC env: $vcvarsall $arch');
 
     // Run vcvarsall.bat and dump the resulting environment.
-    final result = Process.runSync(
-      'cmd.exe',
-      ['/C', '"$vcvarsall" $arch >nul 2>&1 && set'],
-    );
+    final result = Process.runSync('cmd.exe', [
+      '/C',
+      '"$vcvarsall" $arch >nul 2>&1 && set',
+    ]);
     if (result.exitCode != 0) {
       _log('WARNING: vcvarsall.bat failed (exit ${result.exitCode})');
       return Platform.environment;
@@ -704,14 +901,17 @@ final class DcbCMakeBuilder {
     }
 
     // Pick the latest version directory (e.g. "14.51.36231").
-    final versionDirs = redistBase
-        .listSync()
-        .whereType<Directory>()
-        .where((d) => RegExp(r'^\d+\.\d+').hasMatch(d.uri.pathSegments
-            .where((s) => s.isNotEmpty)
-            .last))
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
+    final versionDirs =
+        redistBase
+            .listSync()
+            .whereType<Directory>()
+            .where(
+              (d) => RegExp(
+                r'^\d+\.\d+',
+              ).hasMatch(d.uri.pathSegments.where((s) => s.isNotEmpty).last),
+            )
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
 
     if (versionDirs.isEmpty) {
       _log('WARNING: cannot bundle CRT — no version directories found');
@@ -736,16 +936,14 @@ final class DcbCMakeBuilder {
     );
 
     if (!sourceDir.existsSync()) {
-      _log('WARNING: cannot bundle CRT — CRT directory not found under '
-          '${versionDirs.last.path}\\$arch\\');
+      _log(
+        'WARNING: cannot bundle CRT — CRT directory not found under '
+        '${versionDirs.last.path}\\$arch\\',
+      );
       return;
     }
 
-    const dllNames = [
-      'MSVCP140.dll',
-      'VCRUNTIME140.dll',
-      'VCRUNTIME140_1.dll',
-    ];
+    const dllNames = ['MSVCP140.dll', 'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll'];
 
     final outDir = outputDll.parent;
     var copied = 0;
@@ -793,6 +991,25 @@ final class DcbCMakeBuilder {
     }
   }
 
+  /// Checks a stamp file in [buildDir]; if the recorded configure arguments
+  /// differ from [currentArgs], deletes the build directory to force a clean
+  /// reconfigure. This prevents stale CMake caches (e.g. switching Android STL
+  /// from c++_static to c++_shared) from producing broken builds.
+  void _invalidateBuildOnConfigChange(Uri buildDir, List<String> currentArgs) {
+    final stampFile = File.fromUri(buildDir.resolve('.dcb_configure_args'));
+    final currentStamp = currentArgs.join('\n');
+    if (stampFile.existsSync()) {
+      final previousStamp = stampFile.readAsStringSync();
+      if (previousStamp == currentStamp) {
+        return; // Config unchanged, reuse build directory.
+      }
+      // Config changed — wipe the stale build directory.
+      Directory.fromUri(buildDir).deleteSync(recursive: true);
+    }
+    Directory.fromUri(buildDir).createSync(recursive: true);
+    stampFile.writeAsStringSync(currentStamp);
+  }
+
   /// Locates the built [fileName] under [buildDir], searching the common
   /// multi-config (`Release/`, `Debug/`) and single-config (root) layouts.
   File _locateArtifact(Uri buildDir, String fileName, String buildType) {
@@ -825,12 +1042,24 @@ final class DcbCMakeBuilder {
       return;
     }
     const sourceExtensions = {
-      '.c', '.cc', '.cpp', '.cxx', '.c++',
-      '.h', '.hh', '.hpp', '.hxx', '.h++',
-      '.m', '.mm', '.cmake',
+      '.c',
+      '.cc',
+      '.cpp',
+      '.cxx',
+      '.c++',
+      '.h',
+      '.hh',
+      '.hpp',
+      '.hxx',
+      '.h++',
+      '.m',
+      '.mm',
+      '.cmake',
     };
-    for (final entity
-        in rootDir.listSync(recursive: true, followLinks: false)) {
+    for (final entity in rootDir.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (entity is! File) {
         continue;
       }
@@ -945,8 +1174,7 @@ final class DcbCMakeBuilder {
         continue;
       }
       for (final versionDir in rootDir.listSync().whereType<Directory>()) {
-        for (final editionDir
-            in versionDir.listSync().whereType<Directory>()) {
+        for (final editionDir in versionDir.listSync().whereType<Directory>()) {
           yield '${editionDir.path}\\$cmakeRelative';
         }
       }

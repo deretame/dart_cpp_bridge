@@ -49,11 +49,13 @@ if(NOT EXISTS "${GEN_WIRE}")
     "${CMAKE_CURRENT_SOURCE_DIR}/dart_cpp_bridge.yaml")
 endif()
 
-# --- 动态库 target ---
+# --- 库 target ---
 # 源文件 = 生成的 wire + 用户业务实现。基础运行时经链接传递进来。
 # 生成的 wire 在 DLL 加载期无条件注册 dispatch，无需 DCB_REGISTER_DISPATCH。
 # 复制本模板后：把 native/api_impl/*.cpp 改为你的实现文件。
-add_library(dcb_codegen_demo SHARED
+# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+option(BUILD_SHARED_LIBS "Build shared library" ON)
+add_library(dcb_codegen_demo
   native/generated/wire_dispatch.cpp
   native/api_impl/bridge_api.cpp
   native/api_impl/counter.cpp
