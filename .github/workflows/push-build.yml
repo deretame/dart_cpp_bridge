@@ -54,9 +54,9 @@ jobs:
 
       - name: codegen 生成 + 构建 + 测试
         run: |
-          cd codegen
+          cd dcb_gen_tool
           dart pub get
-          dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
@@ -114,9 +114,9 @@ jobs:
 
       - name: codegen 生成 + 构建 + 测试
         run: |
-          cd codegen
+          cd dcb_gen_tool
           dart pub get
-          dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
@@ -167,9 +167,9 @@ jobs:
 
       - name: codegen 生成 + 构建 + 测试
         run: |
-          cd codegen
+          cd dcb_gen_tool
           dart pub get
-          dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
@@ -213,6 +213,6 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
-            cd examples/android_demo
+            cd ${{ github.workspace }}/examples/android_demo
             flutter pub get
             flutter test integration_test
