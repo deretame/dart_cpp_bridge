@@ -577,12 +577,17 @@ def _template_args(type_spell: str) -> list[str]:
     parts: list[str] = []
     cur: list[str] = []
     d = 0
+    p = 0
     for ch in inside:
         if ch == "<":
             d += 1
         elif ch == ">":
             d -= 1
-        elif ch == "," and d == 0:
+        elif ch == "(":
+            p += 1
+        elif ch == ")":
+            p -= 1
+        elif ch == "," and d == 0 and p == 0:
             parts.append("".join(cur).strip())
             cur = []
             continue

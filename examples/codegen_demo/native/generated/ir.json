@@ -871,6 +871,28 @@
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "invoke_registered",
+      "qualified": "demo::api::invoke_registered",
+      "kind": "normal",
+      "method_id": 594957055,
+      "args": [
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::normal"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "increment_i64",
       "qualified": "demo::api::increment_i64",
       "kind": "async",
@@ -971,6 +993,76 @@
       },
       "attrs": [
         "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "invoke_registered_async",
+      "qualified": "demo::api::invoke_registered_async",
+      "kind": "async",
+      "method_id": 999429777,
+      "args": [
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "concat_dart_fn",
+      "qualified": "demo::api::concat_dart_fn",
+      "kind": "normal",
+      "method_id": 1056101777,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string, std::string)",
+            "args": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "a",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        },
+        {
+          "name": "b",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::normal"
       ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
@@ -1224,6 +1316,38 @@
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "register_dart_fn",
+      "qualified": "demo::api::register_dart_fn",
+      "kind": "sync",
+      "method_id": 1702006080,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "bool"
+      },
+      "attrs": [
+        "bridge::persist",
+        "bridge::sync"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "greet_dart_fn",
       "qualified": "demo::api::greet_dart_fn",
       "kind": "async",
@@ -1343,6 +1467,44 @@
       },
       "attrs": [
         "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "sync_dart_fn_blocking_us",
+      "qualified": "demo::api::sync_dart_fn_blocking_us",
+      "kind": "sync",
+      "method_id": 2026522337,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i64"
+      },
+      "attrs": [
+        "bridge::sync"
       ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },

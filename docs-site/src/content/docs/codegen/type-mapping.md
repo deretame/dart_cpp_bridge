@@ -89,13 +89,134 @@ Wire 编码使用 presence tag：`Some(T)` = tag 1 + T 编码，`None` = tag 0�
 |----------|-----------|
 | `dcb::DartFn<Ret(Args...)>` | `FutureOr<Ret> Function(Args...)` |
 
+支持任意数量参数，Dart 侧生成对应的多参数闭包。
+
+### 异步调用（callAsync）
+
 ```cpp
+// 在协程中通过 co_await 调用 Dart 闭包，不阻塞 io 线程
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name);
 ```
 
-Dart 侧生成 `FutureOr<String> Function(String)` 参数，C++ 通过 `co_await callback.callAsync(args...)` 调用 Dart 闭包。
+```cpp
+// 实现
+auto reply = co_await callback.callAsync(name);
+co_return "hello, " + reply;
+```
+
+### 同步调用（callSync）
+
+```cpp
+// 阻塞当前线程直到 Dart 回复 — 必须在线程池中使用（BRIDGE_NORMAL）
+BRIDGE_NORMAL
+std::string concat_dart_fn(
+    dcb::DartFn<std::string(std::string, std::string)> callback,
+    std::string a, std::string b);
+```
+
+```cpp
+// 实现
+auto reply = callback.callSync(a, b);  // 阻塞直到 Dart 返回
+return "sync:" + reply;
+```
+
+### Dart 生成形态
+
+```dart
+// callAsync 版本
+Future<String> greetDartFn({
+  required FutureOr<String> Function(String) callback,
+  required String name,
+}) => BridgeApiImpl.instance.greetDartFn(callback, name);
+
+// callSync 版本（两个参数）
+Future<String> concatDartFn({
+  required FutureOr<String> Function(String, String) callback,
+  required String a,
+  required String b,
+}) => BridgeApiImpl.instance.concatDartFn(callback, a, b);
+```
+
+### 规则
+
+- `callAsync`：在协程内使用（`BRIDGE_ASYNC`），通过 oneshot channel 挂起，不阻塞 io 线程
+- `callSync`：阻塞调用线程直到 Dart 回复，**必须在 `BRIDGE_NORMAL`（线程池）中使用**，禁止在 io 线程调用
+- Dart 闭包可以是同步或异步的（`FutureOr`），C++ 侧都会等待最终结果
+- 支持多参数：`DartFn<Ret(A1, A2, ...)>` 对应 Dart `FutureOr<Ret> Function(A1, A2, ...)`
+- **禁止** `BRIDGE_SYNC` + `callSync` 组合：`dispatch_sync` 跑在 Dart isolate 线程上，`callSync` 会阻塞该线程等待 Dart 回复，形成永久死锁
+
+### 持久化回调（BRIDGE_PERSIST）
+
+默认情况下，DartFn 是**一次性**的：函数调用结束后 Dart 侧自动注销回调。如果需要 FRB 风格的「同步注册 + 异步调用」模式（闭包存储后反复调用），使用 `BRIDGE_PERSIST` 标记：
+
+```cpp
+// 注册：BRIDGE_SYNC（isolate 线程），只存储闭包，微秒返回
+// BRIDGE_PERSIST：告诉 codegen 不自动注销 DartFn
+BRIDGE_SYNC
+BRIDGE_PERSIST
+bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback);
+
+// 触发方式 A：BRIDGE_NORMAL（线程池），通过 callSync 调用已存储的闭包
+BRIDGE_NORMAL
+std::string invoke_registered(std::string input);
+
+// 触发方式 B：BRIDGE_ASYNC（协程），通过 co_await callAsync 调用，不阻塞 io 线程
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input);
+```
+
+```cpp
+// 实现
+namespace {
+dcb::DartFn<std::string(std::string)> g_registered_fn;
+}
+
+bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback) {
+  g_registered_fn = std::move(callback);
+  return static_cast<bool>(g_registered_fn);
+}
+
+std::string invoke_registered(std::string input) {
+  if (!g_registered_fn) throw std::runtime_error("no registered dart fn");
+  auto reply = g_registered_fn.callSync(input);  // 安全：跑在线程池
+  return "registered:" + reply;
+}
+
+async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input) {
+  if (!g_registered_fn) throw std::runtime_error("no registered dart fn");
+  auto reply = co_await g_registered_fn.callAsync(input);  // 协程挂起，io 不阻塞
+  co_return "async_registered:" + reply;
+}
+```
+
+```dart
+// Dart 侧使用
+final ok = registerDartFn(callback: (s) => 'echo:$s');  // 同步，只存储
+
+// 方式 A：线程池 callSync
+final r1 = await invokeRegistered(input: 'world');
+print(r1); // registered:echo:world
+
+// 方式 B：协程 callAsync
+final r2 = await invokeRegisteredAsync(input: 'world');
+print(r2); // async_registered:echo:world
+```
+
+**为什么不死锁：**
+
+| 阶段 | 执行位置 | 是否调用 Dart 闭包 |
+|------|----------|-------------------|
+| `registerDartFn()` | Dart isolate 线程（sync FFI） | 否，只存储 |
+| `invokeRegistered()` | 线程池（BRIDGE_NORMAL） | 是，`callSync` 阻塞 pool 线程 |
+| `invokeRegisteredAsync()` | io 线程协程（BRIDGE_ASYNC） | 是，`co_await callAsync` 挂起协程 |
+
+两种方式都不会死锁：isolate 事件循环始终空闲，可以正常处理 port 消息并回复。
+
+:::caution[注意]
+`BRIDGE_PERSIST` 的回调不会自动清理。如果闭包持有资源，调用者需要自行管理生命周期（例如注册一个空回调或调用 dispose）。
+:::
 
 ---
 

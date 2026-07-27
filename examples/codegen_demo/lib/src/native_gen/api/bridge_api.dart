@@ -90,6 +90,8 @@ int bridgeVersion() => BridgeApiImpl.instance.bridgeVersion();
 
 Future<int> sumArray({required List<int> values}) => BridgeApiImpl.instance.sumArray(values);
 
+Future<String> invokeRegistered({required String input}) => BridgeApiImpl.instance.invokeRegistered(input);
+
 Future<int> incrementI64({required int value}) => BridgeApiImpl.instance.incrementI64(value);
 
 Future<DateTime> echoTime({required DateTime value}) => BridgeApiImpl.instance.echoTime(value);
@@ -97,6 +99,10 @@ Future<DateTime> echoTime({required DateTime value}) => BridgeApiImpl.instance.e
 Future<OrderStatus?> optionalStatus({OrderStatus? value}) => BridgeApiImpl.instance.optionalStatus(value);
 
 Future<List<int>> echoList({required List<int> values}) => BridgeApiImpl.instance.echoList(values);
+
+Future<String> invokeRegisteredAsync({required String input}) => BridgeApiImpl.instance.invokeRegisteredAsync(input);
+
+Future<String> concatDartFn({required FutureOr<String> Function(String, String) callback, required String a, required String b}) => BridgeApiImpl.instance.concatDartFn(callback, a, b);
 
 Future<Point> scale({required Point p, required double factor}) => BridgeApiImpl.instance.scale(p, factor);
 
@@ -116,6 +122,8 @@ Future<int> incrementU32({required int value}) => BridgeApiImpl.instance.increme
 
 Stream<int> tickStream({int count = 5, int intervalMs = 10}) => BridgeApiImpl.instance.tickStream(count, intervalMs);
 
+bool registerDartFn({required FutureOr<String> Function(String) callback}) => BridgeApiImpl.instance.registerDartFn(callback);
+
 Future<String> greetDartFn({required FutureOr<String> Function(String) callback, required String name}) => BridgeApiImpl.instance.greetDartFn(callback, name);
 
 List<List<List<int>>> nestedCube({required int n}) => BridgeApiImpl.instance.nestedCube(n);
@@ -123,6 +131,8 @@ List<List<List<int>>> nestedCube({required int n}) => BridgeApiImpl.instance.nes
 Future<int> sumSet({required Set<int> values}) => BridgeApiImpl.instance.sumSet(values);
 
 Future<Rect> boundingBox({required List<Point> points}) => BridgeApiImpl.instance.boundingBox(points);
+
+int syncDartFnBlockingUs({required FutureOr<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.syncDartFnBlockingUs(callback, input);
 
 Future<BigInt> echoI128({required BigInt value}) => BridgeApiImpl.instance.echoI128(value);
 

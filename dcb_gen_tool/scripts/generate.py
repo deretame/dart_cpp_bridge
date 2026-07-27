@@ -1474,6 +1474,9 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         write = _cpp_write_ret(fn["return"], "out")
 
         if kind == "sync":
+            has_dart_fn_arg = any(
+                a["type"].get("kind") == "dart_fn" for a in fn["args"]
+            )
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
@@ -1487,8 +1490,14 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         break;
       }}"""
             cases.append(body)
+            session_lookup = ""
+            if has_dart_fn_arg:
+                session_lookup = (
+                    "\n    auto session = dcb::SessionRegistry::instance().get(session_id);"
+                    "\n    auto gen = session->generation();"
+                )
             sync_body = f"""
-  if (frame.method_id == {mid}u) {{
+  if (frame.method_id == {mid}u) {{{session_lookup}
     ByteReader r(frame.payload.data(), frame.payload.size());
     {sync_reads}
     ByteWriter w;
@@ -1970,10 +1979,16 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                     body_lines.append(f"{indent}return {read_ret};")
 
         if dart_fn_try:
-            body_lines.append("} finally {")
-            for a in dart_fn_args:
-                body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
-            body_lines.append("}")
+            is_persist = "bridge::persist" in m["fn"].get("attrs", [])
+            if is_persist:
+                body_lines.append("} finally {")
+                body_lines.append("  // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.")
+                body_lines.append("}")
+            else:
+                body_lines.append("} finally {")
+                for a in dart_fn_args:
+                    body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
+                body_lines.append("}")
 
         body_inner = "\n    ".join(body_lines)
         is_async = m["is_async"]
@@ -2110,10 +2125,16 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                         body_lines.append(f"{indent}return {read_ret};")
 
             if dart_fn_try:
-                body_lines.append("} finally {")
-                for a in dart_fn_args:
-                    body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
-                body_lines.append("}")
+                is_persist = "bridge::persist" in method.get("attrs", [])
+                if is_persist:
+                    body_lines.append("} finally {")
+                    body_lines.append("  // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.")
+                    body_lines.append("}")
+                else:
+                    body_lines.append("} finally {")
+                    for a in dart_fn_args:
+                        body_lines.append(f"  bridge.unregisterDartFn(_{a['dart_name']}Id);")
+                    body_lines.append("}")
 
             body_inner = "\n    ".join(body_lines)
             async_keyword = "async " if is_async else ""

@@ -31,11 +31,25 @@ BRIDGE_ASYNC async_simple::coro::Lazy<int32_t> compute_async(int32_t input);
 
 ### BRIDGE_NORMAL
 
-普通函数（不暴露给 Dart，仅内部使用）：
+普通函数，投递到线程池执行：
 
 ```cpp
-BRIDGE_NORMAL void internal_helper();
+BRIDGE_NORMAL std::string blocking_read(std::string path);
 ```
+
+### BRIDGE_PERSIST
+
+标记含 DartFn 参数的函数为「持久化回调」：Dart 侧不在调用后自动注销闭包，允许 C++ 存储并反复调用。通常与 `BRIDGE_SYNC`（注册）或 `BRIDGE_NORMAL`（触发）配合使用：
+
+```cpp
+BRIDGE_SYNC
+BRIDGE_PERSIST
+bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback);
+```
+
+约束：
+- 函数必须含至少一个 `dcb::DartFn` 参数
+- 回调不会自动清理，调用者需自行管理生命周期
 
 ## 类注解
 

@@ -115,6 +115,48 @@ async_simple::coro::Lazy<std::string> greet_dart_fn(
   co_return std::string("hello, ") + reply;
 }
 
+std::string concat_dart_fn(
+    dcb::DartFn<std::string(std::string, std::string)> callback,
+    std::string a, std::string b) {
+  auto reply = callback.callSync(a, b);
+  return "sync:" + reply;
+}
+
+std::int64_t sync_dart_fn_blocking_us(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto t0 = std::chrono::steady_clock::now();
+  auto reply = callback.callSync(input);
+  auto t1 = std::chrono::steady_clock::now();
+  (void)reply;
+  return std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+}
+
+// --- FRB-style register/invoke pattern ---
+namespace {
+dcb::DartFn<std::string(std::string)> g_registered_fn;
+}  // namespace
+
+bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback) {
+  g_registered_fn = std::move(callback);
+  return static_cast<bool>(g_registered_fn);
+}
+
+std::string invoke_registered(std::string input) {
+  if (!g_registered_fn) {
+    throw std::runtime_error("no registered dart fn");
+  }
+  auto reply = g_registered_fn.callSync(input);
+  return "registered:" + reply;
+}
+
+async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input) {
+  if (!g_registered_fn) {
+    throw std::runtime_error("no registered dart fn");
+  }
+  auto reply = co_await g_registered_fn.callAsync(input);
+  co_return "async_registered:" + reply;
+}
+
 async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
     std::pair<std::int32_t, std::string> value) {
   co_return value;

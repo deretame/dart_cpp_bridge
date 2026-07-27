@@ -359,6 +359,31 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 594957055: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto input = r.str();
+        auto* io = &Runtime::instance().io();
+        asio::post(Runtime::instance().pool(), [session, gen, req, method, io, input = std::move(input)]() {
+          try {
+            auto out = ::demo::api::invoke_registered(input);
+            asio::post(*io, [session, gen, req, method, out = std::move(out)]() {
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            });
+          } catch (const std::exception& e) {
+            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
+              post_err(session, gen, req, method, "invoke_registered", msg);
+            });
+          } catch (...) {
+            asio::post(*io, [session, gen, req, method]() {
+              post_err(session, gen, req, method, "invoke_registered", "unknown");
+            });
+          }
+        });
+        break;
+      }
+
       case 826193512: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = r.i64();
@@ -436,6 +461,61 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               }
               co_return;
             });
+        break;
+      }
+
+      case 999429777: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto input = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, input = std::move(input)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::invoke_registered_async(input);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "invoke_registered_async", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "invoke_registered_async", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 1056101777: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string, std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0, const std::string& a1) {
+        w.str(a0);
+        w.str(a1);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto a = r.str();
+        const auto b = r.str();
+        auto* io = &Runtime::instance().io();
+        asio::post(Runtime::instance().pool(), [session, gen, req, method, io, callback, a = std::move(a), b = std::move(b)]() {
+          try {
+            auto out = ::demo::api::concat_dart_fn(callback, a, b);
+            asio::post(*io, [session, gen, req, method, out = std::move(out)]() {
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            });
+          } catch (const std::exception& e) {
+            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
+              post_err(session, gen, req, method, "concat_dart_fn", msg);
+            });
+          } catch (...) {
+            asio::post(*io, [session, gen, req, method]() {
+              post_err(session, gen, req, method, "concat_dart_fn", "unknown");
+            });
+          }
+        });
         break;
       }
 
@@ -635,6 +715,25 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1702006080: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        ByteWriter w;
+        {
+          auto out = ::demo::api::register_dart_fn(callback);
+          w.u8(out ? 1 : 0);
+        }
+        post_ok(session, gen, req, method, w.raw());
+        break;
+      }
+
       case 1789823149: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
@@ -712,6 +811,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               }
               co_return;
             });
+        break;
+      }
+
+      case 2026522337: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto input = r.str();
+        ByteWriter w;
+        {
+          auto out = ::demo::api::sync_dart_fn_blocking_us(callback, input);
+          w.i64(out);
+        }
+        post_ok(session, gen, req, method, w.raw());
         break;
       }
 
@@ -1174,6 +1293,26 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }
 
+  if (frame.method_id == 1702006080u) {
+    auto session = dcb::SessionRegistry::instance().get(session_id);
+    auto gen = session->generation();
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+    ByteWriter w;
+    {
+      auto out = ::demo::api::register_dart_fn(callback);
+      w.u8(out ? 1 : 0);
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
+
   if (frame.method_id == 1812101563u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto n = r.i32();
@@ -1181,6 +1320,27 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     {
       auto out = ::demo::api::nested_cube(n);
       w.vec(out, [&](const auto& v) { w.vec(v, [&](const auto& v) { w.vec(v, [&](const auto& v) { w.i32(v); }); }); });
+    }
+    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+  }
+
+  if (frame.method_id == 2026522337u) {
+    auto session = dcb::SessionRegistry::instance().get(session_id);
+    auto gen = session->generation();
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+    const auto input = r.str();
+    ByteWriter w;
+    {
+      auto out = ::demo::api::sync_dart_fn_blocking_us(callback, input);
+      w.i64(out);
     }
     return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }

@@ -590,7 +590,24 @@ class Counter extends CppOpaqueInterface {
 - 限制：
   - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128`、数据类等）。
   - 同步阻塞版本 `callSync` 也可用，但如果在 `io_context` 线程上调用会阻塞事件循环，由业务代码自行决定。
+  - **禁止** `BRIDGE_SYNC` + `callSync`：`dispatch_sync` 跑在 Dart isolate 线程上，`callSync` 阻塞该线程等待 Dart 回复，形成永久死锁。
   - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
+
+- 持久化回调（`BRIDGE_PERSIST`）：
+  - 默认情况下 DartFn 是一次性的：函数调用结束后 Dart 侧自动注销。
+  - 如果需要 FRB 风格的「同步注册 + 异步调用」模式（闭包存储后反复调用），在函数上添加 `BRIDGE_PERSIST` 标记：
+
+  ```cpp
+  BRIDGE_SYNC
+  BRIDGE_PERSIST
+  bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback);
+
+  BRIDGE_NORMAL
+  std::string invoke_registered(std::string input);
+  ```
+
+  - 生成代码不会在 `finally` 中调用 `unregisterDartFn`，回调持续有效。
+  - 调用者需自行管理回调生命周期（重新注册或 dispose）。
 
 ## 7. 当前白名单（实现优先级）
 
