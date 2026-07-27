@@ -10,11 +10,14 @@ void main(List<String> args) async {
       return;
     }
     final cmake = Platform.environment['NIX_DCB_CMAKE'] ??
-        r'C:\Program Files\Microsoft Visual Studio\18\Community'
-            r'\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe';
+        (Platform.isWindows
+            ? r'C:\Program Files\Microsoft Visual Studio\18\Community'
+                r'\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+            : 'cmake');
     final config = switch (input.config.code.targetOS) {
       OS.windows => WindowsConfig(cmake: cmake),
       OS.linux => LinuxConfig(cmake: cmake),
+      OS.macOS => MacosConfig(cmake: cmake),
       OS.android => AndroidConfig(
           cmake: cmake,
           ndkPath: Platform.environment['ANDROID_NDK_HOME'] ??
