@@ -6,8 +6,14 @@ import 'package:test/test.dart';
 
 /// Resolves the hook-built library from .dart_tool, or falls back to manual build.
 String resolveDemoLibrary() {
-  final isWindows = Platform.isWindows;
-  final libName = isWindows ? 'dcb_codegen_demo.dll' : 'libdcb_codegen_demo.so';
+  final String libName;
+  if (Platform.isWindows) {
+    libName = 'dcb_codegen_demo.dll';
+  } else if (Platform.isMacOS) {
+    libName = 'libdcb_codegen_demo.dylib';
+  } else {
+    libName = 'libdcb_codegen_demo.so';
+  }
 
   // 1. Hook-built asset (Native Assets pipeline).
   final dartTool = Directory('.dart_tool');
@@ -19,15 +25,22 @@ String resolveDemoLibrary() {
     }
   }
   // 2. Manual cmake build fallback.
-  final names = isWindows
-      ? [
-          'build/Release/dcb_codegen_demo.dll',
-          'build/Debug/dcb_codegen_demo.dll',
-          'build/dcb_codegen_demo.dll',
-        ]
-      : [
-          'build/libdcb_codegen_demo.so',
-        ];
+  final List<String> names;
+  if (Platform.isWindows) {
+    names = [
+      'build/Release/dcb_codegen_demo.dll',
+      'build/Debug/dcb_codegen_demo.dll',
+      'build/dcb_codegen_demo.dll',
+    ];
+  } else if (Platform.isMacOS) {
+    names = [
+      'build/libdcb_codegen_demo.dylib',
+    ];
+  } else {
+    names = [
+      'build/libdcb_codegen_demo.so',
+    ];
+  }
   for (final rel in names) {
     final f = File(rel);
     if (f.existsSync()) return f.absolute.path;
