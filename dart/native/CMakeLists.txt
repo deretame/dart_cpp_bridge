@@ -91,6 +91,8 @@ add_library(dcb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/object_handle.cpp
   src/foreign_runtime.cpp
+  src/cbridge.cpp
+  src/dcb_codec.c
   src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
 )
@@ -126,6 +128,8 @@ if(DCB_BUILD_SHARED)
     src/runtime/runtime.cpp
     src/runtime/object_handle.cpp
     src/foreign_runtime.cpp
+    src/cbridge.cpp
+    src/dcb_codec.c
     src/ffi_entry.cpp
     ${DCB_DART_API_DIR}/dart_api_dl.c
   )

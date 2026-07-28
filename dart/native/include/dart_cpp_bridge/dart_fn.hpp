@@ -65,6 +65,11 @@ class DartFn<Ret(Args...)> {
 
   explicit operator bool() const { return static_cast<bool>(session_) && fn_id_ != 0; }
 
+  /// 获取关联的 session（用于 dcb_invoke_dart_fn 等纯 C API）。
+  const std::shared_ptr<Session>& session() const { return session_; }
+  /// 获取 Dart 闭包 ID（用于 dcb_invoke_dart_fn 等纯 C API）。
+  std::uint64_t fn_id() const { return fn_id_; }
+
   // Functor interface: returns Lazy<Ret> (true async, non-blocking).
   // Suspends the calling coroutine until Dart replies via oneshot channel.
   // The calling Lazy must be bound to an Executor (.via).

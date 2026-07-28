@@ -30,6 +30,12 @@ final class BridgeApiImpl {
   static const int uvStreamId = 828415216;
   static const int askUvId = 2040169010;
   static const int stopUvWorkerId = 2048427889;
+  static const int testCbridgeAsyncId = 900001;
+  static const int testCbridgeAsyncFailId = 900002;
+  static const int testCbridgeInvokeId = 900003;
+  static const int testCbridgeAsyncCancelId = 900004;
+  static const int testChannelServiceId = 900005;
+  static const int testChannelServiceConcurrentId = 900006;
 
   Future<String> startUvWorker() async {
     final _payload = ByteWriter();
@@ -88,5 +94,62 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(stopUvWorkerId, _payloadBytes);
     return ByteReader(_bytes).str();
+  }
+
+  Future<String> testCbridgeAsync() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncId, _payloadBytes);
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testCbridgeAsyncFail() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncFailId, _payloadBytes);
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testCbridgeAsyncCancel() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncCancelId, _payloadBytes);
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testChannelService() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(testChannelServiceId, _payloadBytes);
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testChannelServiceConcurrent() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(testChannelServiceConcurrentId, _payloadBytes);
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testCbridgeInvoke(Future<String> Function(String) callback, String input) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    try {
+      final _payload = ByteWriter();
+      _payload.u64(_callbackId);
+      _payload.str(input);
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(testCbridgeInvokeId, _payloadBytes);
+      return ByteReader(_bytes).str();
+    } finally {
+      bridge.unregisterDartFn(_callbackId);
+    }
   }
 }

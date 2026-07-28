@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0175C2"/>
+      <stop offset="100%" stop-color="#6C4BF4"/>
+    </linearGradient>
+  </defs>
+  <!-- 背景圆角方形 -->
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#1a1a2e"/>
+  <!-- 桥拱（上移，填满顶部空间） -->
+  <path d="M5 20 Q16 4 27 20" fill="none" stroke="url(#g)" stroke-width="2.8" stroke-linecap="round"/>
+  <!-- 左桥墩 (Dart) -->
+  <rect x="4" y="18.5" width="4.5" height="8.5" rx="1.8" fill="#0175C2"/>
+  <!-- 右桥墩 (C++) -->
+  <rect x="23.5" y="18.5" width="4.5" height="8.5" rx="1.8" fill="#6C4BF4"/>
+  <!-- 大双向箭头：右箭头（Dart → C++） -->
+  <path d="M11 13.5 L17 13.5 L17 11 L21.5 15 L17 19 L17 16.5 L11 16.5 Z" fill="#4FC3F7"/>
+  <!-- 左箭头叠加色（C++ → Dart），错位形成双向感 -->
+  <path d="M21 21.5 L15 21.5 L15 24 L10.5 20 L15 16 L15 18.5 L21 18.5 Z" fill="#B388FF" opacity="0.85"/>
+</svg>

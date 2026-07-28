@@ -20,3 +20,17 @@ Stream<String> uvStream({int count = 5, int intervalMs = 50}) => BridgeApiImpl.i
 Future<String> askUv({required String message}) => BridgeApiImpl.instance.askUv(message);
 
 Future<String> stopUvWorker() => BridgeApiImpl.instance.stopUvWorker();
+
+// ─── cbridge 纯 C API 测试 ───
+
+Future<String> testCbridgeAsync() => BridgeApiImpl.instance.testCbridgeAsync();
+
+Future<String> testCbridgeAsyncFail() => BridgeApiImpl.instance.testCbridgeAsyncFail();
+
+Future<String> testCbridgeAsyncCancel() => BridgeApiImpl.instance.testCbridgeAsyncCancel();
+
+Future<String> testChannelService() => BridgeApiImpl.instance.testChannelService();
+
+Future<String> testChannelServiceConcurrent() => BridgeApiImpl.instance.testChannelServiceConcurrent();
+
+Future<String> testCbridgeInvoke({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.testCbridgeInvoke(callback, input);

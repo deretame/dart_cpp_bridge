@@ -1,3 +1,8 @@
+/* 代码字体：使用用户浏览器设置的等宽字体 */
+:root {
+  --sl-font-mono: monospace;
+}
+
 /* Hero 渐变背景（类似 Starlight 官网） */
 main .content-panel:first-child {
   position: relative;

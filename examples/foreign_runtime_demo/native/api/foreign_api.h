@@ -41,4 +41,35 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> call_dart_from_uv(
     dcb::DartFn<std::string(std::string)> callback, std::string input);
 
+// ─── cbridge 纯 C API 测试 ────────────────────────────────────────────────
+
+/// 测试 dcb_async_create + dcb_async_complete + dcb::async_wait。
+/// 内部创建异步操作，启动线程 50ms 后完成，协程非阻塞等待结果。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_async();
+
+/// 测试 dcb_async_fail 路径。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_async_fail();
+
+/// 测试 dcb_async_cancel 路径。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_async_cancel();
+
+/// 测试 dcb_invoke_dart_fn（纯 C 回调风格调用 Dart 函数）。
+/// 内部从 DartFn 提取 session_id/fn_id，用纯 C API 调用，
+/// 在独立线程上等待回调结果。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_invoke(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
+
+/// 测试跨运行时 channel 服务模式：
+/// uv worker 运行长期 mpsc 服务循环，bridge 侧发送多个请求并等待回复。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_channel_service();
+
+/// 并发版本：一次性发送 5 个请求到 mpsc，然后收集所有回复。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_channel_service_concurrent();
+
 }  // namespace foreign_demo::api

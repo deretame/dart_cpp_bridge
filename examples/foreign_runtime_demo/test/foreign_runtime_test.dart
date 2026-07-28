@@ -144,4 +144,66 @@ void main() {
       expect(result, startsWith('ERROR:'));
     });
   });
+
+  group('cbridge pure C API', () {
+    test('dcb_async_create + dcb_async_complete + async_wait', () async {
+      final result = await testCbridgeAsync();
+      expect(result, 'cbridge_ok');
+    });
+
+    test('dcb_async_fail propagates error to coroutine', () async {
+      final result = await testCbridgeAsyncFail();
+      expect(result, 'CAUGHT:intentional_error');
+    });
+
+    test('dcb_async_cancel propagates cancellation to coroutine', () async {
+      final result = await testCbridgeAsyncCancel();
+      expect(result, 'CAUGHT:async_wait: operation cancelled');
+    });
+
+    test('channel service: mpsc long-lived service on uv worker', () async {
+      await startUvWorker();
+
+      final result = await testChannelService();
+      expect(result, '[svc:msg0],[svc:msg1],[svc:msg2]');
+
+      await stopUvWorker();
+    });
+
+    test('channel service concurrent: batch send then collect replies', () async {
+      await startUvWorker();
+
+      final result = await testChannelServiceConcurrent();
+      expect(result, '[svc:c0],[svc:c1],[svc:c2],[svc:c3],[svc:c4]');
+
+      await stopUvWorker();
+    });
+
+    test('dcb_invoke_dart_fn: C callback-style DartFn invocation', () async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async => 'c-echo:$s',
+        input: 'hello',
+      );
+      expect(result, 'c-echo:hello');
+    });
+
+    test('dcb_invoke_dart_fn: Dart callback with delay', () async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return 'delayed:$s';
+        },
+        input: 'wait',
+      );
+      expect(result, 'delayed:wait');
+    });
+
+    test('dcb_invoke_dart_fn: Dart callback that throws', () async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async => throw StateError('boom-$s'),
+        input: 'err',
+      );
+      expect(result, startsWith('ERROR:'));
+    });
+  });
 }

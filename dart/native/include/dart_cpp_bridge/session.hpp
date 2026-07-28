@@ -73,6 +73,8 @@ class SessionRegistry {
 
   std::uint64_t open(std::int64_t reply_port);
   std::shared_ptr<Session> get(std::uint64_t id) const;
+  /// 通过 session 指针查找其 ID（用于纯 C API 桥接）。找不到返回 0。
+  std::uint64_t find_id(const std::shared_ptr<Session>& s) const;
   void close(std::uint64_t id);
   void close_all();
 

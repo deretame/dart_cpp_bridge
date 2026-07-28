@@ -167,6 +167,16 @@ std::shared_ptr<Session> SessionRegistry::get(std::uint64_t id) const {
   return it->second;
 }
 
+std::uint64_t SessionRegistry::find_id(const std::shared_ptr<Session>& s) const {
+  std::lock_guard lock(mu_);
+  for (const auto& kv : sessions_) {
+    if (kv.second == s) {
+      return kv.first;
+    }
+  }
+  return 0;
+}
+
 void SessionRegistry::close(std::uint64_t id) {
   std::shared_ptr<Session> s;
   {

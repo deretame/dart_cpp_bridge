@@ -7,6 +7,7 @@ export default defineConfig({
     starlight({
       title: 'dart_cpp_bridge',
       head: [],
+      favicon: '/favicon.svg',
       customCss: ['./src/styles/custom.css'],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/deretame/dart_cpp_bridge' },

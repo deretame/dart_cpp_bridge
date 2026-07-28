@@ -4,13 +4,18 @@
 
 #include "../uv_worker.hpp"
 
+#include "dart_cpp_bridge/cbridge.h"
+#include "dart_cpp_bridge/cbridge_wait.hpp"
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/dcb_codec.h"
 #include "dart_cpp_bridge/foreign_executor.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
+#include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <chrono>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -187,6 +192,208 @@ async_simple::coro::Lazy<std::string> call_dart_from_uv(
     throw std::runtime_error("uv worker dropped");
   }
   co_return *reply;
+}
+
+// ─── cbridge 纯 C API 测试 ────────────────────────────────────────────────
+
+async_simple::coro::Lazy<std::string> test_cbridge_async() {
+  // 创建异步操作
+  uint64_t op = dcb_async_create();
+
+  // 启动一个线程，50ms 后从外部完成该操作（模拟外部 C 库回调）
+  std::thread completer([op] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const char* msg = "cbridge_ok";
+    dcb_async_complete(op, reinterpret_cast<const uint8_t*>(msg), 10);
+  });
+  completer.detach();
+
+  // 协程非阻塞等待（挂起，不占线程）
+  auto data = co_await dcb::async_wait(op);
+  co_return std::string(data.begin(), data.end());
+}
+
+async_simple::coro::Lazy<std::string> test_cbridge_async_fail() {
+  uint64_t op = dcb_async_create();
+
+  std::thread failer([op] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    dcb_async_fail(op, "intentional_error");
+  });
+  failer.detach();
+
+  try {
+    co_await dcb::async_wait(op);
+    co_return std::string("UNEXPECTED_SUCCESS");
+  } catch (const std::exception& e) {
+    co_return std::string("CAUGHT:") + e.what();
+  }
+}
+
+async_simple::coro::Lazy<std::string> test_cbridge_async_cancel() {
+  uint64_t op = dcb_async_create();
+
+  std::thread canceller([op] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    dcb_async_cancel(op);
+  });
+  canceller.detach();
+
+  try {
+    co_await dcb::async_wait(op);
+    co_return std::string("UNEXPECTED_SUCCESS");
+  } catch (const std::exception& e) {
+    co_return std::string("CAUGHT:") + e.what();
+  }
+}
+
+async_simple::coro::Lazy<std::string> test_cbridge_invoke(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  // 从 DartFn 提取 session_id 和 fn_id
+  auto session = callback.session();
+  if (!session) {
+    throw std::runtime_error("test_cbridge_invoke: empty callback");
+  }
+  uint64_t session_id = dcb::SessionRegistry::instance().find_id(session);
+  uint64_t fn_id = callback.fn_id();
+
+  // 编码参数（使用纯 C codec API）
+  dcb_writer cw;
+  dcb_writer_init(&cw);
+  dcb_write_str(&cw, input.c_str());
+
+  // 在独立线程上调用纯 C API 并等待回调。
+  // 不能在 io 线程上阻塞（回调在 io 线程触发，会死锁）。
+  auto [promise, future] = []{
+    std::promise<std::string> p;
+    auto f = p.get_future();
+    return std::make_pair(std::move(p), std::move(f));
+  }();
+  auto promise_ptr = std::make_shared<std::promise<std::string>>(std::move(promise));
+
+  // 将 C writer 数据拷贝到 vector（writer 生命周期不跟线程）
+  std::vector<uint8_t> args(cw.data, cw.data + cw.len);
+  dcb_writer_free(&cw);
+
+  std::thread worker([session_id, fn_id, args = std::move(args), promise_ptr] {
+    struct Ctx {
+      std::shared_ptr<std::promise<std::string>> p;
+    };
+    auto* ctx = new Ctx{promise_ptr};
+
+    int rc = dcb_invoke_dart_fn(
+        session_id, fn_id,
+        args.data(), static_cast<uint32_t>(args.size()),
+        [](void* ud, int ok, const uint8_t* data, uint32_t data_len, const char* error) {
+          auto* c = static_cast<Ctx*>(ud);
+          if (ok) {
+            // 解码返回值（使用纯 C codec API）
+            dcb_reader cr;
+            dcb_reader_init(&cr, data, data_len);
+            uint32_t slen = 0;
+            const char* s = dcb_read_str(&cr, &slen);
+            c->p->set_value(s ? std::string(s, slen) : std::string());
+          } else {
+            c->p->set_value(std::string("ERROR:") + (error ? error : "unknown"));
+          }
+          delete c;
+        },
+        ctx);
+
+    if (rc != 0) {
+      promise_ptr->set_value("ERROR:invoke_failed");
+      delete ctx;
+    }
+  });
+
+  // 在 io 线程上非阻塞等待结果（通过 spawn_blocking）
+  auto result = co_await dcb::spawn_blocking([&future] {
+    return future.get();
+  });
+  worker.join();
+  co_return result;
+}
+
+// ─── channel 服务模式测试 ───────────────────────────────────────────────
+
+// 请求类型：数据 + 一次性回复通道
+struct ServiceRequest {
+  std::string payload;
+  co::oneshot::Sender<std::string> reply_tx;
+};
+
+// 服务循环：在 uv worker 的 ForeignExecutor 上长期运行
+static async_simple::coro::Lazy<> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
+  while (auto req = co_await rx.recv()) {
+    // 处理任务：加上前缀
+    std::string result = "[svc:" + req->payload + "]";
+    req->reply_tx.send(std::move(result));
+  }
+  co_return;  // channel 关闭，服务结束
+}
+
+async_simple::coro::Lazy<std::string> test_channel_service() {
+  std::lock_guard lock(g_mu);
+  if (!g_uv_worker || !g_uv_worker->running()) {
+    throw std::runtime_error("uv worker not running");
+  }
+
+  // 创建 mpsc channel（bridge 侧发送，uv worker 侧接收）
+  auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
+
+  // 在 uv worker 的 ForeignExecutor 上启动服务循环
+  auto* ex = g_uv_worker->executor();
+  service_loop(std::move(rx)).via(ex).start([](auto&&) {});
+
+  // 从 bridge 侧发送 3 个请求，每个带独立的回复通道
+  std::string results;
+  for (int i = 0; i < 3; ++i) {
+    auto [reply_tx, reply_rx] = co::oneshot::channel<std::string>();
+    tx.send(ServiceRequest{"msg" + std::to_string(i), std::move(reply_tx)});
+
+    // 非阻塞等待回复（挂起当前协程，不占 io 线程）
+    auto reply = co_await reply_rx.recv();
+    if (!reply) throw std::runtime_error("service dropped");
+    if (!results.empty()) results += ",";
+    results += *reply;
+  }
+
+  // 关闭 sender → 服务循环退出
+  tx.close();
+  co_return results;  // "[svc:msg0],[svc:msg1],[svc:msg2]"
+}
+
+// 并发版本：一次性发送所有请求，然后收集所有回复。
+// 测试 mpsc 排队 + 服务循环逐个处理的能力。
+async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
+  std::lock_guard lock(g_mu);
+  if (!g_uv_worker || !g_uv_worker->running()) {
+    throw std::runtime_error("uv worker not running");
+  }
+
+  auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
+  auto* ex = g_uv_worker->executor();
+  service_loop(std::move(rx)).via(ex).start([](auto&&) {});
+
+  // 先一次性发送 5 个请求（不等待），测试 mpsc 排队
+  std::vector<co::oneshot::Receiver<std::string>> receivers;
+  for (int i = 0; i < 5; ++i) {
+    auto [reply_tx, reply_rx] = co::oneshot::channel<std::string>();
+    tx.send(ServiceRequest{"c" + std::to_string(i), std::move(reply_tx)});
+    receivers.push_back(std::move(reply_rx));
+  }
+
+  // 然后收集所有回复（服务循环在 uv loop 线程上逐个处理）
+  std::string results;
+  for (auto& reply_rx : receivers) {
+    auto reply = co_await reply_rx.recv();
+    if (!reply) throw std::runtime_error("service dropped");
+    if (!results.empty()) results += ",";
+    results += *reply;
+  }
+
+  tx.close();
+  co_return results;  // "[svc:c0],[svc:c1],[svc:c2],[svc:c3],[svc:c4]"
 }
 
 }  // namespace foreign_demo::api
