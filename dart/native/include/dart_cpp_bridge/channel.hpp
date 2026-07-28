@@ -50,11 +50,12 @@ inline void wake_waiter(
   if (!h) {
     return;
   }
-  if (ex) {
-    ex->schedule([h]() { h.resume(); });
-  } else {
-    h.resume();
+  if (ex && ex->schedule([h]() { h.resume(); })) {
+    return;  // scheduled onto target executor
   }
+  // Fallback: executor null or dead (e.g. ForeignExecutor deactivated).
+  // Resume inline on the sender's thread to prevent coroutine leak.
+  h.resume();
 }
 
 template <channel_value T>
