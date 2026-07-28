@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "postbuild": "node scripts/fix-base.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },
