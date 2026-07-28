@@ -3,6 +3,7 @@
 // Foreign runtime demo API — 演示 libuv 运行时通过 ForeignExecutor 接入 bridge。
 
 #include "dart_cpp_bridge/annotate.h"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <async_simple/coro/Lazy.h>
@@ -32,5 +33,12 @@ async_simple::coro::Lazy<std::int32_t> uv_compute(std::int32_t n);
 /// libuv worker 通过 mpsc channel 发送流式数据到 Dart。
 void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count = 5,
                std::int32_t interval_ms = 50);
+
+/// 从 libuv loop 线程调用 Dart 回调（通过 ForeignExecutor 上启动协程）。
+/// 协程绑定到 ForeignExecutor，co_await DartFn 时挂起，Dart 回复通过
+/// uv_async_send 恢复到 uv loop 线程。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> call_dart_from_uv(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
 
 }  // namespace foreign_demo::api

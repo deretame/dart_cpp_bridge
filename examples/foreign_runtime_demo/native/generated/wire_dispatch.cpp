@@ -16,6 +16,7 @@
 
 #include <asio/post.hpp>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -81,6 +82,34 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 post_err(session, gen, req, method, "start_uv_worker", e.what());
               } catch (...) {
                 post_err(session, gen, req, method, "start_uv_worker", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 201331851: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto input = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, callback, input = std::move(input)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::foreign_demo::api::call_dart_from_uv(callback, input);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "call_dart_from_uv", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "call_dart_from_uv", "unknown");
               }
               co_return;
             });

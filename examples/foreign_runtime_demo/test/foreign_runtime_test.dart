@@ -94,4 +94,54 @@ void main() {
       await stopUvWorker();
     });
   });
+
+  group('DartFn from libuv foreign runtime', () {
+    setUpAll(() async {
+      await startUvWorker();
+    });
+
+    tearDownAll(() async {
+      await stopUvWorker();
+    });
+
+    test('call Dart callback from libuv loop (ForeignExecutor)', () async {
+      final result = await callDartFromUv(
+        callback: (s) async => 'uv-echo:$s',
+        input: 'hello',
+      );
+      expect(result, 'uv-echo:hello');
+    });
+
+    test('multiple sequential calls from libuv', () async {
+      final r1 = await callDartFromUv(
+        callback: (s) async => s.toUpperCase(),
+        input: 'abc',
+      );
+      final r2 = await callDartFromUv(
+        callback: (s) async => s.toUpperCase(),
+        input: 'xyz',
+      );
+      expect(r1, 'ABC');
+      expect(r2, 'XYZ');
+    });
+
+    test('Dart callback with async delay from libuv', () async {
+      final result = await callDartFromUv(
+        callback: (s) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return 'delayed:$s';
+        },
+        input: 'wait',
+      );
+      expect(result, 'delayed:wait');
+    });
+
+    test('Dart callback that throws returns error from libuv', () async {
+      final result = await callDartFromUv(
+        callback: (s) async => throw StateError('uv-boom-$s'),
+        input: 'err',
+      );
+      expect(result, startsWith('ERROR:'));
+    });
+  });
 }

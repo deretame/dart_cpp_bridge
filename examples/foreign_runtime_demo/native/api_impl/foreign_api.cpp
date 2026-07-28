@@ -5,6 +5,7 @@
 #include "../uv_worker.hpp"
 
 #include "dart_cpp_bridge/channel.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/foreign_executor.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
@@ -141,6 +142,51 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
         sink.end();
         co_return;
       });
+}
+
+// MSVC 19.51 协程 lambda 捕获 bug 的 workaround：
+// 使用独立的 static 协程函数，通过参数传递所有变量。
+static async_simple::coro::Lazy<> uv_dart_fn_coro(
+    std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
+    dcb::DartFn<std::string(std::string)> cb,
+    std::string input) {
+  try {
+    auto result = co_await cb(input);
+    tx_ptr->send(std::move(result));
+  } catch (const std::exception& e) {
+    tx_ptr->send(std::string("ERROR: ") + e.what());
+  }
+  co_return;
+}
+
+async_simple::coro::Lazy<std::string> call_dart_from_uv(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_uv_worker || !g_uv_worker->running()) {
+      throw std::runtime_error("uv worker not running");
+    }
+
+    auto* ex = g_uv_worker->executor();
+    auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
+
+    // 在 uv loop 线程上启动协程，非阻塞地 co_await DartFn。
+    // 使用 static 协程函数而非协程 lambda（MSVC 19.51 bug workaround）。
+    ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() mutable {
+      uv_dart_fn_coro(std::move(tx_ptr), std::move(cb), std::move(input))
+          .via(ex)
+          .start([](auto&&) {});
+    });
+  }
+
+  // 在 bridge 主运行时上等待结果
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("uv worker dropped");
+  }
+  co_return *reply;
 }
 
 }  // namespace foreign_demo::api

@@ -25,6 +25,7 @@ final class BridgeApiImpl {
   static void disposeSingleton() => _instance = null;
 
   static const int startUvWorkerId = 18716410;
+  static const int callDartFromUvId = 201331851;
   static const int uvComputeId = 460040803;
   static const int uvStreamId = 828415216;
   static const int askUvId = 2040169010;
@@ -35,6 +36,28 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(startUvWorkerId, _payloadBytes);
     return ByteReader(_bytes).str();
+  }
+
+  Future<String> callDartFromUv(Future<String> Function(String) callback, String input) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    try {
+      final _payload = ByteWriter();
+      _payload.u64(_callbackId);
+      _payload.str(input);
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(callDartFromUvId, _payloadBytes);
+      return ByteReader(_bytes).str();
+    } finally {
+      bridge.unregisterDartFn(_callbackId);
+    }
   }
 
   Future<int> uvCompute(int n) async {

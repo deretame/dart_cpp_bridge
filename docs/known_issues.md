@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-27
+> 更新日期：2026-07-28
 
 ---
 
@@ -408,4 +408,94 @@ const auto scores = r.i32();
 - **codegen 必须独立于构建系统**：codegen 工具不应依赖 cmake FetchContent 的产物，stubs 必须完整覆盖所有间接依赖。
 - **libclang 解析错误会级联**：即使错误发生在无关的头文件中，也可能导致后续模板类型退化。`-ferror-limit=0` 只能防止错误数量截断，不能防止类型退化。
 - **CI 与本地环境差异**：本地残留的构建产物（如 `build/_deps`）可能掩盖问题，CI 的干净环境反而能暴露依赖缺失。
+
+---
+
+## 10. 【已绕过】MSVC 19.51 协程 lambda 捕获变量损坏
+
+### 10.1 现象
+
+在 ForeignExecutor 上使用 `.via(ex).start()` 启动协程时，协程 lambda 中捕获的变量（`std::string`、`DartFn`、`shared_ptr` 等）在协程恢复后变成垃圾值，导致 ACCESS_VIOLATION 崩溃：
+
+```text
+===== CRASH =====
+ExceptionCode=-1073741819
+pc 0x00007ffc... dart_cpp_bridge.dll+0x51fa2
+```
+
+调试输出显示捕获的 `std::string` 变成乱码：
+
+```text
+[DBG] lazy started, input=?g?    ← 应为 "hello"
+```
+
+### 10.2 触发条件
+
+```cpp
+// ✗ 崩溃：协程 lambda 捕获
+ex->schedule([cb = std::move(callback), input = std::move(input), ex]() mutable {
+  auto lazy = [cb = std::move(cb), input = std::move(input)]()
+      -> async_simple::coro::Lazy<> {
+    auto result = co_await cb(input);  // cb 和 input 已损坏！
+    // ...
+  }();
+  std::move(lazy).via(ex).start([](auto&&) {});
+});
+```
+
+关键要素：
+- **MSVC 19.51**（VS 2026）编译器
+- 协程 lambda（`[]() -> Lazy<> { co_await ...; }`）
+- 捕获列表中含 move-only 或非 trivial 类型（`std::string`、`DartFn`、`shared_ptr`）
+- 协程被 `.via(ex).start()` 调度到另一个执行上下文
+
+### 10.3 根因
+
+MSVC 19.51 对协程 lambda 的捕获处理存在 bug：协程帧（coroutine frame）未正确复制/移动 lambda 的捕获变量。当协程被调度到另一个线程恢复时，捕获变量已经是悬空引用或未初始化的内存。
+
+注意：同样的代码在 GCC/Clang 上可能正常工作，这是 MSVC 特有的问题。
+
+### 10.4 解决方案
+
+使用独立的 **static 协程函数**，通过函数参数传递所有变量（而非捕获）：
+
+```cpp
+// ✓ 正确：static 协程函数 + 参数传递
+static async_simple::coro::Lazy<> my_coro(
+    std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
+    dcb::DartFn<std::string(std::string)> cb,
+    std::string input) {
+  auto result = co_await cb(input);  // 参数完好
+  tx_ptr->send(std::move(result));
+  co_return;
+}
+
+// 调用处：普通 lambda（非协程）负责调用 static 函数
+ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() mutable {
+  my_coro(std::move(tx_ptr), std::move(cb), std::move(input))
+      .via(ex)
+      .start([](auto&&) {});
+});
+```
+
+关键区别：
+- 外层 lambda 是**普通 lambda**（非协程），捕获不受影响
+- 内层协程是**命名函数**，变量通过参数传入，存储在协程帧的参数区域
+
+### 10.5 影响范围
+
+| 场景 | 是否受影响 |
+|------|----------|
+| 协程 lambda + `.via(ex).start()` | ✗ 受影响 |
+| 协程 lambda + `syncAwait` | ✗ 受影响 |
+| static 协程函数 + `.via(ex).start()` | ✓ 正常 |
+| static 协程函数 + `syncAwait` | ✓ 正常 |
+| 普通 lambda（非协程）捕获 | ✓ 正常 |
+| codegen 生成的 wire_dispatch | ✓ 正常（已使用 static 协程函数） |
+
+### 10.6 教训
+
+- **MSVC + 协程 + lambda 捕获 = 危险组合**。在 MSVC 上始终使用命名协程函数 + 参数传递。
+- codegen 生成的代码已经使用 static 协程函数模式（早期发现的 C2660 bug 促使采用此模式），因此不受影响。
+- 此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。只是 ForeignExecutor 场景更容易暴露（跨线程调度）。
 

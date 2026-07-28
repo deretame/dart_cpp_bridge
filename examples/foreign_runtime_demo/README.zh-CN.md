@@ -101,7 +101,7 @@ examples/foreign_runtime_demo/
 │   ├── api_impl/foreign_api.cpp  # 业务逻辑（channel 通信）
 │   └── generated/             # codegen 生成（勿手动编辑）
 ├── lib/src/native_gen/        # codegen 生成的 Dart 绑定
-├── test/foreign_runtime_test.dart  # 7 个测试
+├── test/foreign_runtime_test.dart  # 11 个测试
 └── CMakeLists.txt             # FetchContent 拉取 libuv
 ```
 
@@ -143,6 +143,82 @@ static void schedule_callback(void (*fn)(void*), void* ud, void* ctx) {
 ```
 
 核心不变：**实现 `void(*)(void*)` 在 loop 线程执行 → 注册 → channel 通信**。
+
+## 从外部运行时调用 Dart 回调 (DartFn)
+
+外部运行时通过 ForeignExecutor 接入后，可以在 loop 线程上调用已注册的 Dart 回调。提供两种方式：
+
+### 非阻塞（推荐）
+
+等待 Dart 回复期间 **不阻塞** loop 线程。协程挂起后，Dart 回复时自动在 loop 线程上恢复。
+
+**前提条件：**
+- ForeignExecutor 必须实现完整的 `async_simple::Executor` 接口（`currentThreadInExecutor()`、`stat()`、`getIOExecutor()`）
+- loop 线程启动时调用 `dcb_foreign_mark_loop_thread(id)`
+- MSVC 下：必须使用 static 协程函数，不能用协程 lambda（见 [known_issues.md §10](../../docs/known_issues.md)）
+
+```cpp
+// static 协程函数（MSVC workaround —— 不要用协程 lambda）
+static async_simple::coro::Lazy<> my_dart_fn_coro(
+    std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
+    dcb::DartFn<std::string(std::string)> cb,
+    std::string input) {
+  try {
+    auto result = co_await cb(input);  // 非阻塞：挂起直到 Dart 回复
+    tx_ptr->send(std::move(result));
+  } catch (const std::exception& e) {
+    tx_ptr->send(std::string("ERROR: ") + e.what());
+  }
+  co_return;
+}
+
+// API 函数中（运行在 bridge io 线程）：
+async_simple::coro::Lazy<std::string> call_dart_from_uv(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+  auto* ex = worker->executor();
+  auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
+
+  // 在外部 loop 线程上启动协程
+  ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() mutable {
+    my_dart_fn_coro(std::move(tx_ptr), std::move(cb), std::move(input))
+        .via(ex)
+        .start([](auto&&) {});
+  });
+
+  auto reply = co_await rx.recv();
+  co_return *reply;
+}
+```
+
+**工作原理：**
+1. `ex->schedule(...)` 将协程启动投递到 loop 线程
+2. `.via(ex).start()` 将协程绑定到 ForeignExecutor 并开始执行
+3. `co_await cb(input)` 发送请求到 Dart 并挂起协程
+4. Dart 回复时，`wake_waiter` 通过 ForeignExecutor 调度恢复
+5. 协程在 loop 线程上恢复，获得结果
+
+### 阻塞（更简单，但卡 loop）
+
+阻塞当前线程直到 Dart 回复。可在任何线程使用（bridge io 线程除外 —— 会自死锁）。无需 ForeignExecutor 配置。
+
+```cpp
+// 在任意工作线程上（不能是 bridge io 线程！）：
+auto result = async_simple::coro::syncAwait(dcb::spawn(cb(input)));
+```
+
+> **注意：** 在 loop 线程上使用 `syncAwait` 会阻塞整个事件循环直到 Dart 响应。仅适用于快速回调或 loop 无其他工作的场景。
+
+### 对比
+
+| | 非阻塞 | 阻塞 |
+|--|---|---|
+| 是否卡 loop | 否 | 是（直到 Dart 回复） |
+| ForeignExecutor 配置 | 完整（虚函数 + mark_loop_thread） | 无 |
+| MSVC workaround | 需要（static 协程函数） | 不需要 |
+| 适用场景 | 生产环境、并发工作 | 快速测试、简单脚本 |
+
+---
 
 ## 性能与优化方向
 

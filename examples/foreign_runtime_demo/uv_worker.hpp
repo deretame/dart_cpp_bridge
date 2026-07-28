@@ -45,7 +45,11 @@ class UvWorker {
     foreign_id_ = dcb_foreign_register(name_.c_str(), &schedule_callback, this);
 
     // 启动 loop 线程
-    thread_ = std::thread([this] { uv_run(&loop_, UV_RUN_DEFAULT); });
+    thread_ = std::thread([this] {
+      // 在 loop 线程上标记自己，使 currentThreadInExecutor() 能正确判断
+      dcb_foreign_mark_loop_thread(foreign_id_);
+      uv_run(&loop_, UV_RUN_DEFAULT);
+    });
   }
 
   void stop() {

@@ -66,6 +66,11 @@ DCB_API void dcb_post_to_bridge(void (*fn)(void*), void* userdata);
 /// 返回 NULL 表示 runtime_id 无效。
 DCB_API void* dcb_foreign_executor(uint32_t runtime_id);
 
+/// 在外部 loop 线程上调用，将当前线程注册为该运行时的 loop 线程。
+/// 使 ForeignExecutor::currentThreadInExecutor() 能正确判断。
+/// 应在 loop 线程启动后、执行任何协程之前调用一次。
+DCB_API void dcb_foreign_mark_loop_thread(uint32_t runtime_id);
+
 #ifdef __cplusplus
 }
 #endif

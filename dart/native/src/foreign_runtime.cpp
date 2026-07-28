@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 namespace dcb {
@@ -68,6 +69,13 @@ DCB_API void* dcb_foreign_executor(uint32_t runtime_id) {
   auto it = dcb::g_foreign_registry.find(runtime_id);
   if (it == dcb::g_foreign_registry.end()) return nullptr;
   return static_cast<void*>(it->second.executor.get());
+}
+
+DCB_API void dcb_foreign_mark_loop_thread(uint32_t runtime_id) {
+  std::lock_guard lock(dcb::g_foreign_mu);
+  auto it = dcb::g_foreign_registry.find(runtime_id);
+  if (it == dcb::g_foreign_registry.end()) return;
+  it->second.executor->set_loop_thread_id(std::this_thread::get_id());
 }
 
 }  // extern "C"
