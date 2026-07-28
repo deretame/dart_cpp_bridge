@@ -42,13 +42,11 @@ class _MyAppState extends State<MyApp> {
 
       // Stream
       final ticks = await tickStream(count: 5, intervalMs: 10).toList();
-      results.add(
-        'tickStream: $ticks ${ticks.length == 5 ? "PASS" : "FAIL"}',
-      );
+      results.add('tickStream: $ticks ${ticks.length == 5 ? "PASS" : "FAIL"}');
 
       // DartFn callback
       final fnResult = await greetDartFn(
-        callback: (name) => 'Dart $name',
+        callback: (name) async => 'Dart $name',
         name: 'device',
       );
       results.add(
@@ -68,7 +66,9 @@ class _MyAppState extends State<MyApp> {
         a: const Point(x: 0, y: 0),
         b: const Point(x: 3, y: 4),
       );
-      results.add('distance: $dist ${(dist - 5.0).abs() < 1e-9 ? "PASS" : "FAIL"}');
+      results.add(
+        'distance: $dist ${(dist - 5.0).abs() < 1e-9 ? "PASS" : "FAIL"}',
+      );
     } catch (e, st) {
       results.add('ERROR: $e\n$st');
     }
@@ -89,22 +89,24 @@ class _MyAppState extends State<MyApp> {
             Expanded(
               child: ListView(
                 children: _results
-                    .map((r) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
+                    .map(
+                      (r) => Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          r,
+                          style: TextStyle(
+                            color: r.contains('FAIL') || r.contains('ERROR')
+                                ? Colors.red
+                                : Colors.green,
+                            fontFamily: 'monospace',
+                            fontSize: 13,
                           ),
-                          child: Text(
-                            r,
-                            style: TextStyle(
-                              color: r.contains('FAIL') || r.contains('ERROR')
-                                  ? Colors.red
-                                  : Colors.green,
-                              fontFamily: 'monospace',
-                              fontSize: 13,
-                            ),
-                          ),
-                        ))
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ),

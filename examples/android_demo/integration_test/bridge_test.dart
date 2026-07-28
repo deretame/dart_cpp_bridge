@@ -36,7 +36,7 @@ void main() {
 
     // DartFn reverse callback
     final fnResult = await greetDartFn(
-      callback: (name) => 'Dart $name',
+      callback: (name) async => 'Dart $name',
       name: 'device',
     );
     expect(fnResult, 'hello, Dart device');
