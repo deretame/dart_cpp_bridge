@@ -69,3 +69,9 @@ Dart ← streamEnd frame ← port
 - **io_context 线程**: 事件循环、协程调度、Dart API 调用
 - **thread_pool**: 阻塞业务逻辑
 - **Dart Isolate**: 独立的 Dart 执行环境
+
+## 外部运行时集成
+
+bridge 支持将非 asio 事件循环（libuv、glib 等）通过 `ForeignExecutor` 适配层接入协程系统，实现跨运行时非阻塞通信和 Dart 回调调用。
+
+详见 [外部运行时集成](/guides/foreign-runtime/)。
