@@ -3,6 +3,8 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
+  site: 'https://deretame.github.io',
+  base: '/dart_cpp_bridge',
   integrations: [
     starlight({
       title: 'dart_cpp_bridge',
