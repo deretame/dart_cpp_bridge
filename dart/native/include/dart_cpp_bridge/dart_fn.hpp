@@ -25,13 +25,14 @@ namespace dcb {
 //   DartFn<void()>                                    // () -> void
 //
 // The encode/decode lambdas are supplied by generated wire code so that the
-// runtime stays binary-agnostic.  Business code simply calls callSync/callAsync.
+// runtime stays binary-agnostic.  Business code simply calls fn(args...).
 //
-// callSync:  block current thread until Dart replies (no babysitting / offload).
-// callAsync: co_await on io via oneshot channel; io thread is NOT blocked.
+// DartFn is a functor: operator() returns Lazy<Ret> (true async, non-blocking).
+// The calling Lazy must be bound to an Executor (.via).
 //
-// Stalling io with callSync is the caller's choice/problem.
-// callAsync requires the calling Lazy to be bound to AsioExecutor (.via).
+// For blocking contexts (thread pool, foreign threads), use syncAwait:
+//   auto r = async_simple::coro::syncAwait(dcb::spawn(fn(args...)));
+// Do NOT syncAwait on the io thread (self-deadlock).
 template <typename>
 class DartFn;
 
@@ -64,18 +65,13 @@ class DartFn<Ret(Args...)> {
 
   explicit operator bool() const { return static_cast<bool>(session_) && fn_id_ != 0; }
 
-  Ret callSync(const Args&... args) const {
-    if (!session_) {
-      throw std::runtime_error("DartFn: empty");
-    }
-    ByteWriter w;
-    encode_(w, args...);
-    auto raw = session_->invoke_dart_fn_sync(generation_, fn_id_, w.raw());
-    return decode_(raw.data(), raw.size());
-  }
-
-  // Suspends current Lazy until Dart replies (oneshot + Executor::schedule).
-  async_simple::coro::Lazy<Ret> callAsync(const Args&... args) const {
+  // Functor interface: returns Lazy<Ret> (true async, non-blocking).
+  // Suspends the calling coroutine until Dart replies via oneshot channel.
+  // The calling Lazy must be bound to an Executor (.via).
+  //
+  // For blocking contexts, wrap with syncAwait:
+  //   auto r = async_simple::coro::syncAwait(dcb::spawn(fn(args...)));
+  async_simple::coro::Lazy<Ret> operator()(const Args&... args) const {
     if (!session_) {
       throw std::runtime_error("DartFn: empty");
     }

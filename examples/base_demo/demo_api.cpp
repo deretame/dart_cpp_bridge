@@ -8,6 +8,7 @@
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <async_simple/coro/Lazy.h>
+#include <async_simple/coro/SyncAwait.h>
 
 #include <chrono>
 #include <cstdint>
@@ -332,7 +333,7 @@ std::int32_t counter_static_sum(std::int32_t a, std::int32_t b) {
 async_simple::coro::Lazy<std::string> counter_call_dart_fn(
     std::shared_ptr<Counter> obj, DartFnStringToString cb) {
   // DartFn callback method: pass the current value as a string to Dart.
-  co_return co_await cb.callAsync(std::to_string(obj->value()));
+  co_return co_await cb(std::to_string(obj->value()));
 }
 
 namespace {
@@ -352,16 +353,20 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 
 void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint64_t gen,
                              std::uint64_t req, std::uint32_t method, DartFnStringToString cb) {
-  try {
-    auto out = cb.callSync("Tom");
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "callDartHelloSync", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "callDartHelloSync", "unknown");
-  }
+  // Offload to pool thread — syncAwait on io would self-deadlock.
+  asio::post(Runtime::instance().pool(),
+             [session, gen, req, method, cb = std::move(cb)]() mutable {
+               try {
+                 auto out = async_simple::coro::syncAwait(dcb::spawn(cb("Tom")));
+                 ByteWriter w;
+                 w.str(out);
+                 post_ok(session, gen, req, method, w.raw());
+               } catch (const std::exception& e) {
+                 post_err(session, gen, req, method, "callDartHelloSync", e.what());
+               } catch (...) {
+                 post_err(session, gen, req, method, "callDartHelloSync", "unknown");
+               }
+             });
 }
 
 void counter_sleep_and_get(std::shared_ptr<Counter> obj, std::int32_t sleep_ms,
@@ -1084,7 +1089,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
             [session, gen, req, method, cb = std::move(cb)]() mutable
             -> async_simple::coro::Lazy<> {
               try {
-                auto out = co_await cb.callAsync("Tom");
+                auto out = co_await cb("Tom");
                 ByteWriter w;
                 w.str(out);
                 post_ok(session, gen, req, method, w.raw());
@@ -1098,8 +1103,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
       case MethodId::kCallDartHelloSync: {
-        // Sync path: block **this** thread (often io when dispatched from invoke_async).
-        // Library does not move you off io. Stalling io is caller's problem.
+        // Blocking path: offloaded to pool thread (syncAwait on io = deadlock).
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
         DartFnStringToString cb(session, gen, fn_id);

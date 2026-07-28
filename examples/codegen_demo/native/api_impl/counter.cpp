@@ -68,7 +68,7 @@ std::int32_t Counter::sum(std::int32_t a, std::int32_t b) { return a + b; }
 
 async_simple::coro::Lazy<std::string> Counter::greetDartFn(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
-  auto reply = co_await callback.callAsync(name);
+  auto reply = co_await callback(name);
   co_return std::string("hello, ") + reply;
 }
 

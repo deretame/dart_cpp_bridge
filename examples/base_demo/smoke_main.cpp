@@ -224,7 +224,7 @@ void test_dartfn_async_e2e_simulated_reply() {
         throw std::runtime_error("no session");
       }
       DartFnStringToString cb(session, gen, /*fn_id=*/1);
-      auto out = co_await cb.callAsync("Tom");
+      auto out = co_await cb("Tom");
       ByteWriter w;
       w.str(out);
       session->try_post(gen, make_frame(MsgType::kResponseOk, 1, 0, w.raw()));

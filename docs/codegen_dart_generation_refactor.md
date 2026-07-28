@@ -232,7 +232,7 @@ Stream<int> tickStream({int? count, int? intervalMs}) =>
 
 /// async + DartFn
 Future<String> greetDartFn({
-  required FutureOr<String> Function(String) callback,
+  required Future<String> Function(String) callback,
   required String name,
 }) =>
     BridgeApiImpl.instance.greetDartFn(callback, name);

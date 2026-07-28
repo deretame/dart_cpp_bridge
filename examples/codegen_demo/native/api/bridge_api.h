@@ -116,12 +116,12 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name);
 
-// normal (pool) + callSync → Dart: Future<String> concatDartFn(String Function(String, String) callback, ...)
+// normal (pool) + syncAwait → Dart: Future<String> concatDartFn(String Function(String, String) callback, ...)
 BRIDGE_NORMAL
 std::string concat_dart_fn(dcb::DartFn<std::string(std::string, std::string)> callback,
                            std::string a, std::string b);
 
-// EXPERIMENT: sync + callSync on io thread — measures blocking duration in µs
+// EXPERIMENT: sync + syncAwait on pool thread — measures blocking duration in µs
 BRIDGE_SYNC
 std::int64_t sync_dart_fn_blocking_us(dcb::DartFn<std::string(std::string)> callback,
                                       std::string input);
@@ -134,7 +134,7 @@ bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback);
 BRIDGE_NORMAL
 std::string invoke_registered(std::string input);
 
-// FRB-style pattern variant: invoke via coroutine (co_await callAsync on io thread)
+// FRB-style pattern variant: invoke via coroutine (co_await fn(...) on io thread)
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input);
 

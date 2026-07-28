@@ -131,7 +131,7 @@ def _dart_named_params(args: list[dict[str, Any]], *, include_handle: bool = Fal
         if t.get("kind") == "dart_fn":
             arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
             ret_t = _dart_type(t["return"])
-            type_s = f"FutureOr<{ret_t}> Function({arg_types})"
+            type_s = f"Future<{ret_t}> Function({arg_types})"
         elif t.get("kind") == "opaque_class":
             type_s = t["name"]
         else:
@@ -187,7 +187,7 @@ def _dart_type(t: dict[str, Any]) -> str:
         args = t.get("args", [])
         ret = _dart_type(t["return"])
         arg_types = ", ".join(_dart_type(a) for a in args)
-        return f"FutureOr<{ret}> Function({arg_types})"
+        return f"Future<{ret}> Function({arg_types})"
     if k in ("pair", "tuple"):
         elems = ", ".join(_dart_type(e) for e in t["elements"])
         return f"({elems})"
@@ -1272,7 +1272,7 @@ def _dart_opaque_class_wrappers(classes: list[dict[str, Any]]) -> str:
             if t.get("kind") == "dart_fn":
                 arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
                 ret_t = _dart_type(t["return"])
-                p = f"FutureOr<{ret_t}> Function({arg_types}) {dn}"
+                p = f"Future<{ret_t}> Function({arg_types}) {dn}"
             else:
                 p = f"{wrapper_type(t)} {dn}"
             if a.get("default_value"):
@@ -2031,7 +2031,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                 elif t.get("kind") == "dart_fn":
                     arg_types = ", ".join(_dart_type(arg_t) for arg_t in t.get("args", []))
                     ret_t = _dart_type(t["return"])
-                    params.append(f"FutureOr<{ret_t}> Function({arg_types}) {dart_name}")
+                    params.append(f"Future<{ret_t}> Function({arg_types}) {dart_name}")
                 else:
                     type_s = _dart_type(t)
                     if _is_optional_arg(a) and not type_s.endswith('?'):

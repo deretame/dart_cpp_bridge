@@ -281,7 +281,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ## Common pitfalls
 
-- **Sync DartFn on the io thread**: `DartFnStringToString::callSync` and `callDartHelloSync` block the calling thread. If called on the `io_context` thread, the whole scheduler stalls. The library does not auto-offload.
+- **Sync DartFn on the io thread**: `DartFn::operator()` returns `Lazy<Ret>` (async only). For blocking contexts, use `syncAwait(dcb::spawn(fn(args...)))`. Calling `syncAwait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
 - **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
 - **Generated code is not a build step**: codegen must be run manually after API header changes. The Native Assets hook (Phase 3) will only compile and link, not regenerate code.
 - **No cancellation**: there is no general async cancellation. Stream subscription cancellation only stops new events from being delivered; C++ side continues running and silently drops late `add()` calls.

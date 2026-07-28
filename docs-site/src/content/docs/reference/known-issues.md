@@ -31,9 +31,9 @@ description: 已解决和已知的技术债
 
 版本 `0.1.0-dev`。方法 ID、wire 格式、生成代码可能变化。
 
-### 同步 DartFn 阻塞
+### DartFn 阻塞调用
 
-`DartFnStringToString::callSync` 会阻塞调用线程。如果在 `io_context` 线程上调用，整个调度器会停滞。库不会自动卸载。
+`DartFn::operator()` 返回 `Lazy<Ret>`（仅异步）。阻塞场景使用 `syncAwait(dcb::spawn(fn(args...)))`。在 `io_context` 线程上调用 `syncAwait` 会自死锁。库不会自动卸载。
 
 ### codegen 不是构建步骤
 

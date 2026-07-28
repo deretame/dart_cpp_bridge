@@ -4,6 +4,7 @@
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <asio/post.hpp>
+#include <async_simple/coro/SyncAwait.h>
 
 #include <chrono>
 #include <cmath>
@@ -111,21 +112,21 @@ async_simple::coro::Lazy<dcb::UInt128> echo_u128(dcb::UInt128 value) {
 
 async_simple::coro::Lazy<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
-  auto reply = co_await callback.callAsync(name);
+  auto reply = co_await callback(name);
   co_return std::string("hello, ") + reply;
 }
 
 std::string concat_dart_fn(
     dcb::DartFn<std::string(std::string, std::string)> callback,
     std::string a, std::string b) {
-  auto reply = callback.callSync(a, b);
+  auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(a, b)));
   return "sync:" + reply;
 }
 
 std::int64_t sync_dart_fn_blocking_us(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   auto t0 = std::chrono::steady_clock::now();
-  auto reply = callback.callSync(input);
+  auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(input)));
   auto t1 = std::chrono::steady_clock::now();
   (void)reply;
   return std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
@@ -145,7 +146,7 @@ std::string invoke_registered(std::string input) {
   if (!g_registered_fn) {
     throw std::runtime_error("no registered dart fn");
   }
-  auto reply = g_registered_fn.callSync(input);
+  auto reply = async_simple::coro::syncAwait(dcb::spawn(g_registered_fn(input)));
   return "registered:" + reply;
 }
 
@@ -153,7 +154,7 @@ async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input)
   if (!g_registered_fn) {
     throw std::runtime_error("no registered dart fn");
   }
-  auto reply = co_await g_registered_fn.callAsync(input);
+  auto reply = co_await g_registered_fn(input);
   co_return "async_registered:" + reply;
 }
 

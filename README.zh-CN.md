@@ -33,7 +33,7 @@
 |------|------|
 | 对齐 FRB 体验 | 通道划分、生命周期、DartFn 反向调用等概念与 FRB 同构，便于两边对照 |
 | 协程优先 | 业务侧写 `async_simple::coro::Lazy<T>`，在 io 上 `co_await`，而不是到处 `std::future::get` |
-| 不替用户兜底错误用法 | 例如在 io 线程上 `callSync` 会堵调度器——文档写清，由调用方负责 |
+| 不替用户兜底错误用法 | 例如在 io 线程上 `syncAwait` 会自死锁——文档写清，由调用方负责 |
 | 渐进落地 | Phase 1 手写 demo 验证模型 → Phase 2 codegen → Phase 3 Native Assets / 产品化 |
 
 业务代码**不**需要返回「桥专用 Future 包装」；正常写同步函数或 `Lazy`，由桥负责编解码与调度。

@@ -517,7 +517,7 @@ class Counter extends CppOpaqueInterface {
 
   static int sum(int a, int b) => BridgeApi.instance._counterSum(a, b);
 
-  Future<String> callCallback(FutureOr<String> Function(String value) cb) =>
+  Future<String> callCallback(Future<String> Function(String value) cb) =>
       BridgeApi.instance._counterCallDartFn(_handle, cb);
 }
 ```
@@ -565,7 +565,7 @@ class Counter extends CppOpaqueInterface {
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
-| `dcb::DartFn<Ret(Args...)>` | `FutureOr<Ret> Function(Args...)` | FRB 风格的 Dart 闭包反向调用：C++ 异步等待 Dart 返回结果 |
+| `dcb::DartFn<Ret(Args...)>` | `Future<Ret> Function(Args...)` | FRB 风格的 Dart 闭包反向调用：C++ 异步等待 Dart 返回结果 |
 
 - 使用方式：在 API 头文件中将参数声明为 `dcb::DartFn<Ret(Args...)>`，语法类似 `std::function`。例如：
 
@@ -576,7 +576,7 @@ class Counter extends CppOpaqueInterface {
   ```
 
 - Dart 侧生成代码会：
-  1. 按实际参数/返回值类型生成 `FutureOr<Ret> Function(Args...)`；
+  1. 按实际参数/返回值类型生成 `Future<Ret> Function(Args...)`；
   2. 调用 `bridge.registerDartFn(binaryClosure)` 注册一个二进制包装闭包，获得一个 `fn_id`；
   3. 把 `fn_id` 按参数顺序写入请求 payload；
   4. 调用 C++ 方法；
@@ -585,12 +585,13 @@ class Counter extends CppOpaqueInterface {
 - C++ 侧生成代码会：
   1. 从 payload 中按参数顺序读出 `fn_id`；
   2. 构造 `dcb::DartFn<Signature>(session, generation, fn_id, encode, decode)`，其中 `encode` / `decode` 由生成代码按 `Ret` 和 `Args...` 的类型生成；
-  3. 在业务方法中通过 `callback.callAsync(args...)` 异步调用 Dart 闭包并 `co_await` 结果。
+  3. 在业务方法中通过 `co_await callback(args...)` 异步调用 Dart 闭包（DartFn 是仿函数，`operator()` 返回 `Lazy<Ret>`）。
 
 - 限制：
   - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128`、数据类等）。
-  - 同步阻塞版本 `callSync` 也可用，但如果在 `io_context` 线程上调用会阻塞事件循环，由业务代码自行决定。
-  - **禁止** `BRIDGE_SYNC` + `callSync`：`dispatch_sync` 跑在 Dart isolate 线程上，`callSync` 阻塞该线程等待 Dart 回复，形成永久死锁。
+  - 阻塞上下文（线程池 / 外部线程）中使用 `async_simple::coro::syncAwait(dcb::spawn(callback(args...)))` 同步等待结果。
+  - **禁止**在 io 线程上 `syncAwait`：会自死锁（协程需要 io 线程恢复，但 io 线程被阻塞）。
+  - **禁止** `BRIDGE_SYNC` + DartFn 回调：`dispatch_sync` 跑在 Dart isolate 线程上，阻塞该线程等待 Dart 回复，形成永久死锁。
   - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
 
 - 持久化回调（`BRIDGE_PERSIST`）：

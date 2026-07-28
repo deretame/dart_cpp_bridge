@@ -421,10 +421,10 @@ void main() {
 
     test('Counter.callCallback invokes Dart with current value', () async {
       final counter = await bridge.createCounter(initialValue: 10);
-      final out = await counter.callCallback((value) => 'got $value');
+      final out = await counter.callCallback((value) async => 'got $value');
       expect(out, 'got 10');
       await counter.increment(5);
-      final out2 = await counter.callCallback((value) => 'value=$value');
+      final out2 = await counter.callCallback((value) async => 'value=$value');
       expect(out2, 'value=15');
       counter.dispose();
     });
@@ -593,7 +593,7 @@ void main() {
 
   group('DartFn reverse call (FRB-style)', () {
     test('C++ async wait + Dart sync callback', () async {
-      final out = await bridge.callDartHello((name) => 'Hello, $name!');
+      final out = await bridge.callDartHello((name) async => 'Hello, $name!');
       expect(out, 'Hello, Tom!');
     });
 
@@ -606,7 +606,7 @@ void main() {
     });
 
     test('C++ sync wait + Dart sync callback', () async {
-      final out = await bridge.callDartHelloSync((name) => 'Sync, $name!');
+      final out = await bridge.callDartHelloSync((name) async => 'Sync, $name!');
       expect(out, 'Sync, Tom!');
     });
 
@@ -620,7 +620,7 @@ void main() {
 
     test('dart callback throw surfaces to C++ then Dart', () async {
       await expectLater(
-        bridge.callDartHello((_) => throw StateError('cb-boom')),
+        bridge.callDartHello((_) async => throw StateError('cb-boom')),
         throwsA(isA<StateError>().having((e) => e.message, 'message', contains('cb-boom'))),
       );
     });

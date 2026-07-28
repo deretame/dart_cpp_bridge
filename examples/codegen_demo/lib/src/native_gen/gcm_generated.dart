@@ -282,7 +282,7 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
-  Future<String> concatDartFn(FutureOr<String> Function(String, String) callback, String a, String b) async {
+  Future<String> concatDartFn(Future<String> Function(String, String) callback, String a, String b) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -388,7 +388,7 @@ final class BridgeApiImpl {
     return bridge.openStream<int>(tickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
   }
 
-  bool registerDartFn(FutureOr<String> Function(String) callback) {
+  bool registerDartFn(Future<String> Function(String) callback) {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -409,7 +409,7 @@ final class BridgeApiImpl {
     }
   }
 
-  Future<String> greetDartFn(FutureOr<String> Function(String) callback, String name) async {
+  Future<String> greetDartFn(Future<String> Function(String) callback, String name) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -461,7 +461,7 @@ final class BridgeApiImpl {
     return _readDataClass_Rect(ByteReader(_bytes));
   }
 
-  int syncDartFnBlockingUs(FutureOr<String> Function(String) callback, String input) {
+  int syncDartFnBlockingUs(Future<String> Function(String) callback, String input) {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -623,7 +623,7 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
-  Future<String> counterGreetDartFn(Counter self, FutureOr<String> Function(String) callback, String name) async {
+  Future<String> counterGreetDartFn(Counter self, Future<String> Function(String) callback, String name) async {
     self.ensureAlive();
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);

@@ -59,7 +59,7 @@ final class DartCppBridge implements Finalizable {
   /// FRB-style: callbacks passed into C++ calls, keyed by fn_id for this session.
   /// Values are binary-level callbacks: C++ sends raw arg bytes, we send back
   /// raw result bytes. Codegen wraps typed user closures around this layer.
-  final Map<int, FutureOr<Uint8List> Function(Uint8List)> _dartFns = {};
+  final Map<int, Future<Uint8List> Function(Uint8List)> _dartFns = {};
   int _nextId = 1;
   int _nextFnId = 1;
   StreamSubscription<dynamic>? _sub;
@@ -268,7 +268,7 @@ final class DartCppBridge implements Finalizable {
   /// raw bytes, and expects raw result bytes back. Codegen wraps typed user
   /// closures into this shape. The returned id must be written into the request
   /// payload so C++ can construct a `DartFn<Ret(Args...)>`.
-  int registerDartFn(FutureOr<Uint8List> Function(Uint8List) fn) {
+  int registerDartFn(Future<Uint8List> Function(Uint8List) fn) {
     final id = _nextFnId++;
     _dartFns[id] = fn;
     return id;

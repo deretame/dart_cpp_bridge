@@ -33,7 +33,7 @@ Typical options are hand-rolled FFI plus homemade threading/callbacks, or fragme
 |-----------|--------|
 | FRB-aligned UX | Channels, lifecycle, and DartFn reverse calls mirror FRB concepts for easy comparison |
 | Coroutines first | Business code uses `async_simple::coro::Lazy<T>` and `co_await` on the io thread — not `std::future::get` everywhere |
-| No babysitting misuse | e.g. `callSync` on the io thread stalls the scheduler — documented; caller owns the risk |
+| No babysitting misuse | e.g. `syncAwait` on the io thread is a self-deadlock — documented; caller owns the risk |
 | Incremental delivery | Phase 1 hand-written demo → Phase 2 codegen → Phase 3 Native Assets / productization |
 
 Business code does **not** return a bridge-specific Future wrapper. Write normal sync functions or `Lazy`; the bridge handles codec and scheduling.
@@ -309,7 +309,7 @@ Design and progress docs are currently written primarily in **Chinese**; English
 ## Non-goals (for now)
 
 - No ABI / API stability guarantees  
-- No hidden magic that offloads `callSync` if you block the io thread  
+- No hidden magic that offloads `syncAwait` if you block the io thread  
 - No shipping C++ stdlib or business binaries inside the pub package (hooks will own compile/link later)  
 - Not a UI platform-channel replacement — **Dart ↔ native logic** only  
 

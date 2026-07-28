@@ -44,12 +44,12 @@ C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、Dar
 | **DartFn 反向调用（参数式）** | ✅ | 见下表 |
 | oneshot channel（`co::oneshot`） | ✅ | `include/dart_cpp_bridge/channel.hpp` |
 
-#### DartFn 两种等待模式（不替用户兜底）
+#### DartFn 仿函数模式
 
 | C++ API | 行为 | 谁承担风险 |
 |---------|------|------------|
-| `callSync` / `callDartHelloSync` | **当前线程**阻塞直到 Dart reply | 若在 **io 线程**调用，会卡住调度器——用户自负 |
-| `callAsync` / `callDartHello` | **io 上** `co_await` oneshot，**真挂起、不堵 io、不占 pool** | 需 Lazy 绑 `AsioExecutor`（`spawn_on_asio` 已保证） |
+| `co_await fn(args...)` | **io 上** `co_await` oneshot，**真挂起、不堵 io、不占 pool** | 需 Lazy 绑 Executor（`spawn_on_asio` / `.via()` 已保证） |
+| `syncAwait(spawn(fn(args...)))` | **当前线程**阻塞直到 Dart reply | 禁止在 io 线程调用（自死锁）；在 pool / 外部线程使用 |
 
 链路（对齐 FRB oneshot）：
 
@@ -187,7 +187,7 @@ dart test
 
 5. **DartFn 生成** ✅
    - 支持泛型签名 `dcb::DartFn<Ret(Args...)>`（语法类似 `std::function`），例如 `dcb::DartFn<std::string(std::string)>`。
-   - Dart 侧按实际参数/返回值类型生成 `FutureOr<Ret> Function(Args...)`，注册/注销二进制回调；C++ 侧生成带 encode/decode lambda 的 `dcb::DartFn<Signature>` 后反向调用。
+   - Dart 侧按实际参数/返回值类型生成 `Future<Ret> Function(Args...)`，注册/注销二进制回调；C++ 侧生成带 encode/decode lambda 的 `dcb::DartFn<Signature>` 后反向调用。
    - 修复生成代码中 DartFn `fn_id` 写入顺序与 C++ 读取顺序不一致的问题：现在 `fn_id` 严格按参数顺序写入 payload。
    - 修复 MSVC 上模板参数包默认实参限制：便利构造函数改用 `requires` + `std::tuple` 比较。
    - 在 `examples/codegen_demo` 添加 `greet_dart_fn` 测试（含 sync / async 闭包）并跑通。

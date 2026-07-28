@@ -150,7 +150,7 @@ void main() {
 
   test('BRIDGE_ASYNC DartFn greet_dart_fn', () async {
     expect(
-      await greetDartFn(callback: (name) => 'Dart $name', name: 'world'),
+      await greetDartFn(callback: (name) async => 'Dart $name', name: 'world'),
       'hello, Dart world',
     );
     expect(
@@ -162,20 +162,20 @@ void main() {
     );
   });
 
-  test('BRIDGE_NORMAL DartFn callSync with two args', () async {
+  test('BRIDGE_NORMAL DartFn syncAwait with two args', () async {
     expect(
-      await concatDartFn(callback: (a, b) => '$a+$b', a: 'foo', b: 'bar'),
+      await concatDartFn(callback: (a, b) async => '$a+$b', a: 'foo', b: 'bar'),
       'sync:foo+bar',
     );
     expect(
-      await concatDartFn(callback: (a, b) => '$b-$a', a: 'X', b: 'Y'),
+      await concatDartFn(callback: (a, b) async => '$b-$a', a: 'X', b: 'Y'),
       'sync:Y-X',
     );
   });
 
   test('FRB-style: sync register + async invoke (no deadlock)', () async {
     // register_dart_fn is BRIDGE_SYNC — runs on isolate thread, just stores.
-    final ok = registerDartFn(callback: (s) => 'echo:$s');
+    final ok = registerDartFn(callback: (s) async => 'echo:$s');
     expect(ok, isTrue);
 
     // invoke_registered is BRIDGE_NORMAL — runs on pool thread, calls Dart.
@@ -183,21 +183,21 @@ void main() {
     expect(result, 'registered:echo:world');
 
     // Re-register with a different closure and invoke again.
-    registerDartFn(callback: (s) => s.toUpperCase());
+    registerDartFn(callback: (s) async => s.toUpperCase());
     final result2 = await invokeRegistered(input: 'hello');
     expect(result2, 'registered:HELLO');
   });
 
-  test('FRB-style: sync register + coroutine invoke (callAsync)', () async {
+  test('FRB-style: sync register + coroutine invoke (co_await fn(...))', () async {
     // Same registration (BRIDGE_SYNC, just stores).
-    registerDartFn(callback: (s) => 'co:$s');
+    registerDartFn(callback: (s) async => 'co:$s');
 
-    // invoke_registered_async is BRIDGE_ASYNC — co_await callAsync on io thread.
+    // invoke_registered_async is BRIDGE_ASYNC — co_await fn(...) on io thread.
     final result = await invokeRegisteredAsync(input: 'coroutine');
     expect(result, 'async_registered:co:coroutine');
 
     // Re-register and invoke again to prove reusability.
-    registerDartFn(callback: (s) => '${s.length}');
+    registerDartFn(callback: (s) async => '${s.length}');
     final result2 = await invokeRegisteredAsync(input: 'abcd');
     expect(result2, 'async_registered:4');
   });
@@ -358,7 +358,7 @@ void main() {
   test('opaque class Counter greetDartFn', () async {
     final counter = Counter.int32T(initialValue: 5);
     final result = await counter.greetDartFn(
-      callback: (value) => 'Dart got $value',
+      callback: (value) async => 'Dart got $value',
       name: 'world',
     );
     expect(result, 'hello, Dart got world');

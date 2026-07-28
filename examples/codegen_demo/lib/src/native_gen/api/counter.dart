@@ -49,7 +49,7 @@ final class Counter extends CppOpaqueInterface {
 
   Future<int> addTo({required Counter other}) => BridgeApiImpl.instance.counterAddTo(this, other);
 
-  Future<String> greetDartFn({required FutureOr<String> Function(String) callback, required String name}) => BridgeApiImpl.instance.counterGreetDartFn(this, callback, name);
+  Future<String> greetDartFn({required Future<String> Function(String) callback, required String name}) => BridgeApiImpl.instance.counterGreetDartFn(this, callback, name);
 
   Stream<int> tickStream({int count = 5, int intervalMs = 10}) => BridgeApiImpl.instance.counterTickStream(this, count, intervalMs);
 

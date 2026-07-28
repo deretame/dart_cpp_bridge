@@ -26,9 +26,9 @@ io:       Executor::schedule(resume) → 继续业务
 | `include/dart_cpp_bridge/asio_executor.hpp` | `AsioExecutor`：`schedule` = `asio::post(io, …)` |
 | `Runtime::spawn_on_asio` | `lazy.via(executor).start(...)`，保证 Lazy 绑 executor |
 | `Session::invoke_dart_fn_async` | `call_id → oneshot tx`；`co_await rx.recv()` |
-| `kCallDartHello` | io 上 `co_await cb.callAsync(...)` |
+| `kCallDartHello` | io 上 `co_await cb(...)` |
 
-`callSync` 仍为当前线程 `std::promise` + `get()`；堵 io 自负。
+阻塞上下文使用 `syncAwait(dcb::spawn(cb(...)))`；禁止在 io 线程上 syncAwait。
 
 ### 1.3 历史踩坑（保留备查）
 
@@ -39,13 +39,13 @@ io:       Executor::schedule(resume) → 继续业务
 | 裸 `coroutine_handle::resume` | AV | 不能当标准 coro 乱 resume |
 | pool + `get()` | 能通但不干净 | 已替换为 oneshot |
 | `spawn_on_asio` 里 coroutine lambda capture | gen=0 / AV | factory 在 `start()` 后销毁，capture 悬空；须 `shared_ptr` 保活到 Lazy 结束 |
-| 成员函数 coroutine 读 `this->field` | 偶发错值 | `callAsync` 改为静态 Lazy，参数 by-value |
+| 成员函数 coroutine 读 `this->field` | 偶发错值 | DartFn 改为静态 Lazy，参数 by-value |
 
 ### 1.4 相关代码
 
 - `include/dart_cpp_bridge/channel.hpp`
 - `include/dart_cpp_bridge/asio_executor.hpp`
-- `include/dart_cpp_bridge/dart_fn.hpp` — `callSync` / `callAsync`
+- `include/dart_cpp_bridge/dart_fn.hpp` — `operator()` 仿函数（返回 `Lazy<Ret>`）
 - `src/runtime/runtime.cpp` — `invoke_dart_fn_async` / `complete_dart_fn`
 - `src/wire/demo_api.cpp` — `kCallDartHello` / `kCallDartHelloSync`
 - `examples/phase1_demo/smoke_main.cpp` — oneshot 跨线程唤醒 + io 不堵 测试
@@ -70,9 +70,9 @@ io:       Executor::schedule(resume) → 继续业务
 
 ## 4. 【原则】不为用户兜底阻塞 io
 
-- Sync DartFn：**不**自动离载到 pool。  
-- 用户在 io 上 `callSync` → 调度器停转 → **用户问题**。  
-- 文档与 API 命名需持续强调，避免误用。
+- DartFn 仅提供异步 `operator()`（返回 Lazy）。  
+- 阻塞场景用户自行 `syncAwait(dcb::spawn(fn(...)))`，在 io 线程上调用会自死锁 → **用户问题**。  
+- 文档与 API 注释需持续强调，避免误用。
 
 ---
 

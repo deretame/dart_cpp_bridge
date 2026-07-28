@@ -46,11 +46,6 @@ class Session {
   void set_stream_open(std::uint64_t stream_id, bool open);
   bool stream_open(std::uint64_t stream_id) const;
 
-  // Blocks **current** thread until Dart replies. No automatic offload.
-  // If you call this on the io thread, you stall the scheduler — your problem.
-  std::vector<std::uint8_t> invoke_dart_fn_sync(std::uint64_t generation, std::uint64_t fn_id,
-                                                std::vector<std::uint8_t> args_payload);
-
   // True async: co_await on io (requires Lazy .via(AsioExecutor)).
   // Suspends the coroutine; does not block the io thread.
   async_simple::coro::Lazy<std::vector<std::uint8_t>> invoke_dart_fn_async(

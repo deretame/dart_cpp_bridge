@@ -282,14 +282,14 @@ extension DemoBridge on DartCppBridge {
 
   /// FRB-style reverse call (C++ **async** wait on io via co_await).
   Future<String> callDartHello(
-      FutureOr<String> Function(String name) dartCallback) {
+      Future<String> Function(String name) dartCallback) {
     return invokeStringToStringDartFn(
         MethodId.callDartHello.value, null, dartCallback);
   }
 
   /// FRB-style reverse call (C++ **sync** block on current native thread).
   Future<String> callDartHelloSync(
-      FutureOr<String> Function(String name) dartCallback) {
+      Future<String> Function(String name) dartCallback) {
     return invokeStringToStringDartFn(
         MethodId.callDartHelloSync.value, null, dartCallback);
   }
@@ -372,7 +372,7 @@ extension DemoBridge on DartCppBridge {
   Future<String> invokeStringToStringDartFn(
     int methodId,
     int? handle,
-    FutureOr<String> Function(String) dartCallback,
+    Future<String> Function(String) dartCallback,
   ) async {
     final fnId = registerDartFn((final argBytes) async {
       final r = ByteReader(argBytes);
@@ -500,7 +500,7 @@ final class Counter extends CppOpaqueInterface {
   /// Call a Dart callback with the current value (as a string) and return the
   /// result from Dart.
   Future<String> callCallback(
-      FutureOr<String> Function(String value) callback) {
+      Future<String> Function(String value) callback) {
     ensureAlive();
     return bridge.invokeStringToStringDartFn(
         MethodId.counterCallDartFn.value, handle, callback);
