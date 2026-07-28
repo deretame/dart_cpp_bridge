@@ -8,8 +8,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <queue>
 #include <utility>
+
+#include <concurrentqueue.h>
 
 // Tokio-style mpsc/oneshot channels for C++20 coroutines (async_simple::Lazy).
 //
@@ -61,7 +62,7 @@ inline void wake_waiter(
 template <channel_value T>
 struct mpsc_state {
   std::mutex mu;
-  std::queue<T> queue;
+  moodycamel::ConcurrentQueue<T> queue;
   std::coroutine_handle<> waiter{};
   async_simple::Executor* waiter_ex = nullptr;
   std::atomic<int> senders{1};
@@ -133,14 +134,14 @@ struct mpsc_recv_awaiter {
   bool await_ready() const noexcept
   {
     std::lock_guard lock(st->mu);
-    return !st->queue.empty() || st->closed;
+    return st->queue.size_approx() > 0 || st->closed;
   }
 
   // false = do not suspend (value/close arrived between ready and here).
   bool await_suspend(std::coroutine_handle<> h) noexcept
   {
     std::lock_guard lock(st->mu);
-    if (!st->queue.empty() || st->closed) {
+    if (st->queue.size_approx() > 0 || st->closed) {
       return false;
     }
     st->waiter = h;
@@ -150,10 +151,8 @@ struct mpsc_recv_awaiter {
 
   std::optional<T> await_resume()
   {
-    std::lock_guard lock(st->mu);
-    if (!st->queue.empty()) {
-      T v = std::move(st->queue.front());
-      st->queue.pop();
+    T v;
+    if (st->queue.try_dequeue(v)) {
       return v;
     }
     return std::nullopt;
@@ -318,7 +317,7 @@ class Sender {
       if (state_->closed) {
         return false;
       }
-      state_->queue.push(std::move(value));
+      state_->queue.enqueue(std::move(value));
       h = std::exchange(state_->waiter, {});
       ex = std::exchange(state_->waiter_ex, nullptr);
     }
@@ -394,13 +393,11 @@ class Receiver {
     if (!state_) {
       return std::nullopt;
     }
-    std::lock_guard lock(state_->mu);
-    if (state_->queue.empty()) {
-      return std::nullopt;
+    T v;
+    if (state_->queue.try_dequeue(v)) {
+      return v;
     }
-    T v = std::move(state_->queue.front());
-    state_->queue.pop();
-    return v;
+    return std::nullopt;
   }
 
   bool is_closed() const

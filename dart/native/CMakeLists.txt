@@ -79,6 +79,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(async_simple)
 
+# --- moodycamel::ConcurrentQueue (header-only, lock-free MPMC queue) ---
+FetchContent_Declare(
+  concurrentqueue
+  GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
+  GIT_TAG        v1.0.4
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(concurrentqueue)
+
 # --- dart_api_dl (downloaded via fetch_dart_api.cmake) ---
 set(DCB_DART_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dart_api)
 if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
@@ -106,7 +115,7 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
-target_link_libraries(dcb_runtime PUBLIC asio_iface async_simple_header_only)
+target_link_libraries(dcb_runtime PUBLIC asio_iface async_simple_header_only concurrentqueue)
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)
@@ -140,7 +149,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
-  target_link_libraries(dcb_shared PRIVATE asio_iface async_simple_header_only)
+  target_link_libraries(dcb_shared PRIVATE asio_iface async_simple_header_only concurrentqueue)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
     target_compile_options(dcb_shared PRIVATE /utf-8)
