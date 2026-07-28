@@ -6,6 +6,7 @@
 // and independent worker runtimes via co::oneshot / co::mpsc channels.
 
 #include "dart_cpp_bridge/annotate.h"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <async_simple/coro/Lazy.h>
@@ -50,5 +51,17 @@ async_simple::coro::Lazy<std::pair<std::string, std::string>> fan_out(
 /// forwarded to Dart via mpsc channel → Main → Stream.
 void worker_stream(dcb::StreamSink<std::string> sink, std::int32_t count = 5,
                    std::int32_t interval_ms = 50);
+
+/// Call a Dart callback from Worker A's event loop (independent AsioExecutor).
+/// Tests cross-runtime DartFn: the coroutine runs on Worker A's io thread,
+/// co_awaits the DartFn, and the reply is scheduled back to Worker A.
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
+
+/// Call a Dart callback from Worker B's event loop.
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> call_dart_from_worker_b(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
 
 }  // namespace multi_rt::api

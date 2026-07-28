@@ -24,7 +24,9 @@ final class BridgeApiImpl {
   static void initSingleton(DartCppBridge bridge) => _instance = BridgeApiImpl._(bridge);
   static void disposeSingleton() => _instance = null;
 
+  static const int callDartFromWorkerAId = 38396996;
   static const int stopWorkersId = 489867174;
+  static const int callDartFromWorkerBId = 568428227;
   static const int startWorkersId = 802585972;
   static const int pingWorkerId = 812353966;
   static const int processMessageId = 1706202089;
@@ -32,11 +34,55 @@ final class BridgeApiImpl {
   static const int fanOutId = 2046595992;
   static const int workerStreamId = 2109241176;
 
+  Future<String> callDartFromWorkerA(Future<String> Function(String) callback, String input) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    try {
+      final _payload = ByteWriter();
+      _payload.u64(_callbackId);
+      _payload.str(input);
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(callDartFromWorkerAId, _payloadBytes);
+      return ByteReader(_bytes).str();
+    } finally {
+      bridge.unregisterDartFn(_callbackId);
+    }
+  }
+
   Future<String> stopWorkers() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(stopWorkersId, _payloadBytes);
     return ByteReader(_bytes).str();
+  }
+
+  Future<String> callDartFromWorkerB(Future<String> Function(String) callback, String input) async {
+    final _callbackWrapper = (Uint8List _argBytes) async {
+      final _r = ByteReader(_argBytes);
+      final _a0 = _r.str();
+      final _res = await callback(_a0);
+      final _w = ByteWriter();
+      _w.str(_res);
+      return _w.takeBytes();
+    };
+    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    try {
+      final _payload = ByteWriter();
+      _payload.u64(_callbackId);
+      _payload.str(input);
+      final _payloadBytes = _payload.takeBytes();
+      final _bytes = await bridge.invokeAsyncMethod(callDartFromWorkerBId, _payloadBytes);
+      return ByteReader(_bytes).str();
+    } finally {
+      bridge.unregisterDartFn(_callbackId);
+    }
   }
 
   Future<String> startWorkers() async {

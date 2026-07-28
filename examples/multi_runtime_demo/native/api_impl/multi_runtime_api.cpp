@@ -15,6 +15,7 @@
 #include "../worker_runtime.hpp"
 
 #include "dart_cpp_bridge/channel.hpp"
+#include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
@@ -221,6 +222,67 @@ void worker_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
         sink.end();
         co_return;
       });
+}
+
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_worker_a || !g_worker_a->running()) {
+      throw std::runtime_error("worker A not running");
+    }
+    // Spawn on Worker A: the coroutine co_awaits the DartFn.
+    // The oneshot channel inside DartFn captures Worker A's executor via
+    // coAwait(), so when Dart replies, the coroutine resumes on Worker A.
+    g_worker_a->spawn([tx = std::move(tx), cb = std::move(callback),
+                       input = std::move(input)]() mutable
+                      -> async_simple::coro::Lazy<> {
+      try {
+        auto result = co_await cb(input);
+        tx.send(std::move(result));
+      } catch (const std::exception& e) {
+        tx.send(std::string("ERROR: ") + e.what());
+      }
+      co_return;
+    });
+  }
+
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("worker A dropped");
+  }
+  co_return *reply;
+}
+
+async_simple::coro::Lazy<std::string> call_dart_from_worker_b(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_worker_b || !g_worker_b->running()) {
+      throw std::runtime_error("worker B not running");
+    }
+    g_worker_b->spawn([tx = std::move(tx), cb = std::move(callback),
+                       input = std::move(input)]() mutable
+                      -> async_simple::coro::Lazy<> {
+      try {
+        auto result = co_await cb(input);
+        tx.send(std::move(result));
+      } catch (const std::exception& e) {
+        tx.send(std::string("ERROR: ") + e.what());
+      }
+      co_return;
+    });
+  }
+
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("worker B dropped");
+  }
+  co_return *reply;
 }
 
 }  // namespace multi_rt::api

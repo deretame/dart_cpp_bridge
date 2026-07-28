@@ -126,4 +126,78 @@ void main() {
       expect(items2, hasLength(2));
     });
   });
+
+  group('DartFn from worker runtime', () {
+    setUpAll(() async {
+      await startWorkers();
+    });
+
+    tearDownAll(() async {
+      await stopWorkers();
+    });
+
+    test('call Dart callback from Worker A (independent AsioExecutor)', () async {
+      final result = await callDartFromWorkerA(
+        callback: (s) async => 'dart-echo:$s',
+        input: 'hello',
+      );
+      expect(result, 'dart-echo:hello');
+    });
+
+    test('call Dart callback from Worker B (independent AsioExecutor)', () async {
+      final result = await callDartFromWorkerB(
+        callback: (s) async => 'B:$s',
+        input: 'world',
+      );
+      expect(result, 'B:world');
+    });
+
+    test('multiple sequential DartFn calls from Worker A', () async {
+      final r1 = await callDartFromWorkerA(
+        callback: (s) async => s.toUpperCase(),
+        input: 'abc',
+      );
+      final r2 = await callDartFromWorkerA(
+        callback: (s) async => s.toUpperCase(),
+        input: 'def',
+      );
+      expect(r1, 'ABC');
+      expect(r2, 'DEF');
+    });
+
+    test('concurrent DartFn calls from both workers', () async {
+      final (a, b) = await (
+        callDartFromWorkerA(
+          callback: (s) async => 'fromA:$s',
+          input: 'x',
+        ),
+        callDartFromWorkerB(
+          callback: (s) async => 'fromB:$s',
+          input: 'y',
+        ),
+      ).wait;
+      expect(a, 'fromA:x');
+      expect(b, 'fromB:y');
+    });
+
+    test('Dart callback with async work (delay)', () async {
+      final result = await callDartFromWorkerA(
+        callback: (s) async {
+          await Future.delayed(Duration(milliseconds: 50));
+          return 'delayed:$s';
+        },
+        input: 'wait',
+      );
+      expect(result, 'delayed:wait');
+    });
+
+    test('Dart callback that throws returns error', () async {
+      final result = await callDartFromWorkerA(
+        callback: (s) async => throw StateError('boom-$s'),
+        input: 'err',
+      );
+      // Worker catches the exception and returns ERROR: prefix
+      expect(result, startsWith('ERROR:'));
+    });
+  });
 }

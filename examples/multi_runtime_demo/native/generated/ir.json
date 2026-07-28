@@ -1,23 +1,64 @@
 {
   "version": 2,
-  "config": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\dart_cpp_bridge.yaml",
+  "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\dart_cpp_bridge.yaml",
   "headers": [
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
   ],
   "clang_args": [
     "-std=c++20",
     "-x",
     "c++",
+    "-ferror-limit=0",
     "-DBRIDGE_CODEGEN",
     "-DDART_CPP_BRIDGE_CODEGEN",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
-    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\build\\_deps\\async_simple-src",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\build\\_deps\\asio-src\\asio\\include"
   ],
   "enums": [],
   "classes": [],
   "functions": [
+    {
+      "name": "call_dart_from_worker_a",
+      "qualified": "multi_rt::api::call_dart_from_worker_a",
+      "kind": "async",
+      "method_id": 38396996,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
     {
       "name": "stop_workers",
       "qualified": "multi_rt::api::stop_workers",
@@ -30,7 +71,45 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "call_dart_from_worker_b",
+      "qualified": "multi_rt::api::call_dart_from_worker_b",
+      "kind": "async",
+      "method_id": 568428227,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "start_workers",
@@ -44,7 +123,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "ping_worker",
@@ -66,7 +145,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "process_message",
@@ -88,7 +167,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "pipeline",
@@ -110,7 +189,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "fan_out",
@@ -140,7 +219,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "worker_stream",
@@ -177,24 +256,36 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h"
     }
   ],
   "diagnostics": [
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers"
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\multi_runtime_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
   ]
 }

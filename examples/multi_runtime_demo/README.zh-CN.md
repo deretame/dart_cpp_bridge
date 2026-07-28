@@ -176,6 +176,53 @@ while (true) {
 session->try_post(gen, make_frame(MsgType::kStreamEnd, ...));
 ```
 
+### 5. 从 Worker 运行时调用 Dart 回调 (DartFn)
+
+```
+Dart → Main → Worker A 协程中 co_await DartFn → Dart 处理 → 回复恢复到 Worker A → Main → Dart
+```
+
+独立运行时（使用库提供的 `AsioExecutor`）可以直接在协程中调用已注册的 Dart 回调函数，无需额外配置：
+
+```cpp
+#include "dart_cpp_bridge/dart_fn.hpp"
+
+// API 声明：接收 Dart 回调 + 输入
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
+
+// 实现：将 DartFn 转发到 Worker 的协程中调用
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+
+  worker_a->spawn([tx = std::move(tx), cb = std::move(callback),
+                   input = std::move(input)]() mutable -> Lazy<> {
+    // 在 Worker A 的 io 线程上 co_await Dart 回调
+    auto result = co_await cb(input);  // 非阻塞，协程挂起等 Dart 回复
+    tx.send(std::move(result));
+    co_return;
+  });
+
+  auto reply = co_await rx.recv();
+  co_return *reply;
+}
+```
+
+**工作原理**：
+
+1. `DartFn::operator()` 内部创建 oneshot channel 并 `co_await rx.recv()`
+2. channel 的 `coAwait(Executor*)` 自动捕获当前协程的 executor（即 Worker 的 `AsioExecutor`）
+3. Dart 回复时 `complete_dart_fn` → `tx.send(reply)` → `wake_waiter(h, worker_executor)`
+4. 协程在 Worker 的 io 线程上恢复，无需任何额外配置
+
+**注意事项**：
+
+- Worker 的 `AsioExecutor` 必须在 DartFn 调用期间保持存活（executor 失效时会 fallback 到 inline resume，协程不泄漏但降级为 sender 线程恢复）
+- 多个 Worker 可并发调用不同/相同的 DartFn，互不干扰
+- Dart 侧回调签名必须是 `Future<Ret> Function(Args...)`（异步），不支持同步返回
+
 ## WorkerRuntime 类
 
 每个 Worker 是一个独立的运行时：
@@ -259,7 +306,7 @@ multi_runtime_demo/
 │           ├── init.dart          #   DcbLib 初始化类
 │           └── multi_runtime_api.dart  # 顶层函数 API
 └── test/
-    ├── multi_runtime_test.dart    # 13 个集成测试
+    ├── multi_runtime_test.dart    # 19 个集成测试
     └── support/library_path.dart  # DLL 路径解析
 ```
 

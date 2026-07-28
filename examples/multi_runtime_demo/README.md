@@ -176,6 +176,53 @@ while (true) {
 session->try_post(gen, make_frame(MsgType::kStreamEnd, ...));
 ```
 
+### 5. Calling Dart Callbacks from Worker Runtimes (DartFn)
+
+```
+Dart → Main → Worker A coroutine co_awaits DartFn → Dart processes → reply resumes on Worker A → Main → Dart
+```
+
+An independent runtime (using the library's `AsioExecutor`) can directly call registered Dart callbacks inside its coroutines — no extra configuration needed:
+
+```cpp
+#include "dart_cpp_bridge/dart_fn.hpp"
+
+// API declaration: receives a Dart callback + input
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
+
+// Implementation: forward the DartFn to a Worker coroutine
+async_simple::coro::Lazy<std::string> call_dart_from_worker_a(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+
+  worker_a->spawn([tx = std::move(tx), cb = std::move(callback),
+                   input = std::move(input)]() mutable -> Lazy<> {
+    // co_await the Dart callback on Worker A's io thread
+    auto result = co_await cb(input);  // non-blocking, coroutine suspends until Dart replies
+    tx.send(std::move(result));
+    co_return;
+  });
+
+  auto reply = co_await rx.recv();
+  co_return *reply;
+}
+```
+
+**How it works**:
+
+1. `DartFn::operator()` internally creates a oneshot channel and `co_await rx.recv()`
+2. The channel's `coAwait(Executor*)` automatically captures the current coroutine's executor (i.e., the Worker's `AsioExecutor`)
+3. When Dart replies: `complete_dart_fn` → `tx.send(reply)` → `wake_waiter(h, worker_executor)`
+4. The coroutine resumes on the Worker's io thread — no extra configuration required
+
+**Notes**:
+
+- The Worker's `AsioExecutor` must remain alive during the DartFn call (if the executor is deactivated, the coroutine falls back to inline resume on the sender's thread — no leak, but degraded scheduling)
+- Multiple Workers can concurrently call different/same DartFns without interference
+- Dart-side callback signature must be `Future<Ret> Function(Args...)` (async); synchronous returns are not supported
+
 ## WorkerRuntime Class
 
 Each Worker is an independent runtime:
@@ -259,7 +306,7 @@ multi_runtime_demo/
 │           ├── init.dart          #   DcbLib initialization class
 │           └── multi_runtime_api.dart  # top-level function API
 └── test/
-    ├── multi_runtime_test.dart    # 13 integration tests
+    ├── multi_runtime_test.dart    # 19 integration tests
     └── support/library_path.dart  # DLL path resolution
 ```
 
