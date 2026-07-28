@@ -39,12 +39,15 @@ examples/codegen_demo/
       wire_dispatch.hpp/cpp  # C++ dispatch
       ir.json                # Intermediate representation
   lib/
+    main.dart                # Flutter app shell (runs bridge tests on device)
     codegen_demo.dart        # Exports generated API
     src/native_gen/          # codegen Dart output (do not edit)
       api.g.dart             # BridgeApiImpl (low-level)
       api.dart               # BridgeApi.instance (singleton)
       api_fn.dart            # Top-level functions (recommended)
-  test/api_test.dart         # End-to-end tests
+  test/api_test.dart         # End-to-end tests (flutter test)
+  integration_test/          # Android on-device integration tests
+  android/                   # Flutter Android host app
   CMakeLists.txt             # Builds shared library
 ```
 
@@ -175,10 +178,22 @@ target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
 
 ## 5. Test
 
+This is a Flutter package (it includes an Android host app). Use `flutter test` instead of `dart test`:
+
 ```powershell
 cd examples\codegen_demo
-dart pub get
-dart test
+flutter pub get
+flutter test
+```
+
+### Android integration tests
+
+The same bridge tests also run on a real device/emulator via `integration_test/`:
+
+```bash
+# Requires a connected device or running emulator (x86_64/arm64).
+# The Native Assets hook cross-compiles the native library with the NDK.
+flutter test integration_test
 ```
 
 Coverage:

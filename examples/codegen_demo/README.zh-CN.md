@@ -39,12 +39,15 @@ examples/codegen_demo/
       wire_dispatch.hpp/cpp  # C++ dispatch
       ir.json                # 中间表示
   lib/
+    main.dart                # Flutter 应用壳（真机上跑桥接测试）
     codegen_demo.dart        # export 生成 API
     src/native_gen/          # codegen 输出的 Dart 三层（勿手改）
       api.g.dart             # BridgeApiImpl（底层）
       api.dart               # BridgeApi.instance（单例）
       api_fn.dart            # 顶层函数（推荐调用）
-  test/api_test.dart         # 端到端测试
+  test/api_test.dart         # 端到端测试（flutter test）
+  integration_test/          # Android 真机集成测试
+  android/                   # Flutter Android 宿主应用
   CMakeLists.txt             # 编动态库
 ```
 
@@ -175,10 +178,22 @@ target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
 
 ## 5. 测试
 
+本包是 Flutter 包（含 Android 宿主应用），用 `flutter test` 而非 `dart test`：
+
 ```powershell
 cd examples\codegen_demo
-dart pub get
-dart test
+flutter pub get
+flutter test
+```
+
+### Android 集成测试
+
+同一套桥接测试也可以通过 `integration_test/` 在真机/模拟器上运行：
+
+```bash
+# 需要连接设备或运行中的模拟器（x86_64/arm64）。
+# Native Assets hook 会用 NDK 交叉编译原生库。
+flutter test integration_test
 ```
 
 覆盖：

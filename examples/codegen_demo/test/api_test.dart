@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:codegen_demo/codegen_demo.dart';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 /// Resolves the hook-built library from .dart_tool, or falls back to manual build.
 String resolveDemoLibrary() {

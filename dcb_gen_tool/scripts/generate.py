@@ -1013,9 +1013,12 @@ def _dart_write_item(
         return [f"{indent}{writer}.writeU128({expr});"]
     if k == "optional":
         inner = t["inner"]
+        # Dart flow analysis promotes simple variables in the else-branch,
+        # but not property accesses (e.g. v.field) — keep `!` only for those.
+        promoted = expr if expr.isidentifier() else f"{expr}!"
         return [
             f"{indent}if ({expr} == null) {{ {writer}.u8(0); }} else {{ {writer}.u8(1);",
-            *_dart_write_item(inner, f"{expr}!", indent + "  ", writer),
+            *_dart_write_item(inner, promoted, indent + "  ", writer),
             f"{indent}}}",
         ]
     if k == "vector":

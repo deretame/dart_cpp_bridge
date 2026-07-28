@@ -460,8 +460,12 @@ final class DcbCMakeBuilder {
         cmake = cfg.cmake;
         configureArgs.addAll(_resolveLinuxArgs(cfg, buildType));
       case AndroidConfig cfg:
-        cmake = cfg.cmake;
+        cmake = _resolveAndroidCmake(cfg);
         configureArgs.addAll(_resolveAndroidArgs(cfg, buildType));
+        // Ninja generator needs ninja.exe on PATH; inject VS Ninja dir.
+        if (cfg.generator == CmakeGenerator.ninja && Platform.isWindows) {
+          processEnvironment = _ensureNinjaOnPath(cmake);
+        }
       case MacosConfig cfg:
         cmake = cfg.cmake;
         // Single-config generator: build type set at configure time.
@@ -593,8 +597,86 @@ final class DcbCMakeBuilder {
   }
 
   // -------------------------------------------------------------------------
-  // Android resolution
+  // Android resolution (CMake auto-detection + NDK args)
   // -------------------------------------------------------------------------
+
+  /// Resolves the CMake executable for Android builds.
+  ///
+  /// On Windows, when cmake is not explicitly configured and not on PATH,
+  /// probes Visual Studio installation directories for a bundled CMake with
+  /// version >= 3.24 (required for `WHOLE_ARCHIVE` link expressions).
+  String _resolveAndroidCmake(AndroidConfig cfg) {
+    if (cfg.cmake != 'cmake') {
+      return cfg.cmake; // Explicitly configured by the caller.
+    }
+    if (!Platform.isWindows) {
+      return cfg.cmake; // Non-Windows: rely on PATH.
+    }
+    if (_isOnPath('cmake.exe')) {
+      return cfg.cmake; // Already available on PATH.
+    }
+
+    // Probe Visual Studio installations for a bundled CMake.
+    for (final candidate in _windowsCmakeCandidates()) {
+      if (!File(candidate).existsSync()) continue;
+      if (_cmakeVersionOk(candidate)) {
+        _log('resolved CMake for Android: $candidate');
+        return candidate;
+      }
+    }
+
+    // Nothing found — return 'cmake' and let _runProcess report the error.
+    return cfg.cmake;
+  }
+
+  /// Checks that [cmakePath] reports a version >= 3.24.
+  bool _cmakeVersionOk(String cmakePath) {
+    try {
+      final result = Process.runSync(cmakePath, ['--version']);
+      if (result.exitCode != 0) return false;
+      final output = result.stdout as String;
+      // Typical output: "cmake version 3.28.3"
+      final match = RegExp(r'(\d+)\.(\d+)').firstMatch(output);
+      if (match == null) return false;
+      final major = int.parse(match.group(1)!);
+      final minor = int.parse(match.group(2)!);
+      final ok = major > 3 || (major == 3 && minor >= 24);
+      if (!ok) {
+        _log('skipping $cmakePath (version ${match.group(0)} < 3.24)');
+      }
+      return ok;
+    } on ProcessException {
+      return false;
+    }
+  }
+
+  /// Returns an environment map with the Ninja directory added to PATH,
+  /// or `null` if no adjustment is needed.
+  ///
+  /// When CMake is resolved from a Visual Studio installation, the bundled
+  /// `ninja.exe` lives in a sibling directory:
+  /// ```text
+  /// ...\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
+  /// ...\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe
+  /// ```
+  /// CMake's `-G Ninja` requires ninja on PATH, so we inject it.
+  Map<String, String>? _ensureNinjaOnPath(String cmakePath) {
+    if (_isOnPath('ninja.exe')) return null;
+
+    // Derive the Ninja directory from the VS CMake layout.
+    final binDir = File(cmakePath).parent; // ...\CMake\bin
+    final cmakePkgDir = binDir.parent; // ...\CMake
+    final extensionsDir = cmakePkgDir.parent; // ...\Microsoft\CMake
+    final ninjaExe = '${extensionsDir.path}\\Ninja\\ninja.exe';
+    if (File(ninjaExe).existsSync()) {
+      final ninjaDir = '${extensionsDir.path}\\Ninja';
+      final env = Map<String, String>.from(Platform.environment);
+      env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
+      _log('added Ninja to PATH: $ninjaDir');
+      return env;
+    }
+    return null;
+  }
 
   /// Resolves Android-specific configure arguments using the NDK toolchain.
   List<String> _resolveAndroidArgs(AndroidConfig cfg, String buildType) {

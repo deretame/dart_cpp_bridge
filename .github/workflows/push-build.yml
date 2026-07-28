@@ -26,10 +26,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git
 
-      - name: 设置 Dart SDK
-        uses: dart-lang/setup-dart@v1.7.2
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2.23.0
         with:
-          sdk: stable
+          channel: stable
 
       - name: 获取 Dart API DL 头文件
         run: cmake -P dart/fetch_dart_api.cmake
@@ -60,8 +60,8 @@ jobs:
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
-          dart pub get
-          dart test
+          flutter pub get
+          flutter test
 
   # ══════════════════════════════════════════
   # Windows
@@ -86,10 +86,10 @@ jobs:
             }
           }
 
-      - name: 设置 Dart SDK
-        uses: dart-lang/setup-dart@v1.7.2
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2.23.0
         with:
-          sdk: stable
+          channel: stable
 
       - name: 获取 Dart API DL 头文件
         run: cmake -P dart/fetch_dart_api.cmake
@@ -120,8 +120,8 @@ jobs:
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
-          dart pub get
-          dart test
+          flutter pub get
+          flutter test
 
   # ══════════════════════════════════════════
   # macOS
@@ -139,10 +139,10 @@ jobs:
       - name: 安装 C++ 构建依赖
         run: brew install cmake || true
 
-      - name: 设置 Dart SDK
-        uses: dart-lang/setup-dart@v1.7.2
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2.23.0
         with:
-          sdk: stable
+          channel: stable
 
       - name: 获取 Dart API DL 头文件
         run: cmake -P dart/fetch_dart_api.cmake
@@ -173,8 +173,8 @@ jobs:
           cd ../examples/codegen_demo
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --parallel
-          dart pub get
-          dart test
+          flutter pub get
+          flutter test
 
   # ══════════════════════════════════════════
   # Android (emulator)
@@ -219,4 +219,4 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
-            cd ${{ github.workspace }}/examples/android_demo && flutter pub get && flutter test integration_test
+            cd ${{ github.workspace }}/examples/codegen_demo && flutter pub get && flutter test integration_test

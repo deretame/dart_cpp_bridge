@@ -13,6 +13,10 @@ include_paths:
 dart_output: lib/src/native_gen/
 cpp_wire_output: native/generated/
 
+# Optional: path to clang-format executable or its containing directory.
+# Falls back to `clang-format` on PATH when not configured.
+clang_format: C:\Program Files\LLVM\bin
+
 std: c++20
 defines:
   - BRIDGE_CODEGEN
