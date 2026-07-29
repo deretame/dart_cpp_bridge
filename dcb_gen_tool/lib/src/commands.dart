@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import 'bootstrap.dart';
+import 'init.dart';
 import 'lock_file.dart';
 import 'package_root.dart';
 import 'platform.dart';
@@ -18,6 +19,7 @@ Usage:
 
 Commands:
   generate <config.yaml>   Run the full codegen pipeline (parse + generate).
+  init --name <lib_name>   Scaffold a new dart_cpp_bridge project.
   bootstrap                Download and verify the pinned Python toolchain.
   doctor                   Check environment (Dart SDK, toolchain, CMake).
 
@@ -30,6 +32,9 @@ Options:
 Examples:
   # First-time setup (downloads ~100 MB toolchain)
   dcb_gen bootstrap
+
+  # Initialize a new bridge project
+  dcb_gen init --name my_bridge
 
   # Generate bridge code for a project
   dcb_gen generate dart_cpp_bridge.yaml
@@ -77,7 +82,9 @@ Future<int> runCli(List<String> arguments) async {
   try {
     switch (command) {
       case 'generate':
-        return await _cmdGenerate(args, force: force, quiet: quiet);
+        return await runGenerate(args, force: force, quiet: quiet);
+      case 'init':
+        return await cmdInit(args, force: force, quiet: quiet);
       case 'bootstrap':
         return await _cmdBootstrap(force: force, quiet: quiet);
       case 'doctor':
@@ -98,7 +105,7 @@ Future<int> runCli(List<String> arguments) async {
 // ===========================================================================
 
 /// `dcb_gen generate <config.yaml>`
-Future<int> _cmdGenerate(
+Future<int> runGenerate(
   List<String> args, {
   required bool force,
   required bool quiet,

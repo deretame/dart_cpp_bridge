@@ -35,8 +35,51 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# --- 从 package_config.json 解析 dart_cpp_bridge 包路径 ---
+set(PACKAGE_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/.dart_tool/package_config.json")
+if(NOT EXISTS "${PACKAGE_CONFIG}")
+  message(FATAL_ERROR "Missing .dart_tool/package_config.json. Run 'dart pub get' first.")
+endif()
+
+file(READ "${PACKAGE_CONFIG}" _pkg_json)
+
+# 遍历 packages 数组，找到 name == "dart_cpp_bridge" 的条目
+set(_dcb_pkg_index -1)
+string(JSON _pkg_count LENGTH "${_pkg_json}" "packages")
+math(EXPR _pkg_last "${_pkg_count} - 1")
+foreach(i RANGE ${_pkg_last})
+  string(JSON _name GET "${_pkg_json}" "packages" ${i} "name")
+  if(_name STREQUAL "dart_cpp_bridge")
+    set(_dcb_pkg_index ${i})
+    break()
+  endif()
+endforeach()
+
+if(_dcb_pkg_index EQUAL -1)
+  message(FATAL_ERROR "dart_cpp_bridge not found in package_config.json")
+endif()
+
+string(JSON _root_uri GET "${_pkg_json}" "packages" ${_dcb_pkg_index} "rootUri")
+
+# rootUri 可能是相对路径（本地 path 依赖）或 file:// URI（pub cache）
+if(_root_uri MATCHES "^file://")
+  if(WIN32)
+    # file:///C:/Users/... → C:/Users/...
+    string(REGEX REPLACE "^file:///" "" _dcb_pkg_path "${_root_uri}")
+  else()
+    # file:///home/user/... → /home/user/...
+    string(REGEX REPLACE "^file://" "" _dcb_pkg_path "${_root_uri}")
+  endif()
+else()
+  # 相对路径基于 .dart_tool/ 目录
+  get_filename_component(_dcb_pkg_path
+    "${CMAKE_CURRENT_SOURCE_DIR}/.dart_tool/${_root_uri}" ABSOLUTE)
+endif()
+
+message(STATUS "dart_cpp_bridge package: ${_dcb_pkg_path}")
+
 # --- 基础运行时（asio / async-simple 由此传递） ---
-set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../dart/native")
+set(DCB_ROOT "${_dcb_pkg_path}/native")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
 # --- libuv (FetchContent) — foreign_executor 测试需要 ---

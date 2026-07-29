@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1153,6 +1154,34 @@ def _validate_ir(ir: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _auto_include_dcb_native(cfg: dict[str, Any], project_root: Path) -> None:
+    """Resolve dart_cpp_bridge native/include from package_config.json."""
+    pkg_config = project_root / ".dart_tool" / "package_config.json"
+    if not pkg_config.is_file():
+        return
+    try:
+        data = json.loads(pkg_config.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    for pkg in data.get("packages", []):
+        if pkg.get("name") != "dart_cpp_bridge":
+            continue
+        root_uri = pkg.get("rootUri", "")
+        if root_uri.startswith("file://"):
+            # file:///C:/... or file:///home/...
+            if sys.platform == "win32":
+                pkg_path = Path(root_uri[len("file:///"):])
+            else:
+                pkg_path = Path(root_uri[len("file://"):])
+        else:
+            # Relative to .dart_tool/
+            pkg_path = (pkg_config.parent / root_uri).resolve()
+        native_inc = pkg_path / "native" / "include"
+        if native_inc.is_dir():
+            cfg["include_paths"].append(native_inc)
+        break
+
+
 def parse_project(config_path: Path) -> dict[str, Any]:
     cfg = resolve_config(config_path)
     headers = collect_headers(cfg["scan"])
@@ -1188,6 +1217,18 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         ):
             if inc.is_dir():
                 cfg["include_paths"].append(inc)
+
+    # Auto-include stubs from dcb_gen_tool (async_simple/asio stub headers for
+    # parsing) via DCB_PACKAGE_ROOT env var set by the Dart CLI.
+    pkg_root = os.environ.get("DCB_PACKAGE_ROOT")
+    if pkg_root:
+        stubs = Path(pkg_root) / "stubs"
+        if stubs.is_dir():
+            cfg["include_paths"].append(stubs)
+
+    # Auto-include dart_cpp_bridge native headers by resolving the package
+    # location from .dart_tool/package_config.json.
+    _auto_include_dcb_native(cfg, base)
 
     for inc in cfg["include_paths"]:
         args.append(f"-I{inc}")
