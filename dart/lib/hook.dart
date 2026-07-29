@@ -6,9 +6,8 @@
 /// a bundled [CodeAsset], consumable at runtime via
 /// `@Native(assetId: 'package:<package>/<assetName>')`.
 ///
-/// Only Windows is fully implemented in this phase; the remaining platform
-/// configs are placeholders and [DcbCMakeBuilder.run] throws [UnsupportedError]
-/// for them.
+/// Supported platforms: Windows, Linux, macOS, Android.
+/// iOS is a placeholder and throws [UnsupportedError] in [DcbCMakeBuilder.run].
 ///
 /// This library is intentionally separate from `package:dart_cpp_bridge`
 /// (the runtime FFI front-end): it depends on `package:hooks` /
@@ -277,15 +276,68 @@ final class AndroidConfig extends DcbPlatformConfig {
   });
 }
 
-/// macOS configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
+/// macOS configuration for [DcbCMakeBuilder].
+///
+/// macOS uses single-config generators (Ninja or Unix Makefiles), so
+/// `CMAKE_BUILD_TYPE` is set at configure time from [DcbBuildOptions.debug].
+///
+/// The default generator is Unix Makefiles (CMake's default on macOS).
+/// AppleClang is the standard compiler; custom compiler selection is rarely
+/// needed but supported via [compiler].
 final class MacosConfig extends DcbPlatformConfig {
   @override
   final String cmake;
 
+  /// CMake generator selection.
+  ///
+  /// - [CmakeGenerator.ninja]: faster builds, requires `ninja` on PATH.
+  /// - [CmakeGenerator.makefiles]: default Unix Makefiles, always available.
+  /// - `null`: let CMake auto-select (typically Unix Makefiles on macOS).
+  final CmakeGenerator? generator;
+
+  /// Explicit path to the generator executable.
+  ///
+  /// For [CmakeGenerator.ninja]: path to the `ninja` binary when it is not
+  /// on PATH (e.g. `/opt/homebrew/bin/ninja`).
+  /// When `null`, resolved via PATH.
+  final String? generatorPath;
+
+  /// Path to the C++ compiler executable.
+  ///
+  /// Example: `/opt/homebrew/opt/llvm/bin/clang++` for a Homebrew LLVM.
+  ///
+  /// When `null` (default), the system AppleClang is used.
+  ///
+  /// Passed as `-DCMAKE_CXX_COMPILER=<path>`.
+  final String? compiler;
+
+  /// Minimum macOS deployment target (e.g. `'13.0'`).
+  ///
+  /// Passed as `-DCMAKE_OSX_DEPLOYMENT_TARGET=<value>`.
+  ///
+  /// When `null` (default), CMake uses the SDK's default minimum.
+  /// Set this when distributing to users on older macOS versions.
+  final String? deploymentTarget;
+
   /// Whether to build a universal (arm64 + x86_64) binary.
+  ///
+  /// When `true`, passes `-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64`.
+  /// Defaults to `false` (native architecture only).
   final bool universal;
 
-  const MacosConfig({this.cmake = 'cmake', this.universal = false});
+  /// Extra definitions passed verbatim to the CMake configure step, e.g.
+  /// `['-DCMAKE_PREFIX_PATH=/opt/homebrew']`.
+  final List<String> extraDefines;
+
+  const MacosConfig({
+    this.cmake = 'cmake',
+    this.generator,
+    this.generatorPath,
+    this.compiler,
+    this.deploymentTarget,
+    this.universal = false,
+    this.extraDefines = const [],
+  });
 }
 
 /// iOS configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
@@ -468,12 +520,7 @@ final class DcbCMakeBuilder {
         }
       case MacosConfig cfg:
         cmake = cfg.cmake;
-        // Single-config generator: build type set at configure time.
-        configureArgs.add('-DCMAKE_BUILD_TYPE=$buildType');
-        configureArgs.add('-DCMAKE_POSITION_INDEPENDENT_CODE=ON');
-        if (cfg.universal) {
-          configureArgs.add('-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64');
-        }
+        configureArgs.addAll(_resolveMacosArgs(cfg, buildType));
       case IosConfig():
         throw UnsupportedError('DcbCMakeBuilder: iOS is not supported yet.');
     }
@@ -536,6 +583,67 @@ final class DcbCMakeBuilder {
     if (config case AndroidConfig cfg when !cfg.staticStl) {
       _bundleAndroidSharedStl(cfg, effectiveAssetPackage, output);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // macOS resolution
+  // -------------------------------------------------------------------------
+
+  /// Resolves macOS-specific configure arguments.
+  List<String> _resolveMacosArgs(MacosConfig cfg, String buildType) {
+    final args = <String>[];
+
+    // Single-config generator: build type is set at configure time.
+    args.add('-DCMAKE_BUILD_TYPE=$buildType');
+
+    // All code must be position-independent since the final output is a
+    // shared library (.dylib) that may incorporate static dependencies.
+    args.add('-DCMAKE_POSITION_INDEPENDENT_CODE=ON');
+
+    // Generator selection.
+    switch (cfg.generator) {
+      case CmakeGenerator.ninja:
+        args.addAll(['-G', 'Ninja']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.makefiles:
+        args.addAll(['-G', 'Unix Makefiles']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.msbuild:
+        throw DcbCMakeException(
+          'CmakeGenerator.msbuild is not valid on macOS. '
+          'Use CmakeGenerator.ninja or CmakeGenerator.makefiles.',
+        );
+
+      case null:
+        // Let CMake auto-select (typically Unix Makefiles on macOS).
+        break;
+    }
+
+    // Custom compiler (rarely needed on macOS).
+    if (cfg.compiler != null) {
+      args.add('-DCMAKE_CXX_COMPILER=${cfg.compiler}');
+    }
+
+    // Deployment target.
+    if (cfg.deploymentTarget != null) {
+      args.add('-DCMAKE_OSX_DEPLOYMENT_TARGET=${cfg.deploymentTarget}');
+    }
+
+    // Universal binary (arm64 + x86_64).
+    if (cfg.universal) {
+      args.add('-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64');
+    }
+
+    // User-supplied extra defines.
+    args.addAll(cfg.extraDefines);
+
+    return args;
   }
 
   // -------------------------------------------------------------------------
