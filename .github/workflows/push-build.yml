@@ -32,9 +32,6 @@ jobs:
         with:
           channel: stable
 
-      - name: 获取 Dart API DL 头文件
-        run: cmake -P dart/fetch_dart_api.cmake
-
       - name: 构建 base_demo + smoke 测试
         run: |
           cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
@@ -84,9 +81,6 @@ jobs:
         with:
           channel: stable
 
-      - name: 获取 Dart API DL 头文件
-        run: cmake -P dart/fetch_dart_api.cmake
-
       - name: 构建 base_demo + smoke 测试
         run: |
           cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
@@ -129,9 +123,6 @@ jobs:
         with:
           channel: stable
 
-      - name: 获取 Dart API DL 头文件
-        run: cmake -P dart/fetch_dart_api.cmake
-
       - name: 构建 base_demo + smoke 测试
         run: |
           cmake -S examples/base_demo -B examples/base_demo/build -DCMAKE_BUILD_TYPE=Release
@@ -170,9 +161,6 @@ jobs:
         uses: subosito/flutter-action@v2.23.0
         with:
           channel: stable
-
-      - name: 获取 Dart API DL 头文件
-        run: cmake -P dart/fetch_dart_api.cmake
 
       - name: codegen 生成
         run: |
@@ -222,9 +210,6 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;29.0.14206865"
-
-      - name: 获取 Dart API DL 头文件
-        run: cmake -P dart/fetch_dart_api.cmake
 
       - name: 启用 KVM
         run: |
