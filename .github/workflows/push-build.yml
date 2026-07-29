@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake git \
-            clang libgtk-3-dev ninja-build pkg-config
+            clang libgtk-3-dev ninja-build pkg-config xvfb
 
       - name: 设置 Flutter
         uses: subosito/flutter-action@v2.23.0
@@ -54,7 +54,7 @@ jobs:
           dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           flutter pub get
-          flutter test integration_test/ -d linux
+          xvfb-run -a flutter test integration_test/ -d linux
 
   # ══════════════════════════════════════════
   # Windows

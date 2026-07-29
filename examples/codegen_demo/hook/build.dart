@@ -19,6 +19,8 @@ void main(List<String> args) async {
           cmake: cmake,
           ndkPath: Platform.environment['ANDROID_NDK_HOME'] ??
               r'C:\Users\windy\AppData\Local\Android\Sdk\ndk\29.0.14206865',
+          // libuv v1.48.0 requires API 24+ (pthread_barrier_*, getifaddrs, preadv)
+          androidPlatform: 24,
           abi: switch (input.config.code.targetArchitecture) {
             Architecture.arm64 => 'arm64-v8a',
             Architecture.arm => 'armeabi-v7a',

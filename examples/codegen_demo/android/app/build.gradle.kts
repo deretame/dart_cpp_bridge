@@ -19,7 +19,8 @@ android {
         applicationId = "com.example.codegen_demo"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // libuv v1.48.0 requires API 24+ (pthread_barrier_*, getifaddrs, preadv)
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
