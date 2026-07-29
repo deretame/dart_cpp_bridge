@@ -47,7 +47,10 @@ void main() {
   testWidgets('BRIDGE_ASYNC i64 increment_i64', (tester) async {
     expect(await incrementI64(value: 0), 1);
     expect(await incrementI64(value: 9223372036854775800), 9223372036854775801);
-    expect(await incrementI64(value: -9223372036854775800), -9223372036854775799);
+    expect(
+      await incrementI64(value: -9223372036854775800),
+      -9223372036854775799,
+    );
   });
 
   testWidgets('BRIDGE_ASYNC bool negate_bool', (tester) async {
@@ -63,7 +66,10 @@ void main() {
   testWidgets('BRIDGE_ASYNC optional enum', (tester) async {
     expect(await optionalStatus(), isNull);
     expect(await optionalStatus(value: OrderStatus.created), OrderStatus.paid);
-    expect(await optionalStatus(value: OrderStatus.shipped), OrderStatus.created);
+    expect(
+      await optionalStatus(value: OrderStatus.shipped),
+      OrderStatus.created,
+    );
   });
 
   testWidgets('BRIDGE_ASYNC vector<int> echo_list', (tester) async {
@@ -92,7 +98,9 @@ void main() {
     expect(await echoI128(value: big), big);
     expect(await echoI128(value: BigInt.zero), BigInt.zero);
     expect(
-      await echoI128(value: BigInt.parse('-170141183460469231731687303715884105728')),
+      await echoI128(
+        value: BigInt.parse('-170141183460469231731687303715884105728'),
+      ),
       BigInt.parse('-170141183460469231731687303715884105728'),
     );
   });
@@ -109,10 +117,13 @@ void main() {
       'hello, Dart world',
     );
     expect(
-      await greetDartFn(callback: (name) async {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        return 'async $name';
-      }, name: 'moon'),
+      await greetDartFn(
+        callback: (name) async {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          return 'async $name';
+        },
+        name: 'moon',
+      ),
       'hello, async moon',
     );
   });
@@ -128,7 +139,9 @@ void main() {
     );
   });
 
-  testWidgets('FRB-style: sync register + async invoke (no deadlock)', (tester) async {
+  testWidgets('FRB-style: sync register + async invoke (no deadlock)', (
+    tester,
+  ) async {
     final ok = registerDartFn(callback: (s) async => 'echo:$s');
     expect(ok, isTrue);
 
@@ -140,25 +153,34 @@ void main() {
     expect(result2, 'registered:HELLO');
   });
 
-  testWidgets('FRB-style: sync register + coroutine invoke (co_await fn(...))', (tester) async {
-    registerDartFn(callback: (s) async => 'co:$s');
+  testWidgets(
+    'FRB-style: sync register + coroutine invoke (co_await fn(...))',
+    (tester) async {
+      registerDartFn(callback: (s) async => 'co:$s');
 
-    final result = await invokeRegisteredAsync(input: 'coroutine');
-    expect(result, 'async_registered:co:coroutine');
+      final result = await invokeRegisteredAsync(input: 'coroutine');
+      expect(result, 'async_registered:co:coroutine');
 
-    registerDartFn(callback: (s) async => '${s.length}');
-    final result2 = await invokeRegisteredAsync(input: 'abcd');
-    expect(result2, 'async_registered:4');
-  });
+      registerDartFn(callback: (s) async => '${s.length}');
+      final result2 = await invokeRegisteredAsync(input: 'abcd');
+      expect(result2, 'async_registered:4');
+    },
+  );
 
   testWidgets('BRIDGE_ASYNC pair<int, string> pair_echo', (tester) async {
     expect(await pairEcho(value: (1, 'hello')), (1, 'hello'));
     expect(await pairEcho(value: (-42, 'world')), (-42, 'world'));
   });
 
-  testWidgets('BRIDGE_ASYNC tuple<int, string, bool> tuple_echo', (tester) async {
+  testWidgets('BRIDGE_ASYNC tuple<int, string, bool> tuple_echo', (
+    tester,
+  ) async {
     expect(await tupleEcho(value: (1, 'hello', true)), (1, 'hello', true));
-    expect(await tupleEcho(value: (-42, 'world', false)), (-42, 'world', false));
+    expect(await tupleEcho(value: (-42, 'world', false)), (
+      -42,
+      'world',
+      false,
+    ));
   });
 
   testWidgets('Stream tick_stream emits 0..count-1 then done', (tester) async {
@@ -173,7 +195,9 @@ void main() {
     await sub.cancel();
   });
 
-  testWidgets('optional StreamSink downloadWithProgress with progress', (tester) async {
+  testWidgets('optional StreamSink downloadWithProgress with progress', (
+    tester,
+  ) async {
     final progressValues = <int>[];
     final controller = StreamController<int>();
     controller.stream.listen(progressValues.add);
@@ -188,7 +212,9 @@ void main() {
     await controller.close();
   });
 
-  testWidgets('optional StreamSink downloadWithProgress without progress', (tester) async {
+  testWidgets('optional StreamSink downloadWithProgress without progress', (
+    tester,
+  ) async {
     final result = await downloadWithProgress(url: 'test.txt');
     expect(result, 'downloaded: test.txt');
   });
@@ -200,14 +226,19 @@ void main() {
     expect(await distance(a: a, b: a), closeTo(0.0, 1e-9));
   });
 
-  testWidgets('data class toString (default + custom dart_code)', (tester) async {
+  testWidgets('data class toString (default + custom dart_code)', (
+    tester,
+  ) async {
     const p = Point(x: 1.0, y: 2.0);
     expect(p.toString(), 'Point(x: 1.0, y: 2.0, label: null)');
     const r = Rect(
       topLeft: Point(x: 0.0, y: 0.0),
       bottomRight: Point(x: 3.0, y: 4.0),
     );
-    expect(r.toString(), 'Rect[Point(x: 0.0, y: 0.0, label: null) -> Point(x: 3.0, y: 4.0, label: null)]');
+    expect(
+      r.toString(),
+      'Rect[Point(x: 0.0, y: 0.0, label: null) -> Point(x: 3.0, y: 4.0, label: null)]',
+    );
   });
 
   testWidgets('data class scale', (tester) async {
@@ -252,7 +283,9 @@ void main() {
     expect(counter.valueSync(), 10);
   });
 
-  testWidgets('opaque class Counter toString (BRIDGE_TO_STRING)', (tester) async {
+  testWidgets('opaque class Counter toString (BRIDGE_TO_STRING)', (
+    tester,
+  ) async {
     final counter = Counter.int32T(initialValue: 42);
     expect(counter.toString(), 'Counter(value: 42)');
     await counter.increment(delta: 1);
@@ -264,7 +297,9 @@ void main() {
     expect(await counter.value(), 0);
   });
 
-  testWidgets('opaque class Counter increment and default delta', (tester) async {
+  testWidgets('opaque class Counter increment and default delta', (
+    tester,
+  ) async {
     final counter = Counter.int32T(initialValue: 5);
     await counter.increment();
     expect(await counter.value(), 6);
@@ -336,7 +371,9 @@ void main() {
     expect(await b.value(), 7);
   });
 
-  testWidgets('opaque class Counter destructor is called on dispose', (tester) async {
+  testWidgets('opaque class Counter destructor is called on dispose', (
+    tester,
+  ) async {
     final baseline = Counter.aliveCount();
 
     final c1 = Counter.int32T(initialValue: 100);
@@ -362,29 +399,34 @@ void main() {
     expect(Counter.aliveCount(), baseline);
   });
 
-  testWidgets('opaque class Counter duplicate creates independent alive count', (tester) async {
-    final baseline = Counter.aliveCount();
-    final original = Counter.int32T(initialValue: 42);
-    expect(Counter.aliveCount(), baseline + 1);
+  testWidgets(
+    'opaque class Counter duplicate creates independent alive count',
+    (tester) async {
+      final baseline = Counter.aliveCount();
+      final original = Counter.int32T(initialValue: 42);
+      expect(Counter.aliveCount(), baseline + 1);
 
-    final copy = await original.duplicate();
-    expect(Counter.aliveCount(), baseline + 2);
+      final copy = await original.duplicate();
+      expect(Counter.aliveCount(), baseline + 2);
 
-    expect(await copy.value(), 42);
-    await original.increment();
-    expect(await original.value(), 43);
-    expect(await copy.value(), 42);
+      expect(await copy.value(), 42);
+      await original.increment();
+      expect(await original.value(), 43);
+      expect(await copy.value(), 42);
 
-    original.dispose();
-    expect(Counter.aliveCount(), baseline + 1);
+      original.dispose();
+      expect(Counter.aliveCount(), baseline + 1);
 
-    copy.dispose();
-    expect(Counter.aliveCount(), baseline);
-  });
+      copy.dispose();
+      expect(Counter.aliveCount(), baseline);
+    },
+  );
 
   // --- Opaque as parameter (free functions) ---
 
-  testWidgets('addCounters sums two Counter values (borrow semantics)', (tester) async {
+  testWidgets('addCounters sums two Counter values (borrow semantics)', (
+    tester,
+  ) async {
     final a = Counter.int32T(initialValue: 10);
     final b = Counter.int32T(initialValue: 20);
     final result = await addCounters(a: a, b: b);
@@ -402,7 +444,9 @@ void main() {
     c.dispose();
   });
 
-  testWidgets('cloneWithOffset creates new Counter with offset (sync)', (tester) async {
+  testWidgets('cloneWithOffset creates new Counter with offset (sync)', (
+    tester,
+  ) async {
     final source = Counter.int32T(initialValue: 100);
     final cloned = cloneWithOffset(source: source, offset: 5);
     expect(cloned.valueSync(), 105);
@@ -420,18 +464,19 @@ void main() {
     cloned.dispose();
   });
 
-  testWidgets('addCounters with disposed Counter throws on Dart side', (tester) async {
+  testWidgets('addCounters with disposed Counter throws on Dart side', (
+    tester,
+  ) async {
     final a = Counter.int32T(initialValue: 1);
     final b = Counter.int32T(initialValue: 2);
     a.dispose();
-    await expectLater(
-      addCounters(a: a, b: b),
-      throwsA(isA<StateError>()),
-    );
+    await expectLater(addCounters(a: a, b: b), throwsA(isA<StateError>()));
     b.dispose();
   });
 
-  testWidgets('cloneWithOffset with disposed source throws on Dart side', (tester) async {
+  testWidgets('cloneWithOffset with disposed source throws on Dart side', (
+    tester,
+  ) async {
     final source = Counter.int32T(initialValue: 5);
     source.dispose();
     expect(
@@ -561,7 +606,9 @@ void main() {
     }
   });
 
-  testWidgets('sync echoTimeSync round-trips exact microseconds', (tester) async {
+  testWidgets('sync echoTimeSync round-trips exact microseconds', (
+    tester,
+  ) async {
     const epochMicros = 0;
     const y2020Micros = 1577836800000000;
     const withSubSecond = 1577836800123456;
@@ -574,9 +621,14 @@ void main() {
     }
   });
 
-  testWidgets('microsecond precision is preserved (not truncated to millis)', (tester) async {
+  testWidgets('microsecond precision is preserved (not truncated to millis)', (
+    tester,
+  ) async {
     const withSubSecond = 1577836800123456;
-    final input = DateTime.fromMicrosecondsSinceEpoch(withSubSecond, isUtc: true);
+    final input = DateTime.fromMicrosecondsSinceEpoch(
+      withSubSecond,
+      isUtc: true,
+    );
     final output = await echoTime(value: input);
     expect(output.microsecond, 456);
     expect(output.millisecond, 123);
@@ -589,5 +641,214 @@ void main() {
     expect(output.isUtc, isTrue);
     expect(output.timeZoneOffset, Duration.zero);
     expect(output.toIso8601String(), '2020-01-01T00:00:00.000Z');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Foreign runtime (libuv + ForeignExecutor) tests
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('libuv foreign runtime', () {
+    testWidgets('start and stop uv worker', (tester) async {
+      final startResult = await startUvWorker();
+      expect(startResult, 'uv worker started');
+
+      final stopResult = await stopUvWorker();
+      expect(stopResult, 'uv worker stopped');
+    });
+
+    testWidgets('ask_uv: oneshot request/reply via libuv', (tester) async {
+      await startUvWorker();
+
+      final result = await askUv(message: 'hello');
+      expect(result, '[uv:hello]');
+
+      final result2 = await askUv(message: 'world');
+      expect(result2, '[uv:world]');
+
+      await stopUvWorker();
+    });
+
+    testWidgets('uv_compute: CPU task on libuv thread', (tester) async {
+      await startUvWorker();
+
+      final sum = await uvCompute(n: 100);
+      expect(sum, 5050); // 1+2+...+100
+
+      final sum2 = await uvCompute(n: 10);
+      expect(sum2, 55);
+
+      await stopUvWorker();
+    });
+
+    testWidgets('uv_stream: stream from libuv worker', (tester) async {
+      await startUvWorker();
+
+      final items = await uvStream(count: 3, intervalMs: 10).toList();
+      expect(items, ['uv_item_0', 'uv_item_1', 'uv_item_2']);
+
+      await stopUvWorker();
+    });
+
+    testWidgets('multiple concurrent requests', (tester) async {
+      await startUvWorker();
+
+      final results = await Future.wait([
+        askUv(message: 'a'),
+        askUv(message: 'b'),
+        askUv(message: 'c'),
+      ]);
+
+      expect(results, ['[uv:a]', '[uv:b]', '[uv:c]']);
+
+      await stopUvWorker();
+    });
+
+    testWidgets('error when worker not running', (tester) async {
+      await stopUvWorker();
+
+      await expectLater(askUv(message: 'test'), throwsA(isA<Object>()));
+    });
+
+    testWidgets('restart worker after stop', (tester) async {
+      await startUvWorker();
+      final r1 = await askUv(message: 'first');
+      expect(r1, '[uv:first]');
+
+      await stopUvWorker();
+
+      await startUvWorker();
+      final r2 = await askUv(message: 'second');
+      expect(r2, '[uv:second]');
+
+      await stopUvWorker();
+    });
+  });
+
+  group('DartFn from libuv foreign runtime', () {
+    setUpAll(() async {
+      await startUvWorker();
+    });
+
+    tearDownAll(() async {
+      await stopUvWorker();
+    });
+
+    testWidgets('call Dart callback from libuv loop (ForeignExecutor)', (
+      tester,
+    ) async {
+      final result = await callDartFromUv(
+        callback: (s) async => 'uv-echo:$s',
+        input: 'hello',
+      );
+      expect(result, 'uv-echo:hello');
+    });
+
+    testWidgets('multiple sequential calls from libuv', (tester) async {
+      final r1 = await callDartFromUv(
+        callback: (s) async => s.toUpperCase(),
+        input: 'abc',
+      );
+      final r2 = await callDartFromUv(
+        callback: (s) async => s.toUpperCase(),
+        input: 'xyz',
+      );
+      expect(r1, 'ABC');
+      expect(r2, 'XYZ');
+    });
+
+    testWidgets('Dart callback with async delay from libuv', (tester) async {
+      final result = await callDartFromUv(
+        callback: (s) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return 'delayed:$s';
+        },
+        input: 'wait',
+      );
+      expect(result, 'delayed:wait');
+    });
+
+    testWidgets('Dart callback that throws returns error from libuv', (
+      tester,
+    ) async {
+      final result = await callDartFromUv(
+        callback: (s) async => throw StateError('uv-boom-$s'),
+        input: 'err',
+      );
+      expect(result, startsWith('ERROR:'));
+    });
+  });
+
+  group('cbridge pure C API', () {
+    testWidgets('dcb_async_create + dcb_async_complete + async_wait', (
+      tester,
+    ) async {
+      final result = await testCbridgeAsync();
+      expect(result, 'cbridge_ok');
+    });
+
+    testWidgets('dcb_async_fail propagates error to coroutine', (tester) async {
+      final result = await testCbridgeAsyncFail();
+      expect(result, 'CAUGHT:intentional_error');
+    });
+
+    testWidgets('dcb_async_cancel propagates cancellation to coroutine', (
+      tester,
+    ) async {
+      final result = await testCbridgeAsyncCancel();
+      expect(result, 'CAUGHT:async_wait: operation cancelled');
+    });
+
+    testWidgets('channel service: mpsc long-lived service on uv worker', (
+      tester,
+    ) async {
+      await startUvWorker();
+
+      final result = await testChannelService();
+      expect(result, '[svc:msg0],[svc:msg1],[svc:msg2]');
+
+      await stopUvWorker();
+    });
+
+    testWidgets('channel service concurrent: batch send then collect replies', (
+      tester,
+    ) async {
+      await startUvWorker();
+
+      final result = await testChannelServiceConcurrent();
+      expect(result, '[svc:c0],[svc:c1],[svc:c2],[svc:c3],[svc:c4]');
+
+      await stopUvWorker();
+    });
+
+    testWidgets('dcb_invoke_dart_fn: C callback-style DartFn invocation', (
+      tester,
+    ) async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async => 'c-echo:$s',
+        input: 'hello',
+      );
+      expect(result, 'c-echo:hello');
+    });
+
+    testWidgets('dcb_invoke_dart_fn: Dart callback with delay', (tester) async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async {
+          await Future.delayed(Duration(milliseconds: 30));
+          return 'delayed:$s';
+        },
+        input: 'wait',
+      );
+      expect(result, 'delayed:wait');
+    });
+
+    testWidgets('dcb_invoke_dart_fn: Dart callback that throws', (
+      tester,
+    ) async {
+      final result = await testCbridgeInvoke(
+        callback: (s) async => throw StateError('boom-$s'),
+        input: 'err',
+      );
+      expect(result, startsWith('ERROR:'));
+    });
   });
 }

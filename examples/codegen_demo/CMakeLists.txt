@@ -39,6 +39,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../dart/native")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
+# --- libuv (FetchContent) — foreign_executor 测试需要 ---
+include(FetchContent)
+set(LIBUV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  libuv
+  GIT_REPOSITORY https://github.com/libuv/libuv.git
+  GIT_TAG        v1.48.0
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(libuv)
+
 # --- 生成物检查 ---
 # 如果尚未跑 codegen，给出明确提示。
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/native/generated/wire_dispatch.cpp")
@@ -59,6 +71,7 @@ add_library(dcb_codegen_demo
   native/generated/wire_dispatch.cpp
   native/api_impl/bridge_api.cpp
   native/api_impl/counter.cpp
+  native/api_impl/foreign_api.cpp
 )
 
 # --- Include 路径 ---
@@ -72,7 +85,7 @@ target_include_directories(dcb_codegen_demo
 )
 
 target_link_libraries(dcb_codegen_demo PRIVATE
-  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> uv_a)
 
 if(WIN32)
   target_compile_options(dcb_codegen_demo PRIVATE /utf-8)

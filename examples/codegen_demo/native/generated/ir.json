@@ -3,7 +3,8 @@
   "config": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/dart_cpp_bridge.yaml",
   "headers": [
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h",
-    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h"
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
   ],
   "clang_args": [
     "-std=c++20",
@@ -696,6 +697,58 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "call_dart_from_uv",
+      "qualified": "demo::api::call_dart_from_uv",
+      "kind": "async",
+      "method_id": 400156061,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
+      "name": "stop_uv_worker",
+      "qualified": "demo::api::stop_uv_worker",
+      "kind": "async",
+      "method_id": 408668229,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "fail_async",
       "qualified": "demo::api::fail_async",
       "kind": "async",
@@ -781,6 +834,20 @@
         "bridge::async"
       ],
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
+      "name": "start_uv_worker",
+      "qualified": "demo::api::start_uv_worker",
+      "kind": "async",
+      "method_id": 482550500,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
     },
     {
       "name": "maybe_double",
@@ -880,6 +947,58 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "test_cbridge_invoke",
+      "qualified": "demo::api::test_cbridge_invoke",
+      "kind": "async",
+      "method_id": 541474998,
+      "args": [
+        {
+          "name": "callback",
+          "type": {
+            "kind": "dart_fn",
+            "signature": "std::string (std::string)",
+            "args": [
+              {
+                "kind": "string"
+              }
+            ],
+            "return": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "input",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
+      "name": "test_cbridge_async",
+      "qualified": "demo::api::test_cbridge_async",
+      "kind": "async",
+      "method_id": 577957429,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "invoke_registered",
       "qualified": "demo::api::invoke_registered",
       "kind": "normal",
@@ -922,6 +1041,20 @@
         "bridge::async"
       ],
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
+      "name": "test_channel_service_concurrent",
+      "qualified": "demo::api::test_channel_service_concurrent",
+      "kind": "async",
+      "method_id": 859567955,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
     },
     {
       "name": "echo_time",
@@ -1153,6 +1286,20 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "test_cbridge_async_fail",
+      "qualified": "demo::api::test_cbridge_async_fail",
+      "kind": "async",
+      "method_id": 1312284767,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "sleep_greeting",
       "qualified": "demo::api::sleep_greeting",
       "kind": "normal",
@@ -1217,6 +1364,28 @@
         "bridge::sync"
       ],
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
+      "name": "uv_compute",
+      "qualified": "demo::api::uv_compute",
+      "kind": "async",
+      "method_id": 1444503764,
+      "args": [
+        {
+          "name": "n",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
     },
     {
       "name": "fail_non_std",
@@ -1357,6 +1526,28 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "ask_uv",
+      "qualified": "demo::api::ask_uv",
+      "kind": "async",
+      "method_id": 1739046069,
+      "args": [
+        {
+          "name": "message",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "greet_dart_fn",
       "qualified": "demo::api::greet_dart_fn",
       "kind": "async",
@@ -1451,6 +1642,20 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "test_cbridge_async_cancel",
+      "qualified": "demo::api::test_cbridge_async_cancel",
+      "kind": "async",
+      "method_id": 1895746721,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "bounding_box",
       "qualified": "demo::api::bounding_box",
       "kind": "async",
@@ -1478,6 +1683,57 @@
         "bridge::async"
       ],
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
+    },
+    {
+      "name": "uv_stream",
+      "qualified": "demo::api::uv_stream",
+      "kind": "stream",
+      "method_id": 1946724813,
+      "args": [
+        {
+          "name": "sink",
+          "type": {
+            "kind": "stream_sink",
+            "inner": {
+              "kind": "string"
+            }
+          },
+          "default_value": null
+        },
+        {
+          "name": "count",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "5"
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "50"
+        }
+      ],
+      "return": {
+        "kind": "void"
+      },
+      "attrs": [],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
+      "name": "test_channel_service",
+      "qualified": "demo::api::test_channel_service",
+      "kind": "async",
+      "method_id": 2018661287,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
     },
     {
       "name": "sync_dart_fn_blocking_us",
@@ -1613,6 +1869,15 @@
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no member named 'executor_type' in 'asio::io_context'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: expected member name or ';' after declaration specifiers",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: unknown type name 'Context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: unknown type name 'Context'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no matching function for call to 'post'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no matching function for call to 'post'",
@@ -1631,6 +1896,15 @@
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no member named 'executor_type' in 'asio::io_context'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: expected member name or ';' after declaration specifiers",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: unknown type name 'Context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: unknown type name 'Context'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no matching function for call to 'post'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h: no matching function for call to 'post'",
@@ -1648,6 +1922,15 @@
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no member named 'executor_work_guard' in namespace 'asio'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no member named 'executor_type' in 'asio::io_context'",
     "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: expected member name or ';' after declaration specifiers",
-    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: unknown type name 'Context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no matching function for call to 'post'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
+    "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
   ]
 }
