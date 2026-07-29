@@ -211,17 +211,20 @@ jobs:
       - name: 启动 iOS 模拟器
         run: |
           xcrun simctl list devices available
-          # 使用第一个可用的 iPhone 模拟器
-          DEVICE=$(xcrun simctl list devices available | grep -o 'iPhone [^)]*' | head -1)
-          echo "Using device: $DEVICE"
-          xcrun simctl boot "$DEVICE" || true
-          echo "DEVICE_NAME=$DEVICE" >> $GITHUB_ENV
+          # 提取第一个可用 iPhone 的 UUID
+          DEVICE_UDID=$(xcrun simctl list devices available | grep -E 'iPhone.*\(' | grep -oE '[A-F0-9-]{36}' | head -1)
+          echo "Using device UDID: $DEVICE_UDID"
+          xcrun simctl boot "$DEVICE_UDID" || true
+          # 等待模拟器完全启动
+          sleep 10
+          xcrun simctl list devices booted
+          echo "DEVICE_UDID=$DEVICE_UDID" >> $GITHUB_ENV
 
       - name: 运行集成测试
         working-directory: examples/codegen_demo
         run: |
           flutter pub get
-          flutter test integration_test -d "$DEVICE_NAME"
+          flutter test integration_test -d "$DEVICE_UDID"
 
   # ══════════════════════════════════════════
   # Android (emulator)
