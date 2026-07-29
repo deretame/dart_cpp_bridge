@@ -5,8 +5,9 @@ if not exist %CMAKE% (
   echo ERROR: cmake.exe not found.
   exit /b 1
 )
-set SRC=%~dp0
+set SRC=%~dp0native
 if "%SRC:~-1%"=="\" set SRC=%SRC:~0,-1%
-set BUILD=%SRC%\build
+set BUILD=%~dp0build
+if "%BUILD:~-1%"=="\" set BUILD=%BUILD:~0,-1%
 %CMAKE% -S "%SRC%" -B "%BUILD%"
 exit /b %ERRORLEVEL%

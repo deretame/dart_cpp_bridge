@@ -20,6 +20,7 @@ void main(List<String> args) async {
     };
     await DcbCMakeBuilder(
       config: config,
+      sourceDir: 'native',
       assetName: 'src/native_gen/dcb_bindings.dart',
       libName: 'dcb_multi_runtime_demo',
     ).run(input: input, output: output);

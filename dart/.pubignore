@@ -2,5 +2,4 @@
 .dart_tool/
 test/
 native/
-fetch_dart_api.cmake
 pubspec.lock

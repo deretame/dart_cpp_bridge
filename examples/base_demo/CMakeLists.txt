@@ -21,7 +21,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # --- 基础运行时（asio / async-simple 由此传递） ---
-set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../dart/native")
+set(DCB_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../dart")
+include("${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
 # --- 动态库 / 静态库（Dart 测试加载此库） ---

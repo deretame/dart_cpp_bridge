@@ -4,7 +4,6 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import 'commands.dart';
-import 'package_root.dart';
 
 /// `dcb_gen init --name <lib_name>`
 ///
@@ -32,10 +31,26 @@ Future<int> cmdInit(
     }
   }
 
+  final cwd = Directory.current.path;
+
+  // If --name is not given, try to read from existing pubspec.yaml.
+  // The dart_package in yaml MUST match pubspec name for Native Assets
+  // asset IDs to resolve correctly at runtime.
+  final pubspecName = _readPubspecName(cwd);
   if (libName == null || libName.isEmpty) {
-    stderr.writeln('error: --name is required.');
-    stderr.writeln('Usage: dcb_gen init --name <library_name>');
-    return 1;
+    if (pubspecName != null) {
+      libName = pubspecName;
+      log.info('Using package name from pubspec.yaml: $libName');
+    } else {
+      stderr.writeln('error: --name is required (no pubspec.yaml found).');
+      stderr.writeln('Usage: dcb_gen init --name <library_name>');
+      return 1;
+    }
+  } else if (pubspecName != null && pubspecName != libName) {
+    log.warn('--name "$libName" differs from pubspec.yaml name "$pubspecName". '
+        'The dart_package in dart_cpp_bridge.yaml must match your pubspec name '
+        'for Native Assets to resolve correctly. Using pubspec name instead.');
+    libName = pubspecName;
   }
 
   // Validate name (CMake target name: alphanumeric + underscore).
@@ -46,42 +61,56 @@ Future<int> cmdInit(
     return 1;
   }
 
-  final cwd = Directory.current.path;
-
-  // Check for existing files that would be overwritten.
-  final conflicts = <String>[];
-  for (final f in ['dart_cpp_bridge.yaml', 'CMakeLists.txt']) {
-    if (File(p.join(cwd, f)).existsSync()) conflicts.add(f);
-  }
-  if (Directory(p.join(cwd, 'native', 'api')).existsSync()) {
-    conflicts.add('native/api/');
-  }
-  if (conflicts.isNotEmpty) {
-    stderr.writeln('error: the following files already exist in $cwd:');
-    for (final c in conflicts) {
-      stderr.writeln('  - $c');
-    }
-    stderr.writeln('Remove them or run init in an empty directory.');
+  // Only hard-block on the codegen config itself (would silently overwrite
+  // user's existing configuration). Other files get a warning + skip.
+  if (File(p.join(cwd, 'dart_cpp_bridge.yaml')).existsSync()) {
+    stderr.writeln('error: dart_cpp_bridge.yaml already exists in $cwd.');
+    stderr.writeln('Remove it first or edit it manually.');
     return 1;
   }
 
-  log.info('Initializing dart_cpp_bridge project "$libName" in $cwd ...');
+  // For existing projects, skip files that already exist instead of aborting.
+  final skipped = <String>[];
+  final hasCmake = File(p.join(cwd, 'native', 'CMakeLists.txt')).existsSync();
+  final hasApiDir = Directory(p.join(cwd, 'native', 'api')).existsSync();
+  final hasHook = File(p.join(cwd, 'hook', 'build.dart')).existsSync();
+  if (hasCmake) skipped.add('native/CMakeLists.txt');
+  if (hasApiDir) skipped.add('native/api/');
+  if (hasHook) skipped.add('hook/build.dart');
 
-  // Resolve dart_cpp_bridge native include path for the yaml config.
-  final nativeInclude = await _resolveNativeInclude(cwd, log);
+  log.info('Initializing dart_cpp_bridge project "$libName" in $cwd ...');
+  if (skipped.isNotEmpty) {
+    log.info('  (skipping existing: ${skipped.join(', ')})');
+  }
 
   // --- Generate files ---
-  _writeFile(
-      p.join(cwd, 'dart_cpp_bridge.yaml'), _yamlTemplate(libName, nativeInclude));
+  // NOTE: include_paths only contains project-relative paths. The
+  // dart_cpp_bridge native/include directory is resolved automatically
+  // at codegen time from .dart_tool/package_config.json (parse_api.py).
+  _writeFile(p.join(cwd, 'dart_cpp_bridge.yaml'), _yamlTemplate(libName));
   log.info('  created dart_cpp_bridge.yaml');
 
-  _writeFile(p.join(cwd, 'CMakeLists.txt'), _cmakeTemplate(libName));
-  log.info('  created CMakeLists.txt');
+  if (!hasCmake) {
+    final nativeDir = Directory(p.join(cwd, 'native'));
+    if (!nativeDir.existsSync()) nativeDir.createSync(recursive: true);
+    _writeFile(
+        p.join(nativeDir.path, 'CMakeLists.txt'), _cmakeTemplate(libName));
+    log.info('  created native/CMakeLists.txt');
+  }
 
-  final apiDir = Directory(p.join(cwd, 'native', 'api'));
-  apiDir.createSync(recursive: true);
-  _writeFile(p.join(apiDir.path, 'bridge_api.h'), _headerTemplate(libName));
-  log.info('  created native/api/bridge_api.h');
+  if (!hasHook) {
+    final hookDir = Directory(p.join(cwd, 'hook'));
+    if (!hookDir.existsSync()) hookDir.createSync(recursive: true);
+    _writeFile(p.join(hookDir.path, 'build.dart'), _hookTemplate(libName));
+    log.info('  created hook/build.dart');
+  }
+
+  if (!hasApiDir) {
+    final apiDir = Directory(p.join(cwd, 'native', 'api'));
+    apiDir.createSync(recursive: true);
+    _writeFile(p.join(apiDir.path, 'bridge_api.h'), _headerTemplate(libName));
+    log.info('  created native/api/bridge_api.h');
+  }
 
   // --- Run generate ---
   log.info('Running initial codegen ...');
@@ -94,58 +123,27 @@ Future<int> cmdInit(
   if (exitCode != 0) return exitCode;
 
   log.info('Done! Next steps:');
-  log.info('  1. Add dart_cpp_bridge to your pubspec.yaml dependencies');
-  log.info('  2. Run "dart pub get"');
-  log.info('  3. Write a hook/build.dart to invoke CMake');
-  log.info('  4. Implement your functions in native/api/bridge_api.h');
-  log.info('  5. Run "dcb_gen generate dart_cpp_bridge.yaml" after changes');
+  log.info('  1. Ensure dart_cpp_bridge is in pubspec.yaml && run "dart pub get"');
+  log.info('  2. Implement your functions in native/api/bridge_api.h');
+  log.info('  3. Run "dcb_gen generate dart_cpp_bridge.yaml" after API changes');
+  log.info('  4. Run "dart run" or "flutter run" (hook builds native lib)');
+  if (hasCmake) {
+    log.info('  note: existing native/CMakeLists.txt was kept — make sure it');
+    log.info('        adds generated/wire_dispatch.cpp to your build target.');
+  }
   return 0;
 }
 
-/// Resolves the dart_cpp_bridge native/include directory.
-///
-/// Strategy:
-///   1. From .dart_tool/package_config.json (if user already ran pub get)
-///   2. From the tool's own location (monorepo: dcb_gen_tool/../dart/native/include)
-Future<String?> _resolveNativeInclude(String cwd, CliLogger log) async {
-  // Strategy 1: package_config.json
-  final pkgConfigFile = File(p.join(cwd, '.dart_tool', 'package_config.json'));
-  if (pkgConfigFile.existsSync()) {
-    try {
-      final content = pkgConfigFile.readAsStringSync();
-      final yaml = loadYaml(content) as YamlMap;
-      final packages = yaml['packages'] as YamlList?;
-      if (packages != null) {
-        for (final pkg in packages) {
-          final map = pkg as YamlMap;
-          if (map['name'] != 'dart_cpp_bridge') continue;
-          final rootUri = map['rootUri'] as String;
-          String pkgPath;
-          if (rootUri.startsWith('file://')) {
-            pkgPath = Platform.isWindows
-                ? rootUri.substring('file:///'.length)
-                : rootUri.substring('file://'.length);
-          } else {
-            pkgPath = p.normalize(
-                p.join(p.dirname(pkgConfigFile.path), rootUri));
-          }
-          final inc = p.join(pkgPath, 'native', 'include');
-          if (Directory(inc).existsSync()) return inc;
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Strategy 2: monorepo sibling (dcb_gen_tool/../dart/native/include)
+/// Reads the `name` field from pubspec.yaml in [cwd], or null if not found.
+String? _readPubspecName(String cwd) {
+  final pubspecFile = File(p.join(cwd, 'pubspec.yaml'));
+  if (!pubspecFile.existsSync()) return null;
   try {
-    final toolRoot = await resolvePackageRoot();
-    final inc = p.normalize(p.join(toolRoot, '..', 'dart', 'native', 'include'));
-    if (Directory(inc).existsSync()) return inc;
+    final content = loadYaml(pubspecFile.readAsStringSync());
+    if (content is YamlMap && content['name'] is String) {
+      return content['name'] as String;
+    }
   } catch (_) {}
-
-  log.warn('Could not resolve dart_cpp_bridge native/include path.\n'
-      '  Run "dart pub get" after adding dart_cpp_bridge to pubspec.yaml,\n'
-      '  then re-run "dcb_gen generate dart_cpp_bridge.yaml".');
   return null;
 }
 
@@ -157,14 +155,7 @@ void _writeFile(String path, String content) {
 // Templates
 // ===========================================================================
 
-String _yamlTemplate(String libName, String? nativeInclude) {
-  final includePaths = <String>[
-    'native',
-    'native/api',
-    if (nativeInclude != null) nativeInclude.replaceAll('\\', '/'),
-  ];
-  final includeYaml =
-      includePaths.map((e) => '  - $e').join('\n');
+String _yamlTemplate(String libName) {
   return '''
 # dart_cpp_bridge codegen config for $libName
 dart_package: $libName
@@ -173,8 +164,12 @@ cpp_root: native/
 scan:
   - native/api/
 
+# Project-relative include paths only.
+# dart_cpp_bridge native/include is auto-resolved from package_config.json
+# at codegen time — no need to add it here.
 include_paths:
-$includeYaml
+  - native
+  - native/api
 
 dart_output: lib/src/native_gen/
 cpp_wire_output: native/generated/
@@ -198,50 +193,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# --- Locate dart_cpp_bridge via package_config.json ---
-set(PACKAGE_CONFIG "\${CMAKE_CURRENT_SOURCE_DIR}/.dart_tool/package_config.json")
-if(NOT EXISTS "\${PACKAGE_CONFIG}")
-  message(FATAL_ERROR "Missing .dart_tool/package_config.json. Run 'dart pub get' first.")
-endif()
-
-file(READ "\${PACKAGE_CONFIG}" _pkg_json)
-
-set(_dcb_pkg_index -1)
-string(JSON _pkg_count LENGTH "\${_pkg_json}" "packages")
-math(EXPR _pkg_last "\${_pkg_count} - 1")
-foreach(i RANGE \${_pkg_last})
-  string(JSON _name GET "\${_pkg_json}" "packages" \${i} "name")
-  if(_name STREQUAL "dart_cpp_bridge")
-    set(_dcb_pkg_index \${i})
+# --- Find dart_cpp_bridge (reads .dart_tool/package_config.json) ---
+file(READ "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/package_config.json" _j)
+string(JSON _c LENGTH "\${_j}" "packages")
+math(EXPR _e "\${_c} - 1")
+foreach(_i RANGE \${_e})
+  string(JSON _n GET "\${_j}" "packages" \${_i} "name")
+  if(_n STREQUAL "dart_cpp_bridge")
+    string(JSON _u GET "\${_j}" "packages" \${_i} "rootUri")
     break()
   endif()
 endforeach()
-
-if(_dcb_pkg_index EQUAL -1)
-  message(FATAL_ERROR "dart_cpp_bridge not found in package_config.json")
+if(NOT DEFINED _u)
+  message(FATAL_ERROR "dart_cpp_bridge not in package_config.json")
 endif()
-
-string(JSON _root_uri GET "\${_pkg_json}" "packages" \${_dcb_pkg_index} "rootUri")
-
-if(_root_uri MATCHES "^file://")
-  if(WIN32)
-    string(REGEX REPLACE "^file:///" "" _dcb_pkg_path "\${_root_uri}")
-  else()
-    string(REGEX REPLACE "^file://" "" _dcb_pkg_path "\${_root_uri}")
-  endif()
+if(_u MATCHES "^file:///")
+  string(REGEX REPLACE "^file:///" "" DCB_PKG_PATH "\${_u}")
+elseif(_u MATCHES "^file://")
+  string(REGEX REPLACE "^file://" "" DCB_PKG_PATH "\${_u}")
 else()
-  get_filename_component(_dcb_pkg_path
-    "\${CMAKE_CURRENT_SOURCE_DIR}/.dart_tool/\${_root_uri}" ABSOLUTE)
+  get_filename_component(DCB_PKG_PATH
+    "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/\${_u}" ABSOLUTE)
 endif()
-
-message(STATUS "dart_cpp_bridge package: \${_dcb_pkg_path}")
-
-# --- Base runtime (asio / async-simple propagated transitively) ---
-set(DCB_ROOT "\${_dcb_pkg_path}/native")
+include("\${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(\${DCB_ROOT} \${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
 # --- Generated wire check ---
-set(GEN_WIRE "\${CMAKE_CURRENT_SOURCE_DIR}/native/generated/wire_dispatch.cpp")
+set(GEN_WIRE "\${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "\${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
@@ -250,16 +228,16 @@ endif()
 # --- Library target ---
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 add_library($libName
-  native/generated/wire_dispatch.cpp
+  generated/wire_dispatch.cpp
   # Add your implementation files here:
-  # native/api_impl/bridge_api.cpp
+  # api_impl/bridge_api.cpp
 )
 
 target_include_directories($libName
   PRIVATE
-    \${CMAKE_CURRENT_SOURCE_DIR}/native
-    \${CMAKE_CURRENT_SOURCE_DIR}/native/api
-    \${CMAKE_CURRENT_SOURCE_DIR}/native/generated
+    \${CMAKE_CURRENT_SOURCE_DIR}
+    \${CMAKE_CURRENT_SOURCE_DIR}/api
+    \${CMAKE_CURRENT_SOURCE_DIR}/generated
 )
 
 target_link_libraries($libName PRIVATE
@@ -268,6 +246,35 @@ target_link_libraries($libName PRIVATE
 if(WIN32)
   target_compile_options($libName PRIVATE /utf-8)
 endif()
+''';
+
+String _hookTemplate(String libName) => '''
+import 'dart:io';
+
+import 'package:code_assets/code_assets.dart';
+import 'package:dart_cpp_bridge/hook.dart';
+import 'package:hooks/hooks.dart';
+
+void main(List<String> args) async {
+  await build(args, (input, output) async {
+    if (!input.config.buildCodeAssets) {
+      return;
+    }
+    final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
+    final config = switch (input.config.code.targetOS) {
+      OS.windows => WindowsConfig(cmake: cmake),
+      OS.linux => LinuxConfig(cmake: cmake),
+      OS.macOS => MacosConfig(cmake: cmake),
+      final os => throw UnsupportedError('$libName does not support: \$os'),
+    };
+    await DcbCMakeBuilder(
+      config: config,
+      sourceDir: 'native',
+      assetName: 'src/native_gen/dcb_bindings.dart',
+      libName: '$libName',
+    ).run(input: input, output: output);
+  });
+}
 ''';
 
 String _headerTemplate(String libName) => '''

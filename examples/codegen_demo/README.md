@@ -142,12 +142,12 @@ Generated files:
 
 ```powershell
 # Repo root (if _deps not yet available)
-cmake -S . -B build
-cmake --build build --config Release
+cmake -S dart/native -B dart/native/build
+cmake --build dart/native/build --config Release
 
 # Demo
 cd examples\codegen_demo
-cmake -S . -B build
+cmake -S native -B build
 cmake --build build --config Release
 ```
 

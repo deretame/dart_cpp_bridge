@@ -1,8 +1,9 @@
-# cmake -P dart/fetch_dart_api.cmake
+# cmake -P dart/native/cmake/fetch_dart_api.cmake
 cmake_minimum_required(VERSION 3.20)
 
-set(ROOT "${CMAKE_CURRENT_LIST_DIR}")
-set(OUT "${ROOT}/native/third_party/dart_api")
+# This script lives in dart/native/cmake/; output goes to dart/native/third_party/dart_api/
+set(NATIVE_DIR "${CMAKE_CURRENT_LIST_DIR}/..")
+set(OUT "${NATIVE_DIR}/third_party/dart_api")
 set(BASE "https://raw.githubusercontent.com/dart-lang/sdk/3.10.0/runtime/include")
 
 file(MAKE_DIRECTORY "${OUT}")

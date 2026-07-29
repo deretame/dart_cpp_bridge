@@ -266,7 +266,7 @@ dart run bin/codegen.dart scripts/run_codegen.py ../examples/multi_runtime_demo/
 cd ../examples/multi_runtime_demo
 
 # Build this demo
-cmake -S . -B build
+cmake -S native -B build
 cmake --build build --config Release
 
 # Run Dart tests

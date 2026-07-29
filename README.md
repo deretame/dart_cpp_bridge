@@ -176,7 +176,7 @@ This suspends on an `asio::steady_timer` on the io event loop (via `AsioExecutor
 
 ```bash
 # 1) Fetch Dart API DL headers
-cmake -P cmake/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 
 # 2) Configure & build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -190,7 +190,7 @@ build/Release/dcb_smoke.exe       # Windows multi-config generators
 Windows (PowerShell):
 
 ```powershell
-cmake -P cmake/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 cmake -S . -B build
 cmake --build build --config Release
 .\build\Release\dcb_smoke.exe

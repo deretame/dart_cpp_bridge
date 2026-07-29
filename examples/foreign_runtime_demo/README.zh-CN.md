@@ -118,7 +118,7 @@ dart run bin/codegen.dart scripts/run_codegen.py ../examples/foreign_runtime_dem
 
 # 3. 构建本 demo
 cd ../examples/foreign_runtime_demo
-cmake -S . -B build
+cmake -S native -B build
 cmake --build build --config Release
 
 # 4. 测试

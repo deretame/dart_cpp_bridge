@@ -49,7 +49,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 │   └── known_issues.md                # Resolved/known tech debt
 ├── dart/                      # Dart package (pub package root) + native library
 │   ├── pubspec.yaml
-│   ├── fetch_dart_api.cmake   # Download Dart API DL headers
+│   ├── native/cmake/           # CMake modules (dcb_find_package, fetch_dart_api)
 │   ├── native/                # C++ native library (base runtime only)
 │   │   ├── CMakeLists.txt     # Static lib + FetchContent deps (asio/async-simple)
 │   │   ├── include/dart_cpp_bridge/   # Public C++ headers
@@ -111,7 +111,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 
 ```bash
 # 1. Fetch Dart API DL headers (one-time unless deleted)
-cmake -P dart/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 
 # 2. Configure base library deps (asio/async-simple)
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release

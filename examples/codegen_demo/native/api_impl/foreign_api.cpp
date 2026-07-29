@@ -24,9 +24,6 @@
 #include <thread>
 #include <utility>
 
-#include <pthread.h>
-#include <time.h>
-
 namespace demo::api {
 
 namespace {
@@ -414,28 +411,12 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke_pure_c(
 
 // ─── 纯 C 路径的 dcb_async_cancel 测试 ────────────────────────────────
 // 纯 C 函数：延迟后取消 op（模拟外部 C 层取消异步操作）。
-// 使用 pthread 而非 std::thread，保持纯 C 风格。
-struct cancel_ctx {
-  uint64_t op_id;
-};
-
-static void* c_cancel_thread(void* arg) {
-  struct cancel_ctx* ctx = (struct cancel_ctx*)arg;
-  // 模拟外部库延迟后取消
-  struct timespec ts = {0, 50 * 1000000L};  // 50ms
-  nanosleep(&ts, NULL);
-  dcb_async_cancel(ctx->op_id);
-  free(ctx);
-  return NULL;
-}
 
 static void c_schedule_cancel(uint64_t op_id) {
-  struct cancel_ctx* ctx =
-      (struct cancel_ctx*)malloc(sizeof(struct cancel_ctx));
-  ctx->op_id = op_id;
-  pthread_t tid;
-  pthread_create(&tid, NULL, c_cancel_thread, ctx);
-  pthread_detach(tid);
+  std::thread([op_id] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    dcb_async_cancel(op_id);
+  }).detach();
 }
 
 async_simple::coro::Lazy<std::string> test_cbridge_pure_c_cancel() {

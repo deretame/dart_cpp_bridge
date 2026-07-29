@@ -142,12 +142,12 @@ dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_c
 
 ```powershell
 # 仓库根（若尚无 _deps）
-cmake -S . -B build
-cmake --build build --config Release
+cmake -S dart/native -B dart/native/build
+cmake --build dart/native/build --config Release
 
 # demo
 cd examples\codegen_demo
-cmake -S . -B build
+cmake -S native -B build
 cmake --build build --config Release
 ```
 

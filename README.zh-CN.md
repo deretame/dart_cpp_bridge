@@ -176,7 +176,7 @@ co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
 
 ```bash
 # 1) 拉取 Dart API DL 头文件
-cmake -P cmake/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 
 # 2) 配置并编译
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -190,7 +190,7 @@ build/Release/dcb_smoke.exe       # Windows 多配置生成器
 Windows（PowerShell）：
 
 ```powershell
-cmake -P cmake/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 cmake -S . -B build
 cmake --build build --config Release
 .\build\Release\dcb_smoke.exe

@@ -92,7 +92,7 @@ FetchContent_MakeAvailable(concurrentqueue)
 set(DCB_DART_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dart_api)
 if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
   message(FATAL_ERROR
-    "Missing third_party/dart_api. Run: cmake -P ../fetch_dart_api.cmake")
+    "Missing third_party/dart_api. Run: cmake -P cmake/fetch_dart_api.cmake")
 endif()
 
 # --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---

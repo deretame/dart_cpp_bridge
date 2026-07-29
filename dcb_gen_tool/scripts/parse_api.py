@@ -1155,7 +1155,12 @@ def _validate_ir(ir: dict[str, Any]) -> list[str]:
 
 
 def _auto_include_dcb_native(cfg: dict[str, Any], project_root: Path) -> None:
-    """Resolve dart_cpp_bridge native/include from package_config.json."""
+    """Resolve dart_cpp_bridge native/include from package_config.json.
+
+    Skips appending if the resolved directory is already present in
+    cfg["include_paths"] (e.g. user added a relative path in the yaml that
+    resolves to the same location).
+    """
     pkg_config = project_root / ".dart_tool" / "package_config.json"
     if not pkg_config.is_file():
         return
@@ -1177,8 +1182,21 @@ def _auto_include_dcb_native(cfg: dict[str, Any], project_root: Path) -> None:
             # Relative to .dart_tool/
             pkg_path = (pkg_config.parent / root_uri).resolve()
         native_inc = pkg_path / "native" / "include"
-        if native_inc.is_dir():
-            cfg["include_paths"].append(native_inc)
+        if not native_inc.is_dir():
+            break
+        # Deduplicate: compare resolved paths (case-insensitive on Windows).
+        resolved = native_inc.resolve()
+        existing = {
+            Path(p).resolve() if not isinstance(p, Path) else p.resolve()
+            for p in cfg["include_paths"]
+        }
+        if sys.platform == "win32":
+            # Windows paths are case-insensitive.
+            if str(resolved).lower() not in {str(e).lower() for e in existing}:
+                cfg["include_paths"].append(native_inc)
+        else:
+            if resolved not in existing:
+                cfg["include_paths"].append(native_inc)
         break
 
 

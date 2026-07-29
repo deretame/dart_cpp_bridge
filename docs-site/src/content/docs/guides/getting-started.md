@@ -14,7 +14,7 @@ description: 环境准备和第一次构建
 
 ```bash
 # 1. 获取 Dart API DL 头文件
-cmake -P dart/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 
 # 2. 配置依赖 (asio/async-simple)
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release

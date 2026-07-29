@@ -16,7 +16,7 @@
 
 ```powershell
 # 1. 下载 Dart API DL 头文件
-cmake -P dart/fetch_dart_api.cmake
+cmake -P dart/native/cmake/fetch_dart_api.cmake
 # 2. 配置基础库依赖（asio / async-simple）
 cmake -S dart/native -B dart/native/build
 # 3. 构建各 example 动态库
@@ -172,7 +172,7 @@ hook 经 `input.userDefines['key']` / `input.userDefines.path('key')` 读取。�
 
 ### 3.4 Dart API 头文件
 
-`dart_api_dl.c/.h` 由 [`dart/fetch_dart_api.cmake`](../dart/fetch_dart_api.cmake) 下载到
+`dart_api_dl.c/.h` 由 [`dart/native/cmake/fetch_dart_api.cmake`](../dart/native/cmake/fetch_dart_api.cmake) 下载到
 `dart/native/third_party/dart_api/`（gitignored）。hook 构建前必须确保其存在
 （CMake 在缺失时会 `FATAL_ERROR` 提示）。
 
