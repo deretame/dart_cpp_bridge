@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
 
 import 'bootstrap.dart';
 import 'lock_file.dart';
@@ -164,17 +165,19 @@ Future<int> _cmdGenerate(
   if (exitCode != 0) return exitCode;
 
   // Post-process generated sources.
-  await _postProcessDartOutput(absConfig, log);
-  await _postProcessCppOutput(absConfig, log);
+  final configContent = File(absConfig).readAsStringSync();
+  final yamlConfig = loadYaml(configContent) as YamlMap;
+  await _postProcessDartOutput(absConfig, yamlConfig, log);
+  await _postProcessCppOutput(absConfig, yamlConfig, log);
   return 0;
 }
 
 /// Runs `dart fix --apply` + `dart format` on the generated Dart output
 /// directory so that emitted code is always analysis-clean and formatted.
-Future<void> _postProcessDartOutput(String absConfig, CliLogger log) async {
+Future<void> _postProcessDartOutput(
+    String absConfig, YamlMap config, CliLogger log) async {
   final projectDir = p.dirname(absConfig);
-  final configContent = File(absConfig).readAsStringSync();
-  final dartOutputRel = _yamlValue(configContent, 'dart_output');
+  final dartOutputRel = config['dart_output'] as String?;
   if (dartOutputRel == null) {
     log.warn('dart_output not found in config; skipping dart fix/format.');
     return;
@@ -211,19 +214,18 @@ Future<void> _postProcessDartOutput(String absConfig, CliLogger log) async {
 
 /// Runs clang-format on generated C++ sources when available.
 ///
-/// Executable resolution order: `clang_format` key in the YAML config
-/// (executable path or containing directory) → `clang-format` on PATH →
-/// skip with a message.
-Future<void> _postProcessCppOutput(String absConfig, CliLogger log) async {
+/// Executable resolution order: each entry in the `clang_format` list in the
+/// YAML config (tried top-to-bottom) → `clang-format` on PATH → skip.
+Future<void> _postProcessCppOutput(
+    String absConfig, YamlMap config, CliLogger log) async {
   final projectDir = p.dirname(absConfig);
-  final configContent = File(absConfig).readAsStringSync();
 
-  final cppOutputRel = _yamlValue(configContent, 'cpp_wire_output');
+  final cppOutputRel = config['cpp_wire_output'] as String?;
   if (cppOutputRel == null) return;
   final cppOutput = p.normalize(p.join(projectDir, cppOutputRel));
   if (!Directory(cppOutput).existsSync()) return;
 
-  final clangFormat = _resolveClangFormat(configContent, projectDir, log);
+  final clangFormat = _resolveClangFormat(config, projectDir, log);
   if (clangFormat == null) {
     log.info('clang-format not found; skipping C++ formatting.');
     return;
@@ -255,23 +257,40 @@ Future<void> _postProcessCppOutput(String absConfig, CliLogger log) async {
   }
 }
 
-/// Resolves the clang-format executable: YAML `clang_format` key first,
-/// then PATH lookup. Returns null when unavailable.
+/// Resolves the clang-format executable.
+///
+/// Resolution order:
+/// 1. Each entry in the `clang_format` list (top-to-bottom). Each entry can
+///    be a direct executable path or a containing directory.
+/// 2. `clang-format` on system PATH.
+/// 3. Returns null (skip formatting).
 String? _resolveClangFormat(
-    String configContent, String projectDir, CliLogger log) {
-  final configured = _yamlValue(configContent, 'clang_format');
-  if (configured != null) {
-    var resolved = p.isAbsolute(configured)
-        ? configured
-        : p.normalize(p.join(projectDir, configured));
+    YamlMap config, String projectDir, CliLogger log) {
+  final candidates = _clangFormatCandidates(config);
+  for (final entry in candidates) {
+    var resolved = p.isAbsolute(entry)
+        ? entry
+        : p.normalize(p.join(projectDir, entry));
+    // If it's a directory, look for the executable inside.
     if (Directory(resolved).existsSync()) {
       resolved = p.join(
           resolved, Platform.isWindows ? 'clang-format.exe' : 'clang-format');
     }
     if (File(resolved).existsSync()) return resolved;
-    log.warn('Configured clang_format not found: $resolved');
+    log.info('clang_format candidate not found: $resolved');
   }
+  // Fall back to system PATH.
   return _which('clang-format');
+}
+
+/// Extracts the `clang_format` config value as a list of candidate paths.
+List<String> _clangFormatCandidates(YamlMap config) {
+  final raw = config['clang_format'];
+  if (raw == null) return [];
+  if (raw is YamlList) {
+    return raw.map((e) => e.toString()).toList();
+  }
+  return [];
 }
 
 /// Searches upward from [dir] for a `.clang-format` file, mirroring
@@ -386,20 +405,6 @@ Future<int> _cmdDoctor({required bool quiet}) async {
 // ===========================================================================
 // Helpers
 // ===========================================================================
-
-/// Extracts a top-level scalar value from the simple flat YAML config.
-/// Strips optional surrounding quotes.
-String? _yamlValue(String content, String key) {
-  final match =
-      RegExp('^$key:\\s*(.+?)\\s*\$', multiLine: true).firstMatch(content);
-  if (match == null) return null;
-  var value = match.group(1)!;
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
-    value = value.substring(1, value.length - 1);
-  }
-  return value;
-}
 
 /// Simple CLI logger that writes to stderr.
 class CliLogger {
