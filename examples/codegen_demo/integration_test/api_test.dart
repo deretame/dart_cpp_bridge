@@ -1365,4 +1365,57 @@ void main() {
       expect(results.every((r) => r == 'error'), isTrue);
     });
   });
+
+  // ─── Stress: rapid init/dispose cycles ────────────────────────────────────
+
+  group('stress: rapid init/dispose cycles', () {
+    testWidgets('20 rapid init/dispose cycles with sync call', (
+      tester,
+    ) async {
+      // Release the global bridge
+      DcbLib.dispose();
+
+      for (var i = 0; i < 20; i++) {
+        await DcbLib.init();
+        expect(DcbLib.isInitialized, isTrue);
+        // Verify the bridge actually works
+        final v = bridgeVersion();
+        expect(v, greaterThan(0));
+        DcbLib.dispose();
+        expect(DcbLib.isInitialized, isFalse);
+      }
+
+      // Re-init for tearDownAll shutdown
+      await DcbLib.init();
+    });
+
+    testWidgets('10 cycles with async call in between', (tester) async {
+      DcbLib.dispose();
+
+      for (var i = 0; i < 10; i++) {
+        await DcbLib.init();
+        final result = await add(a: i, b: 1);
+        expect(result, i + 1);
+        DcbLib.dispose();
+      }
+
+      await DcbLib.init();
+    });
+
+    testWidgets('5 cycles with DartFn callback', (tester) async {
+      DcbLib.dispose();
+
+      for (var i = 0; i < 5; i++) {
+        await DcbLib.init();
+        final result = await greetDartFn(
+          callback: (name) async => 'hi $name ($i)',
+          name: 'cycle',
+        );
+        expect(result, 'hello, hi cycle ($i)');
+        DcbLib.dispose();
+      }
+
+      await DcbLib.init();
+    });
+  });
 }
