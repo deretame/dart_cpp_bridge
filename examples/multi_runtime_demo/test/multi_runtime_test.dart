@@ -1,11 +1,9 @@
 import 'package:dcb_multi_runtime_demo/multi_runtime_demo.dart';
 import 'package:test/test.dart';
 
-import 'support/library_path.dart';
-
 void main() {
   setUpAll(() async {
-    await DcbLib.init(libraryPath: resolveLibraryPath());
+    await DcbLib.init();
   });
 
   tearDownAll(() {

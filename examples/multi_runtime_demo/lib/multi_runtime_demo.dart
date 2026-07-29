@@ -4,7 +4,7 @@
 /// ```dart
 /// import 'package:dcb_multi_runtime_demo/multi_runtime_demo.dart';
 ///
-/// await DcbLib.init(libraryPath: '...');
+/// await DcbLib.init();
 /// await startWorkers();
 /// final result = await processMessage(message: 'hello');
 /// DcbLib.shutdown();

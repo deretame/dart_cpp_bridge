@@ -3,17 +3,14 @@ import 'package:test/test.dart';
 
 /// Smoke test for the @Native binding path.
 ///
-/// `DartCppBridge.init()` with no `libraryPath` resolves the runtime through
-/// `@Native` externals backed by the code asset built by `hook/build.dart`
-/// (a runtime-only shared library, no wire dispatch registered). It exercises
-/// `dcb_init_dart_api` / `dcb_set_pool_threads` / `dcb_session_open` on the way
-/// in and `dcb_session_close` / `dcb_shutdown` on the way out.
+/// This test requires a hook/build.dart that registers the code asset.
+/// Since dart_cpp_bridge is now a source-only distribution (no bundled hook),
+/// this test is skipped. Downstream packages (e.g. codegen_demo) exercise
+/// the full @Native path via their own hooks.
 void main() {
-  test('@Native runtime session smoke (no libraryPath)', () async {
-    final bridge = await DartCppBridge.init();
-    expect(bridge, isNotNull);
-    expect(identical(DartCppBridge.instance, bridge), isTrue);
-    // Stop the process-wide runtime and close the session.
-    bridge.shutdown();
-  }, skip: 'Requires dart/hook/build.dart (removed; source-only distribution)');
+  test('@Native runtime session smoke', () async {
+    // This would require a NativeBindings instance from @Native externals,
+    // which only works when a hook registers the code asset.
+    // See examples/codegen_demo for a working end-to-end test.
+  }, skip: 'Requires a downstream hook to register the code asset');
 }

@@ -75,12 +75,16 @@ final class DartCppBridge implements Finalizable {
       _instance ?? (throw StateError('DartCppBridge not initialized'));
 
   /// Open a session on **this** isolate.
-  static Future<DartCppBridge> init({String? libraryPath, int poolThreads = 4}) async {
+  ///
+  /// [bindings] is the resolved set of native function pointers, typically
+  /// created by codegen-generated `@Native` externals in the user's package.
+  static Future<DartCppBridge> init({
+    required NativeBindings bindings,
+    int poolThreads = 4,
+  }) async {
     if (_instance != null) return _instance!;
 
-    final b = libraryPath != null
-        ? NativeBindings.fromLibrary(DynamicLibrary.open(libraryPath))
-        : NativeBindings.native();
+    final b = bindings;
     _sharedFinalizer ??= NativeFinalizer(b.sessionFinalizer);
 
     final rc = b.initDartApi(NativeApi.initializeApiDLData);

@@ -2,28 +2,17 @@
 
 /// Minimal usage sketch for [package:dart_cpp_bridge].
 ///
-/// Build the native library from the monorepo first, then:
-///
-/// ```bash
-/// cd dart
-/// dart run example/example.dart
-/// # or: DCB_LIBRARY_PATH=/path/to/lib dart run example/example.dart
-/// ```
+/// Run with `dart test` (hooks build the native library automatically).
 ///
 /// Full docs: https://github.com/deretame/dart_cpp_bridge
 library;
 
-import 'dart:io';
-
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 import 'package:dcb_base_demo/demo_bridge.dart';
+import 'package:dcb_base_demo/src/dcb_bindings.dart';
 
 Future<void> main(List<String> args) async {
-  final path = Platform.environment['DCB_LIBRARY_PATH'] ??
-      (args.isNotEmpty ? args.first : _defaultLibraryPath());
-
-  print('Loading: $path');
-  final bridge = await DartCppBridge.init(libraryPath: path);
+  final bridge = await DartCppBridge.init(bindings: createDcbBindings());
 
   print('bridgeVersion = ${bridge.bridgeVersion()}');
   print('add(40, 2)    = ${await bridge.add(40, 2)}');
@@ -36,14 +25,4 @@ Future<void> main(List<String> args) async {
   // Main isolate only — stops the process-wide C++ runtime.
   bridge.shutdown();
   print('done');
-}
-
-String _defaultLibraryPath() {
-  if (Platform.isWindows) {
-    return 'build/Release/dart_cpp_bridge.dll';
-  }
-  if (Platform.isMacOS) {
-    return 'build/libdart_cpp_bridge.dylib';
-  }
-  return 'build/libdart_cpp_bridge.so';
 }

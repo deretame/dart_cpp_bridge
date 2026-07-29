@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:codegen_demo/codegen_demo.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -8,12 +6,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
-    // On Android, the combined library (runtime + dispatch) is
-    // libdcb_codegen_demo.so, extracted to the app's native lib dir.
-    // DynamicLibrary.open with just the soname works because Android
-    // includes the app's lib directory in the linker search path.
-    final libPath = Platform.isAndroid ? 'libdcb_codegen_demo.so' : null;
-    await DcbLib.init(libraryPath: libPath);
+    await DcbLib.init();
   });
 
   tearDownAll(() {

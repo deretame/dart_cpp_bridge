@@ -15,25 +15,13 @@ void main(List<String> args) async {
       OS.linux => LinuxConfig(cmake: cmake),
       OS.macOS => MacosConfig(cmake: cmake),
       OS.iOS => IosConfig(cmake: cmake),
-      OS.android => AndroidConfig(
-          cmake: cmake,
-          ndkPath: Platform.environment['ANDROID_NDK_HOME'] ??
-              r'C:\Users\windy\AppData\Local\Android\Sdk\ndk\29.0.14206865',
-          abi: switch (input.config.code.targetArchitecture) {
-            Architecture.arm64 => 'arm64-v8a',
-            Architecture.arm => 'armeabi-v7a',
-            Architecture.x64 => 'x86_64',
-            Architecture.ia32 => 'x86',
-            final a => throw UnsupportedError('Unsupported Android arch: $a'),
-          },
-        ),
       final os => throw UnsupportedError(
-          'codegen_demo does not support: $os'),
+          'multi_runtime_demo does not support: $os'),
     };
     await DcbCMakeBuilder(
       config: config,
       assetName: 'src/native_gen/dcb_bindings.dart',
-      libName: 'dcb_codegen_demo',
+      libName: 'dcb_multi_runtime_demo',
     ).run(input: input, output: output);
   });
 }

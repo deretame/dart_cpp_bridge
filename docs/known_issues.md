@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-29
+> 更新日期：2026-07-30
 
 ---
 
@@ -501,9 +501,9 @@ ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() 
 
 ---
 
-## 11. 【待解决】iOS/Android 集成测试中 @Native asset ID 无法解析
+## 11. 【已解决】iOS/Android 集成测试中 @Native asset ID 无法解析
 
-### 11.1 现象
+### 11.1 现象（已修复）
 
 在 iOS simulator 上运行集成测试时，`DcbLib.init()` 抛出异常：
 
@@ -514,50 +514,27 @@ No asset with id 'package:dart_cpp_bridge/dart_cpp_bridge.dart' found.
 Available native assets: package:codegen_demo/codegen_demo.dart.
 ```
 
-构建（`flutter build ios --simulator`）本身成功，但运行时 FFI 绑定解析失败。
-
 ### 11.2 根因
 
-`dart_cpp_bridge` 包的 FFI 绑定层（`dart/lib/src/bindings.dart`）硬编码了 asset ID：
+`dart_cpp_bridge` 包的 FFI 绑定层硬编码了 asset ID `package:dart_cpp_bridge/dart_cpp_bridge.dart`，
+但 hooks 系统要求 code asset 必须注册在构建包自己的命名空间下，两者不匹配。
 
-```dart
-const _kAssetId = 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+### 11.3 修复方案
 
-@Native<_InitDartApiC>(assetId: _kAssetId, symbol: 'dcb_init_dart_api')
-external int dcbInitDartApi(...);
-```
+采用方案 1（codegen 生成 @Native externals）：
 
-但 hooks 系统**要求** code asset 必须注册在构建包自己的命名空间下：
+1. **移除 `dart_cpp_bridge` 包中所有 `@Native` externals 和 `DynamicLibrary.open()` 路径**
+2. **`NativeBindings` 变为纯数据类**：只持有函数指针，由下游包创建
+3. **`DartCppBridge.init(bindings: ...)` 接受必需的 `NativeBindings` 参数**
+4. **每个下游包生成自己的 `dcb_bindings.dart`**：包含 `@Native` externals，
+   assetId 指向用户包（如 `package:codegen_demo/src/native_gen/dcb_bindings.dart`）
+5. **hook 注册匹配的 asset name**：`assetName: 'src/native_gen/dcb_bindings.dart'`
 
-```text
-Code asset "package:dart_cpp_bridge/dart_cpp_bridge.dart"
-does not start with "package:codegen_demo/".
-```
+这样 `@Native` 的 assetId 和 hook 注册的 asset 天然一致，无需跨包 remapping。
 
-因此 `codegen_demo` 的 hook 只能注册 `package:codegen_demo/codegen_demo.dart`，而 `@Native` 注解期望的是 `package:dart_cpp_bridge/dart_cpp_bridge.dart`，两者不匹配。
+### 11.4 验证
 
-### 11.3 影响范围
-
-| 场景 | 是否受影响 |
-|------|----------|
-| macOS/Linux/Windows `flutter test`（手动 `DynamicLibrary.open`） | ✓ 不受影响 |
-| iOS/Android 集成测试（@Native code asset 路径） | ✗ 受影响 |
-| `flutter build ios --simulator`（仅编译打包） | ✓ 不受影响 |
-
-### 11.4 计划修复方向
-
-参考设计文档 `docs/ios_static_linking_design.md` §8 第 4 步：
-
-1. **codegen 生成 @Native externals**：生成的 Dart 绑定使用用户包的 asset ID
-   （`package:codegen_demo/codegen_demo.dart`），而非 `dart_cpp_bridge` 的。
-2. **或：dart_cpp_bridge 提供自己的 hook**：由 `dart_cpp_bridge` 包自身注册 asset，
-   下游包的 hook 只负责编译，asset 注册由运行时包的 hook 完成。
-3. **或：bindings 支持可配置 asset ID**：`DcbLib.init()` 接受 `assetId` 参数，
-   运行时动态解析。
-
-### 11.5 临时绕过
-
-桌面平台（macOS/Linux/Windows）的单元测试使用 `DynamicLibrary.open()` 路径，
-不经过 @Native asset 解析，因此不受影响。iOS/Android 的端到端验证需等待
-上述修复方向之一落地。
+- macOS `flutter test`：66/66 通过
+- iOS simulator `flutter build ios --simulator`：成功
+- iOS simulator 集成测试：通过（sync/async/normal/stream/dartfn/opaque 全部正常）
 

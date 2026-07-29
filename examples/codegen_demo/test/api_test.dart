@@ -1,59 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:codegen_demo/codegen_demo.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Resolves the hook-built library from .dart_tool, or falls back to manual build.
-String resolveDemoLibrary() {
-  final String libName;
-  if (Platform.isWindows) {
-    libName = 'dcb_codegen_demo.dll';
-  } else if (Platform.isMacOS) {
-    libName = 'libdcb_codegen_demo.dylib';
-  } else {
-    libName = 'libdcb_codegen_demo.so';
-  }
-
-  // 1. Hook-built asset (Native Assets pipeline).
-  final dartTool = Directory('.dart_tool');
-  if (dartTool.existsSync()) {
-    for (final entity in dartTool.listSync(recursive: true)) {
-      if (entity is File && entity.path.endsWith(libName)) {
-        return entity.absolute.path;
-      }
-    }
-  }
-  // 2. Manual cmake build fallback.
-  final List<String> names;
-  if (Platform.isWindows) {
-    names = [
-      'build/Release/dcb_codegen_demo.dll',
-      'build/Debug/dcb_codegen_demo.dll',
-      'build/dcb_codegen_demo.dll',
-    ];
-  } else if (Platform.isMacOS) {
-    names = [
-      'build/libdcb_codegen_demo.dylib',
-    ];
-  } else {
-    names = [
-      'build/libdcb_codegen_demo.so',
-    ];
-  }
-  for (final rel in names) {
-    final f = File(rel);
-    if (f.existsSync()) return f.absolute.path;
-  }
-  throw StateError(
-    '$libName not found. Run "dart test" (hook builds it) '
-    'or build manually with CMake.',
-  );
-}
-
 void main() {
   setUpAll(() async {
-    await DcbLib.init(libraryPath: resolveDemoLibrary());
+    await DcbLib.init();
   });
 
   tearDownAll(() {

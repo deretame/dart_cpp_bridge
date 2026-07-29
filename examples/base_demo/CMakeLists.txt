@@ -24,11 +24,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(DCB_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../dart/native")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
-# --- 动态库（Dart 测试加载此 DLL） ---
+# --- 动态库 / 静态库（Dart 测试加载此库） ---
+# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+option(BUILD_SHARED_LIBS "Build shared library" ON)
 # DCB_REGISTER_DISPATCH 触发 demo_api.cpp 在 DLL 加载期注册 dispatch。
-add_library(dart_cpp_bridge SHARED demo_api.cpp)
-target_compile_definitions(dart_cpp_bridge PRIVATE DCB_REGISTER_DISPATCH)
-target_link_libraries(dart_cpp_bridge PRIVATE
+add_library(dcb_base_demo demo_api.cpp)
+target_compile_definitions(dcb_base_demo PRIVATE DCB_REGISTER_DISPATCH)
+target_link_libraries(dcb_base_demo PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 
 # --- C++ smoke test（无 Dart VM） ---
@@ -39,6 +41,6 @@ target_link_libraries(dcb_smoke PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 
 if(WIN32)
-  target_compile_options(dart_cpp_bridge PRIVATE /utf-8)
+  target_compile_options(dcb_base_demo PRIVATE /utf-8)
   target_compile_options(dcb_smoke PRIVATE /utf-8)
 endif()

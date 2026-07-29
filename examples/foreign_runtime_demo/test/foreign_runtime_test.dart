@@ -1,11 +1,9 @@
 import 'package:dcb_foreign_runtime_demo/foreign_runtime_demo.dart';
 import 'package:test/test.dart';
 
-import 'support/library_path.dart';
-
 void main() {
   setUpAll(() async {
-    await DcbLib.init(libraryPath: libraryPath);
+    await DcbLib.init();
   });
 
   tearDownAll(() {

@@ -39,14 +39,15 @@ if(NOT EXISTS "${GEN_WIRE}")
     "../examples/multi_runtime_demo/dart_cpp_bridge.yaml")
 endif()
 
-# --- 动态库 ---
-# 生成的 wire 在 DLL 加载期无条件注册 dispatch，无需 DCB_REGISTER_DISPATCH。
-add_library(dart_cpp_bridge SHARED
+# --- 动态库 / 静态库 ---
+# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+option(BUILD_SHARED_LIBS "Build shared library" ON)
+add_library(dcb_multi_runtime_demo
   native/generated/wire_dispatch.cpp
   native/api_impl/multi_runtime_api.cpp
 )
 
-target_include_directories(dart_cpp_bridge
+target_include_directories(dcb_multi_runtime_demo
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/native
@@ -54,9 +55,9 @@ target_include_directories(dart_cpp_bridge
     ${CMAKE_CURRENT_SOURCE_DIR}/native/generated
 )
 
-target_link_libraries(dart_cpp_bridge PRIVATE
+target_link_libraries(dcb_multi_runtime_demo PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 
 if(WIN32)
-  target_compile_options(dart_cpp_bridge PRIVATE /utf-8)
+  target_compile_options(dcb_multi_runtime_demo PRIVATE /utf-8)
 endif()

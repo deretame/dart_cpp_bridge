@@ -4,44 +4,40 @@ import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 import 'package:dcb_base_demo/demo_bridge.dart';
+import 'package:dcb_base_demo/src/dcb_bindings.dart';
 import 'package:test/test.dart';
-
-import 'support/library_path.dart';
 
 /// Top-level entry for worker isolates (must not capture main bridge).
 /// No manual dispose — NativeFinalizer closes the session when the isolate ends.
-Future<int> _workerAdd(String libraryPath, int a, int b) {
+Future<int> _workerAdd(int a, int b) {
   return Isolate.run(() async {
-    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    final bridge = await DartCppBridge.init(bindings: createDcbBindings());
     return bridge.add(a, b);
   });
 }
 
-Future<List<int>> _workerTicks(String libraryPath) {
+Future<List<int>> _workerTicks() {
   return Isolate.run(() async {
-    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    final bridge = await DartCppBridge.init(bindings: createDcbBindings());
     return bridge.ticks(count: 3, intervalMs: 5).toList();
   });
 }
 
-Future<int> _workerCounterHandle(String libraryPath) {
+Future<int> _workerCounterHandle() {
   return Isolate.run(() async {
-    final bridge = await DartCppBridge.init(libraryPath: libraryPath);
+    final bridge = await DartCppBridge.init(bindings: createDcbBindings());
     final counter = await bridge.createCounter(initialValue: 42);
     return counter.handle;
   });
 }
 
 void main() {
-  late String libraryPath;
   late DartCppBridge bridge;
 
-  Future<DartCppBridge> openBridge() => DartCppBridge.init(libraryPath: libraryPath);
+  Future<DartCppBridge> openBridge() =>
+      DartCppBridge.init(bindings: createDcbBindings());
 
   setUpAll(() async {
-    libraryPath = resolveNativeLibraryPath();
-    // ignore: avoid_print
-    print('Loading native library: $libraryPath');
     bridge = await openBridge();
   });
 
@@ -460,7 +456,7 @@ void main() {
     });
 
     test('Counter handle from another isolate is rejected', () async {
-      final foreignHandle = await _workerCounterHandle(libraryPath);
+      final foreignHandle = await _workerCounterHandle();
 
       final payload = (ByteWriter()..u64(foreignHandle)).takeBytes();
       await expectLater(
@@ -629,9 +625,9 @@ void main() {
   group('multi isolate (per-isolate session, shared runtime)', () {
     test('background isolates can async add', () async {
       final results = await Future.wait([
-        _workerAdd(libraryPath, 1, 2),
-        _workerAdd(libraryPath, 10, 20),
-        _workerAdd(libraryPath, 100, 200),
+        _workerAdd(1, 2),
+        _workerAdd(10, 20),
+        _workerAdd(100, 200),
       ]);
       expect(results, [3, 30, 300]);
       // Main isolate session still works.
@@ -639,13 +635,13 @@ void main() {
     });
 
     test('background isolate can stream ticks', () async {
-      expect(await _workerTicks(libraryPath), [0, 1, 2]);
+      expect(await _workerTicks(), [0, 1, 2]);
     });
 
     test('many concurrent worker async calls', () async {
       final futures = <Future<int>>[];
       for (var i = 0; i < 12; i++) {
-        futures.add(_workerAdd(libraryPath, i, i));
+        futures.add(_workerAdd(i, i));
       }
       final results = await Future.wait(futures);
       for (var i = 0; i < 12; i++) {

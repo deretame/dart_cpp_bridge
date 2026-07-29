@@ -4,7 +4,7 @@
 /// ```dart
 /// import 'package:dcb_foreign_runtime_demo/foreign_runtime_demo.dart';
 ///
-/// await DcbLib.init(libraryPath: '...');
+/// await DcbLib.init();
 /// await startUvWorker();
 /// final result = await askUv(message: 'hello');
 /// DcbLib.shutdown();

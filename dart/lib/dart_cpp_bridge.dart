@@ -6,5 +6,6 @@
 /// Full docs: https://github.com/deretame/dart_cpp_bridge
 library;
 
+export 'src/bindings.dart';
 export 'src/bridge.dart';
 export 'src/codec.dart';
