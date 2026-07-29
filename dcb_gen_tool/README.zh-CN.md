@@ -11,27 +11,48 @@
 dart pub global activate dcb_gen_tool
 ```
 
-仅需 Dart SDK >= 3.5.0。无需安装 Python、LLVM 或 Rust ——
+仅需 Dart SDK >= 3.10.0。无需安装 Python、LLVM 或 Rust ——
 工具会自动下载经过 SHA-256 校验的固定版本 Python 工具链。
 
 ## 快速开始
 
 ```bash
-# 1.（首次运行）下载工具链（约 100 MB，后续使用缓存）
-dcb_gen bootstrap
-
-# 2. 为项目生成桥接代码
+# 1. 创建 Dart 项目并添加 dart_cpp_bridge 依赖后：
 cd my_project
-dcb_gen generate dart_cpp_bridge.yaml
+dart pub get
+
+# 2. 一键生成桥接项目脚手架（配置 + CMake + hook + 示例 API）
+dcb_gen init
+
+# 3. 直接运行 —— Native Assets hook 自动构建 C++
+dart run
 ```
+
+`dcb_gen init` 会生成完整可运行的示例（头文件 + 实现 + CMake + hook），
+无需手动编写任何 C++ 代码即可 `dart run`。之后再替换示例 API 为你自己的函数。
 
 ## 命令
 
 | 命令 | 说明 |
 |------|------|
+| `dcb_gen init` | 生成桥接项目脚手架（配置、CMake、hook、示例 API + 实现） |
 | `dcb_gen generate <config.yaml>` | 运行完整 codegen 流程（解析 C++ → 生成 Dart + C++ wire） |
 | `dcb_gen bootstrap` | 下载并校验固定版本的 Python + libclang 工具链 |
 | `dcb_gen doctor` | 检查环境状态（Dart SDK、工具链缓存、CMake） |
+
+### `dcb_gen init` 详情
+
+生成以下文件（已存在的文件自动跳过）：
+
+```
+dart_cpp_bridge.yaml        # codegen 配置
+native/CMakeLists.txt       # CMake 构建（自动解析 dart_cpp_bridge 包路径）
+native/api/bridge_api.h     # 示例 C++ 头文件（带 BRIDGE_* 注解）
+native/api_impl/bridge_api.cpp  # 示例实现（可直接运行）
+hook/build.dart             # Native Assets 构建 hook
+```
+
+选项：`--name <lib>`（省略时自动从 `pubspec.yaml` 读取）。
 
 ## 选项
 
@@ -47,14 +68,50 @@ dcb_gen generate dart_cpp_bridge.yaml
 `dart_cpp_bridge.yaml` 告诉工具解析哪些头文件、输出到哪里。示例：
 
 ```yaml
-library_name: demo
-headers:
-  - native/api/bridge_api.h
-  - native/api/counter.h
+dart_package: my_app
+cpp_root: native/
+
+scan:
+  - native/api/
+
 include_paths:
+  - native
   - native/api
-dart_output: lib/src/native_gen
-cpp_output: native/generated
+
+dart_output: lib/src/native_gen/
+cpp_wire_output: native/generated/
+
+# 可选：clang-format 候选路径（从上到下尝试，最后回退到 PATH）。
+clang_format:
+  - C:\Program Files\LLVM\bin
+
+std: c++20
+defines:
+  - BRIDGE_CODEGEN
+  - DART_CPP_BRIDGE_CODEGEN
+```
+
+| 字段 | 说明 |
+|------|------|
+| `dart_package` | Dart 包名（必须与 `pubspec.yaml` 的 name 一致） |
+| `cpp_root` | C++ 源码根目录 |
+| `scan` | 扫描注解头文件的目录 |
+| `include_paths` | 项目相对 include 路径（传给 clang） |
+| `dart_output` | 生成的 Dart 代码输出目录 |
+| `cpp_wire_output` | 生成的 C++ wire dispatch 输出目录 |
+| `clang_format` | 可选，clang-format 路径列表（目录或可执行文件） |
+| `std` | C++ 标准（默认 `c++20`） |
+| `defines` | 传给 clang 的预处理宏 |
+| `dart_code` | 可选，注入到数据类中的自定义 Dart 代码 |
+
+可通过 `dart_code` 向生成的数据类注入自定义代码（如自定义 `toString()`），
+存在时替换自动生成的 `toString()`：
+
+```yaml
+dart_code:
+  Rect: |
+    @override
+    String toString() => 'Rect[$topLeft -> $bottomRight]';
 ```
 
 ## 工作原理

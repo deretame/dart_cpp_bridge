@@ -11,27 +11,49 @@ Parses annotated C++ headers via libclang and generates Dart/C++ bridge code
 dart pub global activate dcb_gen_tool
 ```
 
-Requires Dart SDK >= 3.5.0. No Python, LLVM, or Rust installation needed —
+Requires Dart SDK >= 3.10.0. No Python, LLVM, or Rust installation needed —
 the tool downloads a pinned, hash-verified Python toolchain automatically.
 
 ## Quick start
 
 ```bash
-# 1. (First run only) Download the toolchain (~100 MB, cached for future use)
-dcb_gen bootstrap
-
-# 2. Generate bridge code for your project
+# 1. Create a Dart project with dart_cpp_bridge dependency, then:
 cd my_project
-dcb_gen generate dart_cpp_bridge.yaml
+dart pub get
+
+# 2. Scaffold the bridge project (config + CMake + hook + example API)
+dcb_gen init
+
+# 3. Run — the Native Assets hook builds C++ automatically
+dart run
 ```
+
+`dcb_gen init` generates a fully working example (header + implementation +
+CMake + hook). You can `dart run` immediately, then replace the example API
+with your own functions.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
+| `dcb_gen init` | Scaffold a new bridge project (config, CMake, hook, example API + impl) |
 | `dcb_gen generate <config.yaml>` | Run the full codegen pipeline (parse C++ → generate Dart + C++ wire) |
 | `dcb_gen bootstrap` | Download and verify the pinned Python + libclang toolchain |
 | `dcb_gen doctor` | Check environment health (Dart SDK, toolchain cache, CMake) |
+
+### `dcb_gen init` details
+
+Generates the following files (skips any that already exist):
+
+```
+dart_cpp_bridge.yaml        # codegen config
+native/CMakeLists.txt       # CMake build (auto-resolves dart_cpp_bridge package)
+native/api/bridge_api.h     # example C++ header with BRIDGE_* annotations
+native/api_impl/bridge_api.cpp  # example implementation (ready to run)
+hook/build.dart             # Native Assets build hook
+```
+
+Options: `--name <lib>` (auto-reads from `pubspec.yaml` if omitted).
 
 ## Options
 
@@ -48,15 +70,41 @@ The `dart_cpp_bridge.yaml` config file tells the tool which headers to parse
 and where to output generated code. Example:
 
 ```yaml
-library_name: demo
-headers:
-  - native/api/bridge_api.h
-  - native/api/counter.h
+dart_package: my_app
+cpp_root: native/
+
+scan:
+  - native/api/
+
 include_paths:
+  - native
   - native/api
-dart_output: lib/src/native_gen
-cpp_output: native/generated
+
+dart_output: lib/src/native_gen/
+cpp_wire_output: native/generated/
+
+# Optional: clang-format candidate paths (tried top-to-bottom, then PATH).
+clang_format:
+  - C:\Program Files\LLVM\bin
+
+std: c++20
+defines:
+  - BRIDGE_CODEGEN
+  - DART_CPP_BRIDGE_CODEGEN
 ```
+
+| Field | Description |
+|-------|-------------|
+| `dart_package` | Dart package name (must match `pubspec.yaml` name) |
+| `cpp_root` | Root directory for C++ sources |
+| `scan` | Directories to scan for annotated headers |
+| `include_paths` | Project-relative include paths for clang parsing |
+| `dart_output` | Output directory for generated Dart code |
+| `cpp_wire_output` | Output directory for generated C++ wire dispatch |
+| `clang_format` | Optional list of clang-format paths (dir or executable) |
+| `std` | C++ standard (default `c++20`) |
+| `defines` | Preprocessor defines passed to clang |
+| `dart_code` | Optional custom Dart code injected into data class bodies |
 
 Optionally inject custom Dart code into generated data class bodies (e.g. a
 custom `toString()`); when present for a type it replaces the auto-generated

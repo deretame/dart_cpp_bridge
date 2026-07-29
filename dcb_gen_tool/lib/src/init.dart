@@ -73,9 +73,11 @@ Future<int> cmdInit(
   final skipped = <String>[];
   final hasCmake = File(p.join(cwd, 'native', 'CMakeLists.txt')).existsSync();
   final hasApiDir = Directory(p.join(cwd, 'native', 'api')).existsSync();
+  final hasImplDir = Directory(p.join(cwd, 'native', 'api_impl')).existsSync();
   final hasHook = File(p.join(cwd, 'hook', 'build.dart')).existsSync();
   if (hasCmake) skipped.add('native/CMakeLists.txt');
   if (hasApiDir) skipped.add('native/api/');
+  if (hasImplDir) skipped.add('native/api_impl/');
   if (hasHook) skipped.add('hook/build.dart');
 
   log.info('Initializing dart_cpp_bridge project "$libName" in $cwd ...');
@@ -112,6 +114,14 @@ Future<int> cmdInit(
     log.info('  created native/api/bridge_api.h');
   }
 
+  if (!hasImplDir) {
+    final implDir = Directory(p.join(cwd, 'native', 'api_impl'));
+    implDir.createSync(recursive: true);
+    _writeFile(
+        p.join(implDir.path, 'bridge_api.cpp'), _implTemplate(libName));
+    log.info('  created native/api_impl/bridge_api.cpp');
+  }
+
   // --- Run generate ---
   log.info('Running initial codegen ...');
   final configPath = p.join(cwd, 'dart_cpp_bridge.yaml');
@@ -124,7 +134,7 @@ Future<int> cmdInit(
 
   log.info('Done! Next steps:');
   log.info('  1. Ensure dart_cpp_bridge is in pubspec.yaml && run "dart pub get"');
-  log.info('  2. Implement your functions in native/api/bridge_api.h');
+  log.info('  2. Edit native/api/bridge_api.h + native/api_impl/bridge_api.cpp');
   log.info('  3. Run "dcb_gen generate dart_cpp_bridge.yaml" after API changes');
   log.info('  4. Run "dart run" or "flutter run" (hook builds native lib)');
   if (hasCmake) {
@@ -229,8 +239,7 @@ endif()
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 add_library($libName
   generated/wire_dispatch.cpp
-  # Add your implementation files here:
-  # api_impl/bridge_api.cpp
+  api_impl/bridge_api.cpp
 )
 
 target_include_directories($libName
@@ -274,6 +283,30 @@ void main(List<String> args) async {
       libName: '$libName',
     ).run(input: input, output: output);
   });
+}
+''';
+
+String _implTemplate(String libName) => '''
+#include "bridge_api.h"
+
+#include <thread>
+#include <chrono>
+
+// ============================================================
+// Example implementation — replace with your own logic.
+// ============================================================
+
+std::int32_t add(std::int32_t a, std::int32_t b) {
+  return a + b;
+}
+
+std::string heavy_compute(std::int32_t input) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  return "computed: " + std::to_string(input * input);
+}
+
+async_simple::coro::Lazy<std::string> fetch_greeting(std::string name) {
+  co_return "Hello, " + name + "! (from coroutine)";
 }
 ''';
 
