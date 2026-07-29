@@ -6,8 +6,7 @@
 /// a bundled [CodeAsset], consumable at runtime via
 /// `@Native(assetId: 'package:<package>/<assetName>')`.
 ///
-/// Supported platforms: Windows, Linux, macOS, Android.
-/// iOS is a placeholder and throws [UnsupportedError] in [DcbCMakeBuilder.run].
+/// Supported platforms: Windows, Linux, macOS, Android, iOS.
 ///
 /// This library is intentionally separate from `package:dart_cpp_bridge`
 /// (the runtime FFI front-end): it depends on `package:hooks` /
@@ -340,12 +339,58 @@ final class MacosConfig extends DcbPlatformConfig {
   });
 }
 
-/// iOS configuration (placeholder; not yet supported by [DcbCMakeBuilder]).
+/// iOS configuration for [DcbCMakeBuilder].
+///
+/// iOS requires static linking (dynamic loading is forbidden by the OS).
+/// The builder reads `input.config.code.iOS.targetSdk` to distinguish
+/// device (`iphoneos`) from simulator (`iphonesimulator`) builds, and
+/// `input.config.code.iOS.targetVersion` for the deployment target.
+///
+/// The Xcode toolchain (AppleClang + iOS SDK) is used automatically via
+/// `-DCMAKE_SYSTEM_NAME=iOS`. No custom compiler selection is needed.
 final class IosConfig extends DcbPlatformConfig {
   @override
   final String cmake;
 
-  const IosConfig({this.cmake = 'cmake'});
+  /// CMake generator selection.
+  ///
+  /// - [CmakeGenerator.ninja]: faster builds, requires `ninja` on PATH.
+  /// - [CmakeGenerator.makefiles]: Unix Makefiles, always available.
+  /// - `null`: let CMake auto-select.
+  final CmakeGenerator? generator;
+
+  /// Explicit path to the generator executable.
+  ///
+  /// For [CmakeGenerator.ninja]: path to the `ninja` binary when it is not
+  /// on PATH (e.g. `/opt/homebrew/bin/ninja`).
+  /// When `null`, resolved via PATH.
+  final String? generatorPath;
+
+  /// Xcode developer directory path.
+  ///
+  /// When `null` (default), uses the system default from `xcode-select -p`.
+  /// Passed as `-DCMAKE_DEVELOPER_DIRECTORY=<path>` (via
+  /// `DEVELOPER_DIR` environment variable).
+  final String? developerDir;
+
+  /// Minimum iOS deployment target override (e.g. `'15.0'`).
+  ///
+  /// When `null` (default), the value is read from
+  /// `input.config.code.iOS.targetVersion` provided by the hooks system.
+  /// Set this only to override Flutter's default minimum.
+  final String? deploymentTarget;
+
+  /// Extra definitions passed verbatim to the CMake configure step.
+  final List<String> extraDefines;
+
+  const IosConfig({
+    this.cmake = 'cmake',
+    this.generator,
+    this.generatorPath,
+    this.developerDir,
+    this.deploymentTarget,
+    this.extraDefines = const [],
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -521,8 +566,16 @@ final class DcbCMakeBuilder {
       case MacosConfig cfg:
         cmake = cfg.cmake;
         configureArgs.addAll(_resolveMacosArgs(cfg, buildType));
-      case IosConfig():
-        throw UnsupportedError('DcbCMakeBuilder: iOS is not supported yet.');
+      case IosConfig cfg:
+        cmake = cfg.cmake;
+        configureArgs.addAll(
+          _resolveIosArgs(cfg, buildType, input.config.code),
+        );
+        // DEVELOPER_DIR environment variable for xcrun.
+        if (cfg.developerDir != null) {
+          processEnvironment = Map<String, String>.from(Platform.environment);
+          processEnvironment['DEVELOPER_DIR'] = cfg.developerDir!;
+        }
     }
 
     // 1. Configure.
@@ -644,6 +697,100 @@ final class DcbCMakeBuilder {
     args.addAll(cfg.extraDefines);
 
     return args;
+  }
+
+  // -------------------------------------------------------------------------
+  // iOS resolution
+  // -------------------------------------------------------------------------
+
+  /// Resolves iOS-specific configure arguments.
+  ///
+  /// Uses `codeConfig.iOS.targetSdk` to select the sysroot (device vs
+  /// simulator) and `codeConfig.iOS.targetVersion` for the deployment target.
+  List<String> _resolveIosArgs(
+    IosConfig cfg,
+    String buildType,
+    CodeConfig codeConfig,
+  ) {
+    final args = <String>[];
+
+    // Cross-compilation: tell CMake we're targeting iOS.
+    args.add('-DCMAKE_SYSTEM_NAME=iOS');
+
+    // Single-config generator: build type is set at configure time.
+    args.add('-DCMAKE_BUILD_TYPE=$buildType');
+
+    // Position-independent code (required for static libs linked into dylibs).
+    args.add('-DCMAKE_POSITION_INDEPENDENT_CODE=ON');
+
+    // Sysroot: device vs simulator.
+    final iosConfig = codeConfig.iOS;
+    final sysroot = switch (iosConfig.targetSdk) {
+      IOSSdk.iPhoneOS => 'iphoneos',
+      IOSSdk.iPhoneSimulator => 'iphonesimulator',
+      _ => 'iphoneos',
+    };
+    args.add('-DCMAKE_OSX_SYSROOT=$sysroot');
+
+    // Architecture: derived from the hooks target architecture.
+    final arch = switch (codeConfig.targetArchitecture) {
+      Architecture.arm64 => 'arm64',
+      Architecture.x64 => 'x86_64',
+      final a => throw DcbCMakeException(
+          'Unsupported iOS architecture: $a. '
+          'iOS supports arm64 (device/simulator) and x86_64 (simulator).',
+        ),
+    };
+    args.add('-DCMAKE_OSX_ARCHITECTURES=$arch');
+
+    // Deployment target: explicit override > hooks-provided version.
+    // Floor at 14.0: async_simple uses C++20 std::atomic::wait/notify
+    // which requires iOS 14.0+ (simulator) / iOS 14.0+ (device).
+    final rawVersion = cfg.deploymentTarget ??
+        '${iosConfig.targetVersion}.0';
+    final deploymentTarget = _enforceMinimumIosVersion(rawVersion, 14);
+    args.add('-DCMAKE_OSX_DEPLOYMENT_TARGET=$deploymentTarget');
+
+    // Generator selection.
+    switch (cfg.generator) {
+      case CmakeGenerator.ninja:
+        args.addAll(['-G', 'Ninja']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.makefiles:
+        args.addAll(['-G', 'Unix Makefiles']);
+        if (cfg.generatorPath != null) {
+          args.add('-DCMAKE_MAKE_PROGRAM=${cfg.generatorPath}');
+        }
+
+      case CmakeGenerator.msbuild:
+        throw DcbCMakeException(
+          'CmakeGenerator.msbuild is not valid on iOS. '
+          'Use CmakeGenerator.ninja or CmakeGenerator.makefiles.',
+        );
+
+      case null:
+        // Let CMake auto-select.
+        break;
+    }
+
+    // User-supplied extra defines.
+    args.addAll(cfg.extraDefines);
+
+    return args;
+  }
+
+  /// Enforces a minimum iOS deployment target version.
+  ///
+  /// Parses [version] (e.g. `'13.0'`) and returns it unchanged if it is
+  /// already >= [minMajor]. Otherwise returns `'$minMajor.0'`.
+  static String _enforceMinimumIosVersion(String version, int minMajor) {
+    final parts = version.split('.');
+    final major = int.tryParse(parts.first) ?? 0;
+    if (major >= minMajor) return version;
+    return '$minMajor.0';
   }
 
   // -------------------------------------------------------------------------

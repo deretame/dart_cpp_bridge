@@ -14,6 +14,7 @@ void main(List<String> args) async {
       OS.windows => WindowsConfig(cmake: cmake),
       OS.linux => LinuxConfig(cmake: cmake),
       OS.macOS => MacosConfig(cmake: cmake),
+      OS.iOS => IosConfig(cmake: cmake),
       OS.android => AndroidConfig(
           cmake: cmake,
           ndkPath: Platform.environment['ANDROID_NDK_HOME'] ??

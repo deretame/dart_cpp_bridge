@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-28
+> 更新日期：2026-07-29
 
 ---
 
@@ -498,4 +498,66 @@ ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() 
 - **MSVC + 协程 + lambda 捕获 = 危险组合**。在 MSVC 上始终使用命名协程函数 + 参数传递。
 - codegen 生成的代码已经使用 static 协程函数模式（早期发现的 C2660 bug 促使采用此模式），因此不受影响。
 - 此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。只是 ForeignExecutor 场景更容易暴露（跨线程调度）。
+
+---
+
+## 11. 【待解决】iOS/Android 集成测试中 @Native asset ID 无法解析
+
+### 11.1 现象
+
+在 iOS simulator 上运行集成测试时，`DcbLib.init()` 抛出异常：
+
+```text
+Invalid argument(s): Couldn't resolve native function 'dcb_session_finalizer_ptr'
+in 'package:dart_cpp_bridge/dart_cpp_bridge.dart' :
+No asset with id 'package:dart_cpp_bridge/dart_cpp_bridge.dart' found.
+Available native assets: package:codegen_demo/codegen_demo.dart.
+```
+
+构建（`flutter build ios --simulator`）本身成功，但运行时 FFI 绑定解析失败。
+
+### 11.2 根因
+
+`dart_cpp_bridge` 包的 FFI 绑定层（`dart/lib/src/bindings.dart`）硬编码了 asset ID：
+
+```dart
+const _kAssetId = 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+
+@Native<_InitDartApiC>(assetId: _kAssetId, symbol: 'dcb_init_dart_api')
+external int dcbInitDartApi(...);
+```
+
+但 hooks 系统**要求** code asset 必须注册在构建包自己的命名空间下：
+
+```text
+Code asset "package:dart_cpp_bridge/dart_cpp_bridge.dart"
+does not start with "package:codegen_demo/".
+```
+
+因此 `codegen_demo` 的 hook 只能注册 `package:codegen_demo/codegen_demo.dart`，而 `@Native` 注解期望的是 `package:dart_cpp_bridge/dart_cpp_bridge.dart`，两者不匹配。
+
+### 11.3 影响范围
+
+| 场景 | 是否受影响 |
+|------|----------|
+| macOS/Linux/Windows `flutter test`（手动 `DynamicLibrary.open`） | ✓ 不受影响 |
+| iOS/Android 集成测试（@Native code asset 路径） | ✗ 受影响 |
+| `flutter build ios --simulator`（仅编译打包） | ✓ 不受影响 |
+
+### 11.4 计划修复方向
+
+参考设计文档 `docs/ios_static_linking_design.md` §8 第 4 步：
+
+1. **codegen 生成 @Native externals**：生成的 Dart 绑定使用用户包的 asset ID
+   （`package:codegen_demo/codegen_demo.dart`），而非 `dart_cpp_bridge` 的。
+2. **或：dart_cpp_bridge 提供自己的 hook**：由 `dart_cpp_bridge` 包自身注册 asset，
+   下游包的 hook 只负责编译，asset 注册由运行时包的 hook 完成。
+3. **或：bindings 支持可配置 asset ID**：`DcbLib.init()` 接受 `assetId` 参数，
+   运行时动态解析。
+
+### 11.5 临时绕过
+
+桌面平台（macOS/Linux/Windows）的单元测试使用 `DynamicLibrary.open()` 路径，
+不经过 @Native asset 解析，因此不受影响。iOS/Android 的端到端验证需等待
+上述修复方向之一落地。
 
