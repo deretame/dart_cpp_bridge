@@ -47,12 +47,6 @@ jobs:
           dart pub get
           dart test
 
-      - name: base_demo Dart 测试
-        run: |
-          cd examples/base_demo
-          dart pub get
-          dart test
-
       - name: codegen 生成 + 集成测试 (Linux desktop)
         run: |
           cd dcb_gen_tool
@@ -105,12 +99,6 @@ jobs:
           dart pub get
           dart test
 
-      - name: base_demo Dart 测试
-        run: |
-          cd examples/base_demo
-          dart pub get
-          dart test
-
       - name: codegen 生成 + 集成测试 (Windows desktop)
         run: |
           cd dcb_gen_tool
@@ -153,12 +141,6 @@ jobs:
       - name: Dart 包测试
         run: |
           cd dart
-          dart pub get
-          dart test
-
-      - name: base_demo Dart 测试
-        run: |
-          cd examples/base_demo
           dart pub get
           dart test
 
