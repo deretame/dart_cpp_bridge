@@ -1081,4 +1081,186 @@ void main() {
       expect(result, startsWith('ERROR:'));
     });
   });
+
+  // ─── Stress / edge-case tests ─────────────────────────────────────────────
+
+  group('stress: concurrent async calls', () {
+    testWidgets('100 concurrent add() calls', (tester) async {
+      final futures = List.generate(
+        100,
+        (i) => add(a: i, b: i * 2),
+      );
+      final results = await Future.wait(futures);
+      for (var i = 0; i < 100; i++) {
+        expect(results[i], i + i * 2);
+      }
+    });
+
+    testWidgets('50 concurrent processMessage via workers', (tester) async {
+      await startWorkers();
+      try {
+        final futures = List.generate(
+          50,
+          (i) => processMessage(message: 'm$i'),
+        );
+        final results = await Future.wait(futures);
+        for (var i = 0; i < 50; i++) {
+          expect(results[i], '[A:m$i]');
+        }
+      } finally {
+        await stopWorkers();
+      }
+    });
+
+    testWidgets('50 concurrent pipeline (A→B)', (tester) async {
+      await startWorkers();
+      try {
+        final futures = List.generate(
+          50,
+          (i) => pipeline(message: 'p$i'),
+        );
+        final results = await Future.wait(futures);
+        for (var i = 0; i < 50; i++) {
+          expect(results[i], 'B[A{p$i}]');
+        }
+      } finally {
+        await stopWorkers();
+      }
+    });
+  });
+
+  group('stress: large payload', () {
+    testWidgets('1MB string round-trip via processMessage', (tester) async {
+      await startWorkers();
+      try {
+        final big = 'x' * (1024 * 1024); // 1MB
+        final result = await processMessage(message: big);
+        expect(result.length, big.length + 4); // "[A:" + big + "]"
+        expect(result, '[A:$big]');
+      } finally {
+        await stopWorkers();
+      }
+    });
+
+    testWidgets('large list round-trip via echoList', (tester) async {
+      final big = List.generate(100000, (i) => i);
+      final result = await echoList(values: big);
+      expect(result.length, 100000);
+      expect(result.first, 0);
+      expect(result.last, 99999);
+    });
+  });
+
+  group('stress: stream cancel + resubscribe', () {
+    testWidgets('cancel tickStream early then resubscribe', (tester) async {
+      // First subscription: cancel after 2 items
+      final items1 = <int>[];
+      final sub1 = tickStream(count: 100, intervalMs: 5).listen(items1.add);
+      await Future.delayed(Duration(milliseconds: 80));
+      await sub1.cancel();
+      expect(items1.length, lessThan(100));
+      expect(items1.length, greaterThan(0));
+
+      // Second subscription: should work fine
+      final items2 = await tickStream(count: 5, intervalMs: 5).toList();
+      expect(items2, [0, 1, 2, 3, 4]);
+    });
+
+    testWidgets('cancel workerStream early then resubscribe', (tester) async {
+      await startWorkers();
+      try {
+        // Cancel early
+        final items1 = <String>[];
+        final sub = workerStream(count: 100, intervalMs: 10).listen(items1.add);
+        await Future.delayed(Duration(milliseconds: 100));
+        await sub.cancel();
+        expect(items1.length, lessThan(100));
+
+        // Resubscribe: full run
+        final items2 = await workerStream(count: 3, intervalMs: 10).toList();
+        expect(items2.length, 3);
+      } finally {
+        await stopWorkers();
+      }
+    });
+
+    testWidgets('multiple streams sequentially', (tester) async {
+      for (var round = 0; round < 5; round++) {
+        final items = await tickStream(count: 3, intervalMs: 1).toList();
+        expect(items, [0, 1, 2], reason: 'round $round');
+      }
+    });
+  });
+
+  group('stress: concurrent DartFn callbacks', () {
+    testWidgets('10 concurrent DartFn from Worker A', (tester) async {
+      await startWorkers();
+      try {
+        final futures = List.generate(
+          10,
+          (i) => callDartFromWorkerA(
+            callback: (s) async => 'cb$i:$s',
+            input: 'in$i',
+          ),
+        );
+        final results = await Future.wait(futures);
+        for (var i = 0; i < 10; i++) {
+          expect(results[i], 'cb$i:in$i');
+        }
+      } finally {
+        await stopWorkers();
+      }
+    });
+
+    testWidgets('10 concurrent DartFn split across A and B', (tester) async {
+      await startWorkers();
+      try {
+        final futuresA = List.generate(
+          5,
+          (i) => callDartFromWorkerA(
+            callback: (s) async => 'A$i:$s',
+            input: 'a$i',
+          ),
+        );
+        final futuresB = List.generate(
+          5,
+          (i) => callDartFromWorkerB(
+            callback: (s) async => 'B$i:$s',
+            input: 'b$i',
+          ),
+        );
+        final results = await Future.wait([...futuresA, ...futuresB]);
+        for (var i = 0; i < 5; i++) {
+          expect(results[i], 'A$i:a$i');
+        }
+        for (var i = 0; i < 5; i++) {
+          expect(results[5 + i], 'B$i:b$i');
+        }
+      } finally {
+        await stopWorkers();
+      }
+    });
+
+    testWidgets('DartFn with async delay under concurrency', (tester) async {
+      await startWorkers();
+      try {
+        final futures = List.generate(
+          10,
+          (i) => callDartFromWorkerA(
+            callback: (s) async {
+              await Future.delayed(Duration(milliseconds: 10));
+              return 'delayed$i:$s';
+            },
+            input: 'x$i',
+          ),
+        );
+        final results = await Future.wait(futures);
+        for (var i = 0; i < 10; i++) {
+          expect(results[i], 'delayed$i:x$i');
+        }
+      } finally {
+        await stopWorkers();
+      }
+    });
+  });
 }
