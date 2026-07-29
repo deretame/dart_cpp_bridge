@@ -271,7 +271,24 @@ void _extractTarGz(File tarGzFile, String destDir) {
     if (!p.isWithin(destDir, outPath) && p.normalize(outPath) != destDir) {
       continue;
     }
-    if (entry.isFile) {
+    if (entry.isSymbolicLink) {
+      // Handle symlinks (e.g. python3 -> python3.13).
+      // Must check before isFile because symlinks also report isFile=true.
+      final link = Link(outPath);
+      link.parent.createSync(recursive: true);
+      final target = entry.symbolicLink;
+      if (target != null && target.isNotEmpty) {
+        try {
+          link.createSync(target);
+        } catch (_) {
+          // If symlink creation fails, copy the target file content.
+          final targetPath = p.join(p.dirname(outPath), target);
+          if (File(targetPath).existsSync()) {
+            File(outPath).writeAsBytesSync(File(targetPath).readAsBytesSync());
+          }
+        }
+      }
+    } else if (entry.isFile) {
       final outFile = File(outPath);
       outFile.parent.createSync(recursive: true);
       outFile.writeAsBytesSync(entry.content as List<int>);

@@ -63,6 +63,14 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> test_cbridge_invoke(
     dcb::DartFn<std::string(std::string)> callback, std::string input);
 
+/// 测试完全纯 C 路径的 dcb_invoke_dart_fn：
+/// 回调内使用 dcb_reader 解码 + dcb_writer 编码 + dcb_async_complete 唤醒协程，
+/// 不使用任何 C++ 类型（无 std::promise / std::thread / std::string）。
+/// 验证文档 cbridge.md 第三部分描述的完整链路。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_invoke_pure_c(
+    dcb::DartFn<std::string(std::string)> callback, std::string input);
+
 /// 测试跨运行时 channel 服务模式：
 /// uv worker 运行长期 mpsc 服务循环，bridge 侧发送多个请求并等待回复。
 BRIDGE_ASYNC

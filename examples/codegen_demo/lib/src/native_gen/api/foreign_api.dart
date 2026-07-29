@@ -28,6 +28,11 @@ Future<String> testCbridgeAsync() => BridgeApiImpl.instance.testCbridgeAsync();
 Future<String> testChannelServiceConcurrent() =>
     BridgeApiImpl.instance.testChannelServiceConcurrent();
 
+Future<String> testCbridgeInvokePureC({
+  required Future<String> Function(String) callback,
+  required String input,
+}) => BridgeApiImpl.instance.testCbridgeInvokePureC(callback, input);
+
 Future<String> testCbridgeAsyncFail() =>
     BridgeApiImpl.instance.testCbridgeAsyncFail();
 

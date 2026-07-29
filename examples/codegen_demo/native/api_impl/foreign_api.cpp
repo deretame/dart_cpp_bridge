@@ -15,6 +15,8 @@
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -312,6 +314,99 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
   });
   worker.join();
   co_return result;
+}
+
+// ─── 纯 C 路径的 dcb_invoke_dart_fn 测试 ───────────────────────────────
+// 完全按照 cbridge.md 第三部分的模式：
+//   C++ 协程提取 ID → dcb_async_create → 纯 C 函数调 dcb_invoke_dart_fn
+//   → 纯 C 回调解码/编码/complete → 协程恢复
+
+// 纯 C 上下文结构体（只用 malloc/free）
+struct cbridge_pure_c_ctx {
+  uint64_t op_id;
+};
+
+// 纯 C 回调：Dart 执行完成后由 bridge io 线程触发。
+// 内部不使用任何 C++ 类型，仅用 dcb_codec + dcb_async_complete/fail。
+static void on_dart_reply_pure_c(void* userdata, int ok, const uint8_t* data,
+                                 uint32_t data_len, const char* error) {
+  struct cbridge_pure_c_ctx* ctx = (struct cbridge_pure_c_ctx*)userdata;
+
+  if (ok) {
+    // 解码 Dart 返回的字符串（纯 C codec API）
+    dcb_reader r;
+    dcb_reader_init(&r, data, data_len);
+    uint32_t slen = 0;
+    const char* s = dcb_read_str(&r, &slen);
+
+    // C 层处理：拼接 "C:<dart结果>"
+    char result[512];
+    int n = snprintf(result, sizeof(result), "C:%.*s", (int)slen, s ? s : "");
+    if (n < 0) n = 0;
+    if ((size_t)n >= sizeof(result)) n = (int)sizeof(result) - 1;
+
+    // 编码结果，唤醒 C++ 协程
+    dcb_writer w;
+    dcb_writer_init(&w);
+    dcb_write_str(&w, result);
+    dcb_async_complete(ctx->op_id, w.data, w.len);
+    dcb_writer_free(&w);
+  } else {
+    // Dart 抛了异常，转发给 C++ 协程
+    dcb_async_fail(ctx->op_id, error ? error : "unknown dart error");
+  }
+
+  free(ctx);
+}
+
+// 纯 C 函数：编码参数并发起 dcb_invoke_dart_fn 调用。
+// 可从任意线程调用（这里直接在 io 线程调用，因为 dcb_invoke_dart_fn 本身非阻塞）。
+static void c_invoke_dart(uint64_t session_id, uint64_t fn_id,
+                          uint64_t op_id, const char* input) {
+  // 编码要传给 Dart 回调的参数
+  dcb_writer w;
+  dcb_writer_init(&w);
+  dcb_write_str(&w, input);
+
+  // 保存上下文（回调时需要 op_id）
+  struct cbridge_pure_c_ctx* ctx =
+      (struct cbridge_pure_c_ctx*)malloc(sizeof(struct cbridge_pure_c_ctx));
+  ctx->op_id = op_id;
+
+  // 发起调用（非阻塞，立即返回）
+  int rc = dcb_invoke_dart_fn(session_id, fn_id,
+                              w.data, w.len,
+                              on_dart_reply_pure_c, ctx);
+  dcb_writer_free(&w);
+
+  if (rc != 0) {
+    dcb_async_fail(op_id, "invoke failed: invalid session");
+    free(ctx);
+  }
+}
+
+async_simple::coro::Lazy<std::string> test_cbridge_invoke_pure_c(
+    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+  // 1. 提取纯 C API 需要的 ID
+  auto session = callback.session();
+  if (!session) {
+    throw std::runtime_error("test_cbridge_invoke_pure_c: empty callback");
+  }
+  uint64_t session_id = dcb::SessionRegistry::instance().find_id(session);
+  uint64_t fn_id = callback.fn_id();
+
+  // 2. 创建异步操作（C 层完成后用来唤醒本协程）
+  uint64_t op_id = dcb_async_create();
+
+  // 3. 调用纯 C 函数，C 层在回调中完成解码/编码/唤醒
+  c_invoke_dart(session_id, fn_id, op_id, input.c_str());
+
+  // 4. 挂起，等 C 层完成（不占 io 线程）
+  auto payload = co_await dcb::async_wait(op_id);
+
+  // 5. 解码 C 层返回的最终结果
+  dcb::ByteReader r(payload.data(), payload.size());
+  co_return r.str();
 }
 
 // ─── channel 服务模式测试 ───────────────────────────────────────────────

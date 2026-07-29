@@ -72,6 +72,7 @@ add_library(dcb_codegen_demo
   native/api_impl/bridge_api.cpp
   native/api_impl/counter.cpp
   native/api_impl/foreign_api.cpp
+  native/api_impl/multi_runtime_api.cpp
 )
 
 # --- Include 路径 ---

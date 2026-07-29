@@ -13,6 +13,7 @@
 #include "api/bridge_api.h"
 #include "api/counter.h"
 #include "api/foreign_api.h"
+#include "api/multi_runtime_api.h"
 
 #include <async_simple/coro/Lazy.h>
 
@@ -120,6 +121,34 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 36798377: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto input = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, callback, input = std::move(input)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::call_dart_from_worker_a(callback, input);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "call_dart_from_worker_a", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "call_dart_from_worker_a", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 66895156: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto scores = r.map<std::string, std::int32_t>([&]() { return r.str(); }, [&]() { return r.i32(); });
@@ -220,6 +249,46 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 post_err(session, gen, req, method, "tuple_echo", e.what());
               } catch (...) {
                 post_err(session, gen, req, method, "tuple_echo", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 332105081: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto message = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, message = std::move(message)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::fan_out(message);
+                ByteWriter w;
+                w.pair(out, [&](const auto& v) { w.str(v); }, [&](const auto& v) { w.str(v); });
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "fan_out", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "fan_out", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 350574845: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::stop_workers();
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "stop_workers", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "stop_workers", "unknown");
               }
               co_return;
             });
@@ -501,6 +570,46 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 686903527: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto payload = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, payload = std::move(payload)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::ping_worker(payload);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "ping_worker", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "ping_worker", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 764074457: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto message = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, message = std::move(message)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::pipeline(message);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "pipeline", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "pipeline", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 826193512: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto value = r.i64();
@@ -555,6 +664,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 post_err(session, gen, req, method, "echo_time", e.what());
               } catch (...) {
                 post_err(session, gen, req, method, "echo_time", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 909664976: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::start_workers();
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "start_workers", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "start_workers", "unknown");
               }
               co_return;
             });
@@ -653,6 +782,34 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
             });
           }
         });
+        break;
+      }
+
+      case 1082486080: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto input = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, callback, input = std::move(input)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::test_cbridge_invoke_pure_c(callback, input);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "test_cbridge_invoke_pure_c", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "test_cbridge_invoke_pure_c", "unknown");
+              }
+              co_return;
+            });
         break;
       }
 
@@ -786,6 +943,34 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1439916846: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
+    [](ByteWriter& w, const std::string& a0) {
+        w.str(a0);
+    },
+    [](const std::uint8_t* d, std::size_t n) {
+      ByteReader r(d, n);
+        return r.str();
+    });
+        const auto input = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, callback, input = std::move(input)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::call_dart_from_worker_b(callback, input);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "call_dart_from_worker_b", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "call_dart_from_worker_b", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1444503764: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto n = r.i32();
@@ -803,6 +988,19 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
               }
               co_return;
             });
+        break;
+      }
+
+      case 1504378116: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto count = r.i32();
+        const auto interval_ms = r.i32();
+        auto sink = dcb::StreamSink<std::string>(session.get(), req, gen, method, [](std::string v) {
+          ByteWriter w;
+          w.str(v);
+          return w.raw();
+        });
+        ::demo::api::worker_stream(std::move(sink), count, interval_ms);
         break;
       }
 
@@ -985,6 +1183,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
                 post_err(session, gen, req, method, "sum_set", e.what());
               } catch (...) {
                 post_err(session, gen, req, method, "sum_set", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
+      case 1886753811: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        const auto message = r.str();
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method, message = std::move(message)]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::process_message(message);
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "process_message", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "process_message", "unknown");
               }
               co_return;
             });
