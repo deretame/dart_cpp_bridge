@@ -373,7 +373,7 @@ static Lazy<> my_coro(DartFn<...> cb, std::string input) {
 ```
 :::
 
-此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。详见 [已知问题 §10](/reference/known-issues/)。
+此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。详见 [已知问题 §10](../reference/known-issues/)。
 
 ## 关键设计约束
 
@@ -393,4 +393,4 @@ static Lazy<> my_coro(DartFn<...> cb, std::string input) {
 
 ## 不想用 C++ 协程？
 
-如果你的代码是纯 C，或者不想引入 async-simple / asio 依赖，可以使用 [纯 C 桥接 API](/guides/cbridge/)——零依赖的 callback 风格接口，从任意线程调用 Dart 函数或等待外部异步操作。
+如果你的代码是纯 C，或者不想引入 async-simple / asio 依赖，可以使用 [纯 C 桥接 API](cbridge/)——零依赖的 callback 风格接口，从任意线程调用 Dart 函数或等待外部异步操作。

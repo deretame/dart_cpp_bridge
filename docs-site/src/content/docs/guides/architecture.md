@@ -74,6 +74,6 @@ Dart ← streamEnd frame ← port
 
 bridge 支持将非 asio 事件循环（libuv、glib 等）通过 `ForeignExecutor` 适配层接入协程系统，实现跨运行时非阻塞通信和 Dart 回调调用。
 
-详见 [外部运行时集成](/guides/foreign-runtime/)。
+详见 [外部运行时集成](foreign-runtime/)。
 
-对于纯 C 代码或不依赖 async-simple 的场景，提供 [纯 C 桥接 API](/guides/cbridge/)（callback 风格，零 C++ 依赖）。
+对于纯 C 代码或不依赖 async-simple 的场景，提供 [纯 C 桥接 API](cbridge/)（callback 风格，零 C++ 依赖）。
