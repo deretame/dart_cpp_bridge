@@ -177,6 +177,53 @@ jobs:
           flutter test
 
   # ══════════════════════════════════════════
+  # iOS (simulator)
+  # ══════════════════════════════════════════
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 设置 Xcode
+        uses: maxim-lobanov/setup-xcode@v1.7.0
+        with:
+          xcode-version: latest-stable
+
+      - name: 设置 Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          channel: stable
+
+      - name: 获取 Dart API DL 头文件
+        run: cmake -P dart/fetch_dart_api.cmake
+
+      - name: codegen 生成
+        run: |
+          cd dcb_gen_tool
+          dart pub get
+          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+
+      - name: 下载 iOS 模拟器运行时
+        run: |
+          # 确保模拟器运行时与 Xcode SDK 版本匹配
+          xcodebuild -downloadPlatform iOS || true
+
+      - name: 启动 iOS 模拟器
+        run: |
+          xcrun simctl list devices available
+          # 使用第一个可用的 iPhone 模拟器
+          DEVICE=$(xcrun simctl list devices available | grep -o 'iPhone [^)]*' | head -1)
+          echo "Using device: $DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          echo "DEVICE_NAME=$DEVICE" >> $GITHUB_ENV
+
+      - name: 运行集成测试
+        working-directory: examples/codegen_demo
+        run: |
+          flutter pub get
+          flutter test integration_test -d "$DEVICE_NAME"
+
+  # ══════════════════════════════════════════
   # Android (emulator)
   # ══════════════════════════════════════════
   build-android:
