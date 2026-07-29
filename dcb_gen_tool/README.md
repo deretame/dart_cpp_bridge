@@ -85,7 +85,7 @@ dart_code:
 
 3. **Generate**: Emits:
    - **Dart API layer** (`api/*.dart`) — thin user-facing functions/classes
-   - **Dart impl layer** (`gcm_generated.dart`) — codec, wire dispatch, lifecycle
+   - **Dart impl layer** (`dcb_generated.dart`) — codec, wire dispatch, lifecycle
    - **C++ wire dispatch** (`wire_dispatch.hpp/.cpp`) — frame routing, scheduling
    - **IR** (`ir.json`) — intermediate representation for debugging
 

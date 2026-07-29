@@ -3,7 +3,7 @@
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
 import '../dcb_bindings.dart';
-import '../gcm_generated.dart';
+import '../dcb_generated.dart';
 
 /// dart_cpp_bridge management class.
 ///

@@ -3,9 +3,9 @@
 
 import 'dart:async';
 
-import '../gcm_generated.dart';
+import '../dcb_generated.dart';
 
-export '../gcm_generated.dart' show OrderStatus;
+export '../dcb_generated.dart' show OrderStatus;
 
 // ═════════════════════════════════════════════
 // Data classes

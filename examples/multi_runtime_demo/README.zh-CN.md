@@ -301,7 +301,7 @@ multi_runtime_demo/
 ├── lib/
 │   ├── multi_runtime_demo.dart    # 包入口（export 生成代码）
 │   └── src/native_gen/            # ← codegen 自动生成的 Dart 绑定
-│       ├── gcm_generated.dart     #   BridgeApiImpl 单例
+│       ├── dcb_generated.dart     #   BridgeApiImpl 单例
 │       └── api/
 │           ├── init.dart          #   DcbLib 初始化类
 │           └── multi_runtime_api.dart  # 顶层函数 API

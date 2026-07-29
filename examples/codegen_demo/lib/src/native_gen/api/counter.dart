@@ -5,7 +5,7 @@ import 'dart:async';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
-import '../gcm_generated.dart';
+import '../dcb_generated.dart';
 
 // ═════════════════════════════════════════════
 // Functions

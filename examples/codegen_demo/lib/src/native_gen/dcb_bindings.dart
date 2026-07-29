@@ -6,12 +6,6 @@ import 'dart:ffi';
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 import 'package:ffi/ffi.dart';
 
-// ---------------------------------------------------------------------------
-// @Native externals: resolved from the bundled code asset at runtime.
-// assetId matches hook/build.dart registration:
-//   package:codegen_demo/src/native_gen/dcb_bindings.dart
-// ---------------------------------------------------------------------------
-
 const _kAssetId = 'package:codegen_demo/src/native_gen/dcb_bindings.dart';
 
 @Native<InitDartApiC>(assetId: _kAssetId, symbol: 'dcb_init_dart_api')
@@ -60,7 +54,6 @@ external void _dcbSetVerboseErrors(int enabled);
 @Native<SetPoolThreadsC>(assetId: _kAssetId, symbol: 'dcb_set_pool_threads')
 external void _dcbSetPoolThreads(int n);
 
-// Pointer-returning helpers for NativeFinalizer.
 @Native<Pointer<Void> Function()>(
   assetId: _kAssetId,
   symbol: 'dcb_session_finalizer_ptr',
@@ -74,8 +67,6 @@ external Pointer<Void> _dcbSessionFinalizerPtr();
 external Pointer<Void> _dcbDropObjectPtr();
 
 /// Creates the [NativeBindings] for this package's native library.
-///
-/// Called once by [DcbLib.init].
 NativeBindings createDcbBindings() {
   return NativeBindings(
     initDartApi: _dcbInitDartApi,

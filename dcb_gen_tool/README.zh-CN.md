@@ -72,7 +72,7 @@ cpp_output: native/generated
 
 3. **生成**：输出：
    - **Dart API 层**（`api/*.dart`）—— 面向用户的薄转发函数/类
-   - **Dart Impl 层**（`gcm_generated.dart`）—— 编解码、wire 调度、生命周期
+   - **Dart Impl 层**（`dcb_generated.dart`）—— 编解码、wire 调度、生命周期
    - **C++ wire dispatch**（`wire_dispatch.hpp/.cpp`）—— 帧路由、调度
    - **IR**（`ir.json`）—— 中间表示，用于调试
 

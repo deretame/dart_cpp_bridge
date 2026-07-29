@@ -301,7 +301,7 @@ multi_runtime_demo/
 ├── lib/
 │   ├── multi_runtime_demo.dart    # package entry (exports generated code)
 │   └── src/native_gen/            # ← codegen auto-generated Dart bindings
-│       ├── gcm_generated.dart     #   BridgeApiImpl singleton
+│       ├── dcb_generated.dart     #   BridgeApiImpl singleton
 │       └── api/
 │           ├── init.dart          #   DcbLib initialization class
 │           └── multi_runtime_api.dart  # top-level function API
