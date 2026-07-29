@@ -1249,6 +1249,26 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
 
+      case 1924401821: {
+        ByteReader r(frame.payload.data(), frame.payload.size());
+        
+        Runtime::instance().spawn_on_asio(
+            [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+              try {
+                auto out = co_await ::demo::api::test_cbridge_pure_c_cancel();
+                ByteWriter w;
+                w.str(out);
+                post_ok(session, gen, req, method, w.raw());
+              } catch (const std::exception& e) {
+                post_err(session, gen, req, method, "test_cbridge_pure_c_cancel", e.what());
+              } catch (...) {
+                post_err(session, gen, req, method, "test_cbridge_pure_c_cancel", "unknown");
+              }
+              co_return;
+            });
+        break;
+      }
+
       case 1946724813: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto count = r.i32();

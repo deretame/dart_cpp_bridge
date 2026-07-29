@@ -24,6 +24,9 @@
 #include <thread>
 #include <utility>
 
+#include <pthread.h>
+#include <time.h>
+
 namespace demo::api {
 
 namespace {
@@ -407,6 +410,48 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke_pure_c(
   // 5. 解码 C 层返回的最终结果
   dcb::ByteReader r(payload.data(), payload.size());
   co_return r.str();
+}
+
+// ─── 纯 C 路径的 dcb_async_cancel 测试 ────────────────────────────────
+// 纯 C 函数：延迟后取消 op（模拟外部 C 层取消异步操作）。
+// 使用 pthread 而非 std::thread，保持纯 C 风格。
+struct cancel_ctx {
+  uint64_t op_id;
+};
+
+static void* c_cancel_thread(void* arg) {
+  struct cancel_ctx* ctx = (struct cancel_ctx*)arg;
+  // 模拟外部库延迟后取消
+  struct timespec ts = {0, 50 * 1000000L};  // 50ms
+  nanosleep(&ts, NULL);
+  dcb_async_cancel(ctx->op_id);
+  free(ctx);
+  return NULL;
+}
+
+static void c_schedule_cancel(uint64_t op_id) {
+  struct cancel_ctx* ctx =
+      (struct cancel_ctx*)malloc(sizeof(struct cancel_ctx));
+  ctx->op_id = op_id;
+  pthread_t tid;
+  pthread_create(&tid, NULL, c_cancel_thread, ctx);
+  pthread_detach(tid);
+}
+
+async_simple::coro::Lazy<std::string> test_cbridge_pure_c_cancel() {
+  // 1. 创建异步操作
+  uint64_t op_id = dcb_async_create();
+
+  // 2. 纯 C 函数调度取消（从另一个线程）
+  c_schedule_cancel(op_id);
+
+  // 3. 协程挂起等待，应收到 "operation cancelled" 错误
+  try {
+    co_await dcb::async_wait(op_id);
+    co_return std::string("UNEXPECTED_SUCCESS");
+  } catch (const std::exception& e) {
+    co_return std::string("CAUGHT:") + e.what();
+  }
 }
 
 // ─── channel 服务模式测试 ───────────────────────────────────────────────

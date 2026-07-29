@@ -71,6 +71,11 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> test_cbridge_invoke_pure_c(
     dcb::DartFn<std::string(std::string)> callback, std::string input);
 
+/// 测试纯 C 路径的 dcb_async_cancel：
+/// 创建 op 后从纯 C 函数发起取消，协程应收到 "operation cancelled" 错误。
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_cbridge_pure_c_cancel();
+
 /// 测试跨运行时 channel 服务模式：
 /// uv worker 运行长期 mpsc 服务循环，bridge 侧发送多个请求并等待回复。
 BRIDGE_ASYNC

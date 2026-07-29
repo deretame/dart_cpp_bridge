@@ -44,6 +44,9 @@ Future<String> askUv({required String message}) =>
 Future<String> testCbridgeAsyncCancel() =>
     BridgeApiImpl.instance.testCbridgeAsyncCancel();
 
+Future<String> testCbridgePureCCancel() =>
+    BridgeApiImpl.instance.testCbridgePureCCancel();
+
 Stream<String> uvStream({int count = 5, int intervalMs = 50}) =>
     BridgeApiImpl.instance.uvStream(count, intervalMs);
 

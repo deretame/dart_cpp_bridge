@@ -1959,6 +1959,20 @@
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/bridge_api.h"
     },
     {
+      "name": "test_cbridge_pure_c_cancel",
+      "qualified": "demo::api::test_cbridge_pure_c_cancel",
+      "kind": "async",
+      "method_id": 1924401821,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "/Users/z4/pack/dart_cpp_bridge/examples/codegen_demo/native/api/foreign_api.h"
+    },
+    {
       "name": "uv_stream",
       "qualified": "demo::api::uv_stream",
       "kind": "stream",

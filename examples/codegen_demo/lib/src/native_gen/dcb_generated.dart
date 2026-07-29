@@ -116,6 +116,7 @@ final class BridgeApiImpl {
   static const int processMessageId = 1886753811;
   static const int testCbridgeAsyncCancelId = 1895746721;
   static const int boundingBoxId = 1914574156;
+  static const int testCbridgePureCCancelId = 1924401821;
   static const int uvStreamId = 1946724813;
   static const int testChannelServiceId = 2018661287;
   static const int syncDartFnBlockingUsId = 2026522337;
@@ -873,6 +874,16 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(boundingBoxId, _payloadBytes);
     return _readDataClass_Rect(ByteReader(_bytes));
+  }
+
+  Future<String> testCbridgePureCCancel() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      testCbridgePureCCancelId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
   }
 
   Stream<String> uvStream(int count, int intervalMs) {

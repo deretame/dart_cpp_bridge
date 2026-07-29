@@ -883,6 +883,14 @@ void main() {
         throwsA(anything),
       );
     });
+
+    testWidgets('pure C cancel: dcb_async_cancel from C thread', (
+      tester,
+    ) async {
+      final result = await testCbridgePureCCancel();
+      expect(result, startsWith('CAUGHT:'));
+      expect(result, contains('cancel'));
+    });
   });
 
   // ─── Multi-runtime communication tests ───────────────────────────────────
@@ -1261,6 +1269,100 @@ void main() {
       } finally {
         await stopWorkers();
       }
+    });
+  });
+
+  // ─── Error paths: worker not started ─────────────────────────────────────
+
+  group('error: worker not started', () {
+    // Ensure workers are stopped before this group
+    setUpAll(() async {
+      // Stop if running from previous group
+      try {
+        await stopWorkers();
+      } catch (_) {}
+    });
+
+    testWidgets('processMessage throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => processMessage(message: 'hello'),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('pingWorker throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => pingWorker(payload: 'ping'),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('pipeline throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => pipeline(message: 'data'),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('fanOut throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => fanOut(message: 'hello'),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('callDartFromWorkerA throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => callDartFromWorkerA(
+          callback: (s) async => s,
+          input: 'x',
+        ),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('callDartFromWorkerB throws when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => callDartFromWorkerB(
+          callback: (s) async => s,
+          input: 'x',
+        ),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('workerStream emits error when workers not running', (
+      tester,
+    ) async {
+      expect(
+        () => workerStream(count: 3, intervalMs: 10).toList(),
+        throwsA(anything),
+      );
+    });
+
+    testWidgets('all 50 concurrent calls fail gracefully', (tester) async {
+      final futures = List.generate(
+        50,
+        (i) => processMessage(message: 'm$i').then(
+          (_) => 'ok',
+          onError: (_) => 'error',
+        ),
+      );
+      final results = await Future.wait(futures);
+      // All should be errors
+      expect(results.every((r) => r == 'error'), isTrue);
     });
   });
 }
