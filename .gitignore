@@ -59,9 +59,6 @@ Desktop.ini
 _deps/
 **/_deps/
 
-# Downloaded Dart API DL headers (via fetch_dart_api.cmake)
-dart/native/third_party/dart_api/
-
 # Test / coverage
 coverage/
 .nyc_output/
