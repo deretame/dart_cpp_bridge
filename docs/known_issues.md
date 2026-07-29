@@ -193,7 +193,6 @@ endif()
 - `dart/test/ffi_native_test.dart`（@Native 冒烟）：通过
 - `examples/base_demo`（DynamicLibrary.open 兼容路径）：79 测试通过
 - `examples/codegen_demo`：62 测试通过
-- `examples/hook_demo`（纯 @Native）：3 测试通过
 
 ### 7.6 教训
 
