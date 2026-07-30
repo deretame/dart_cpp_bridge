@@ -63,3 +63,7 @@ _deps/
 coverage/
 .nyc_output/
 *.lcov
+
+# Ensure vendored Dart API headers are always tracked even if global gitignore
+# matches third_party/ patterns (some editors show such folders as grey).
+!dart/native/third_party/
