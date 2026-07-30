@@ -305,13 +305,46 @@ struct BRIDGE_DATA_CLASS Rect {
 };
 ```
 
-### 规则
+### 字段白名单
 
-- 只导出 `public` 非静态数据成员
-- **不能有** `BRIDGE_SYNC/ASYNC/NORMAL` 方法（校验报错）
-- 无继承、无虚函数
-- 字段类型必须是白名单内类型（基础类型、枚举、容器、另一个数据类）
-- 不支持循环引用
+数据类字段只能使用以下类型（均为值语义，wire 按顺序编码）：
+
+#### 基础类型
+
+`bool`、`int8/16/32/64_t`、`uint8/16/32/64_t`、`float`、`double`、`std::string`、`std::chrono::system_clock::time_point`
+
+示例：`std::string name;`
+
+#### 枚举
+
+`enum class T : std::int32_t`（必须标记 `BRIDGE_EXPORT`）
+
+示例：`enum class Color : std::int32_t { kRed = 0, kGreen = 1, kBlue = 2 };`
+
+#### 容器
+
+`std::vector<T>`、`std::array<T, N>`、`std::optional<T>`、`std::unordered_map<K, V>`、`std::unordered_set<T>`、`std::pair<T1, T2>`、`std::tuple<T1, ...>`
+
+示例：`std::vector<int32_t> ids;`
+
+#### 嵌套数据类
+
+另一个 `BRIDGE_DATA_CLASS` 类型。
+
+示例：
+
+```cpp
+struct BRIDGE_DATA_CLASS Circle {
+    Point center;
+    double radius;
+};
+```
+
+**注意**：
+- `Int128` / `UInt128` 仅作为标记存在，**不可实际用于字段**。
+- 字段不支持指针、引用、不透明类、原始 C 数组、位域、联合体、`std::variant`、`std::any` 等。
+- 容器元素也必须是白名单内类型（例如 `std::vector<AnotherDataClass>` 合法，`std::vector<std::unique_ptr<T>>` 不合法）。
+- 不支持 `std::optional<std::optional<T>>` 等嵌套可空。
 
 ### Wire 编码
 
@@ -339,11 +372,15 @@ class Point {
       identical(this, other) ||
       other is Point && runtimeType == other.runtimeType &&
           x == other.x && y == other.y;
+
+  @override
+  String toString() => 'Point(x: $x, y: $y)';
 }
 ```
 
 - 不可空字段用 `required`，可空字段（`std::optional<T>`）为可选命名参数
 - 按值传递，可跨 Isolate
+- `toString()` 默认按字段生成；如需自定义，可在 `dart_cpp_bridge.yaml` 中用 `dart_code` 覆盖，参见 [配置 → 自定义数据类 toString()](../configuration/#dart_code)
 
 ---
 
@@ -441,6 +478,49 @@ class Counter extends CppOpaqueInterface {
 - 实例方法 payload 第一个字段为 handle，Dart 侧不暴露
 - C++ 默认参数 → Dart 可选位置参数
 - `BRIDGE_TO_STRING` → Dart `toString()` 覆写
+
+---
+
+## 大缓冲区：地址传递模式
+
+dart_cpp_bridge 的 wire 协议本身**不是零拷贝**的，帧数据需要在 Dart 与 C++ 之间做序列化/反序列化。不过对于日常类型（基础类型、小数据类、短字符串）来说，这份拷贝开销极小，基本不需要关心。
+
+当你需要读写大段原始内存（图片、音频采样、大数组等）时，推荐在 Dart 侧分配 native 内存，然后只把**地址和长度**两个整数传给 C++：
+
+```cpp
+BRIDGE_NORMAL
+std::tuple<int64_t, int64_t, int64_t> process_buffer(
+    int64_t address, int64_t length);
+```
+
+```dart
+import 'dart:ffi';
+import 'package:ffi/ffi.dart';
+
+final bufferSize = 1024 * 1024;
+final buffer = calloc<Uint8>(bufferSize);
+
+try {
+  // 只传递两个 int64，消息拷贝开销可忽略
+  final (outAddr, outLen, checksum) = await processBuffer(
+    address: buffer.address,
+    length: bufferSize,
+  );
+  // 如需读取 C++ 输出的内存，继续用 outAddr/outLen 访问
+} finally {
+  calloc.free(buffer);
+}
+```
+
+这种方式的好处：
+
+- 真正的大缓冲区**不会走消息通道**，Dart 和 C++ 通过同一段 native 内存协作
+- wire 上只传递两个 `int64`，拷贝开销几乎可以忽略
+- 异步代码写起来和普通函数一样，codegen 自动处理 FFI 调用和端口回调
+
+:::caution[注意]
+Dart 分配的内存需要自己管理生命周期，记得在合适的时机 `calloc.free(buffer)`。C++ 侧不应该在 Dart 已经释放内存之后继续访问该地址。
+:::
 
 ---
 

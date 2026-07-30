@@ -8,7 +8,7 @@ hero:
     file: ../../assets/hero.svg
   actions:
     - text: 快速开始
-      link: guides/getting-started/
+      link: /dart_cpp_bridge/getting-started/
       icon: right-arrow
     - text: GitHub
       link: https://github.com/deretame/dart_cpp_bridge
@@ -36,6 +36,15 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     自动生成 FFI 绑定和序列化代码。
   </Card>
   <Card title="跨平台" icon="laptop">
-    Windows、Linux、macOS、Android。
+    Windows、Linux、macOS、iOS、Android 五端支持。
+  </Card>
+  <Card title="纯 C API" icon="document">
+    不依赖 async-simple / asio，C99 兼容的桥接 API。
+  </Card>
+  <Card title="外部运行时集成" icon="server">
+    libuv、glib、自定义事件循环通过 ForeignExecutor 接入。
+  </Card>
+  <Card title="异步非阻塞通道" icon="link">
+    mpsc / oneshot 协程通道，构建跨线程非阻塞流水线。
   </Card>
 </CardGrid>

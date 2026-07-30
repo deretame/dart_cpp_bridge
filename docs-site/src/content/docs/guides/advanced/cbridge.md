@@ -1,25 +1,33 @@
 ---
 title: 纯 C 桥接 API
-description: 不依赖 C++ 协程的零门槛跨运行时 API — 编解码、异步操作、调用 Dart 函数
+description: 为纯 C 调用方提供的 C99 兼容 API — 编解码、异步操作、调用 Dart 函数
 ---
 
-本页介绍 `cbridge.h` 和 `dcb_codec.h` 提供的**纯 C API**。它们让不依赖 async-simple / asio 的代码也能与 bridge 交互：
+本页介绍 `cbridge.h` 和 `dcb_codec.h` 提供的**纯 C API**，以及配合 C++ 协程使用的 `cbridge_wait.hpp`。
 
-- 纯 C99 编解码器，与 C++ `ByteWriter`/`ByteReader` 二进制兼容
-- 让 C++ 协程非阻塞等待外部 C 异步操作完成
-- 从任意线程调用已注册的 Dart 回调（callback 风格）
+你可以用它们做三件事：
 
-## 为什么需要纯 C API
+- 用 `dcb_codec.h` 编解码 wire 数据，与 C++ 侧 `ByteWriter` / `ByteReader` 二进制兼容
+- 用 `dcb_invoke_dart_fn` 从任意线程调用已注册的 Dart 回调
+- 用 `dcb_async_*` 配合 `cbridge_wait.hpp` 让 C++ 协程非阻塞等待外部 C 异步操作完成
 
-bridge 内部的协程管道绑定了 async-simple + asio。如果调用方是：
+如果你的代码是**纯 C 项目、只能导出 C 符号，或者不想把 async-simple / asio / C++20 协程引入调用方**，就应该用这章的 C 入口。
 
-- 纯 C 项目（直接用 libuv C API、自写 poll loop）
-- 其他语言 runtime（Python ctypes、Rust FFI、Go cgo）
-- 不想引入 C++20 协程依赖的 C++ 代码
+> 其他语言 runtime（如 Python `ctypes`、Rust FFI、Go `cgo`）也可以把这套 C API 当作最小接入点。
 
-那么要调一下 Dart 函数就得引入 async-simple、实现 Executor、搞协程上下文——**太重了**。
+## 什么时候用纯 C API
 
-纯 C API 是**零依赖的最低公分母入口**：
+以下情况选择这套入口：
+
+- **你的代码是纯 C 项目，或只能导出 C 符号**：C 编译单元没有 `co_await`、模板和 `Executor`，无法直接使用 bridge 的 C++ 协程入口。
+- **你从其他语言 runtime 调用 bridge**：Python `ctypes`、Rust FFI、Go `cgo` 等只能绑定到 C ABI。
+- **你希望调用方保持零 C++ 依赖**：C 端只编译 C 头文件，bridge 内部的 async-simple + asio 对调用者不可见。
+
+:::caution[C 端不能等待]
+**C 代码本身不能 `co_await` 这些异步操作。** `dcb_async_*` 的等待端是 C++ 协程（通过 `cbridge_wait.hpp`），C 端只负责创建、完成或取消操作。
+:::
+
+纯 C API 是**零 C++ 依赖的最低公分母入口**：
 
 ```text
 任何 C/C++ 运行时（不管用什么协程/事件循环）
@@ -168,7 +176,7 @@ uint32_t       dcb_read_arr_begin(dcb_reader* r);                     // inline:
 
 ## API 二：异步操作原语
 
-让 C++ 协程非阻塞等待外部 C 异步操作完成。
+这组函数用于在 **C 端**创建、完成或取消一个异步操作。C++ 协程侧通过 `cbridge_wait.hpp` 中的 `dcb::async_wait()` 非阻塞等待，期间不占用 bridge 线程。
 
 ### 函数签名
 
@@ -178,6 +186,10 @@ void dcb_async_complete(uint64_t op_id, const uint8_t* data, uint32_t len);  // 
 void dcb_async_fail(uint64_t op_id, const char* error);             // 失败
 void dcb_async_cancel(uint64_t op_id);                              // 取消
 ```
+
+:::note[一次性操作]
+`dcb_async_create()` 返回的 `op_id` 是一次性的。调用 `dcb_async_complete`、`dcb_async_fail` 或 `dcb_async_cancel` 后该 `op_id` 即失效，后续再对该 ID 调用都是 no-op。
+:::
 
 ### C++ 协程侧等待
 
@@ -198,7 +210,9 @@ auto data = co_await dcb::async_wait(op_id);  // 挂起，不占线程
 #include "dart_cpp_bridge/cbridge_wait.hpp"
 #include "dart_cpp_bridge/dcb_codec.h"   // 纯 C codec（回调用）
 #include "dart_cpp_bridge/codec.hpp"     // C++ ByteReader（协程用）
+#include <string>
 #include <thread>
+#include <chrono>
 #include <cstring>
 
 // ─── 模拟外部 C 库（代表任何第三方异步库，如 libcurl、libuv 等） ───

@@ -79,6 +79,7 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 #include <queue>
 #include <thread>
 #include "dart_cpp_bridge/foreign_runtime.h"  // dcb_foreign_register 等 C API
+#include "dart_cpp_bridge/foreign_executor.hpp"  // dcb::ForeignExecutor
 
 class UvWorker {
  public:
@@ -108,6 +109,11 @@ class UvWorker {
     uv_async_send(&async_);       // 唤醒使其退出 uv_run
     thread_.join();
     uv_loop_close(&loop_);
+  }
+
+  // 获取 bridge 为此运行时创建的 ForeignExecutor（用于 .via(ex) / channel coAwait）
+  dcb::ForeignExecutor* executor() {
+    return static_cast<dcb::ForeignExecutor*>(dcb_foreign_executor(id_));
   }
 
  private:
@@ -143,6 +149,10 @@ class UvWorker {
   uint32_t id_{0};
 };
 ```
+
+:::note
+`dcb_foreign_executor()` 返回的是 `void*`，实际类型为 `dcb::ForeignExecutor*`，使用时要 `static_cast` 转换。示例中的 `executor()` 方法已经帮你做了这件事。
+:::
 
 ### 工作原理
 
@@ -327,6 +337,12 @@ async_simple::coro::Lazy<std::string> call_service_a(
 }
 ```
 
+:::note[实现细节]
+- `Request` 因为包含 `co::oneshot::Sender` 是 **move-only** 的，`mpsc::send(Request{...})` 会移动它，不能拷贝
+- `ServiceA::run()` 只能调用一次：`std::move(rx_)` 之后 `rx_` 就空了，重复调用会启动一个立刻看到 channel 关闭的循环
+- 如果 `Request` 本身不能满足底层 `moodycamel::ConcurrentQueue` 的约束，可以把它包在 `std::shared_ptr<Request>` 或 `std::unique_ptr<Request>` 里再入队
+:::
+
 ### 与“方式一”的区别
 
 | | 方式一（schedule 协程） | channel 服务模式 |
@@ -340,18 +356,20 @@ async_simple::coro::Lazy<std::string> call_service_a(
 
 ## 使用独立 AsioExecutor 运行时
 
-如果你的"外部运行时"也是基于 asio 的（独立 `io_context` + `AsioExecutor` + 线程），则更简单——直接在协程中 `co_await` DartFn 即可：
+如果你的"外部运行时"也是基于 asio 的（独立 `io_context` + `AsioExecutor` + 线程），则不需要自己实现 `schedule` 回调——`AsioExecutor` 已经完整实现了 `async_simple::Executor` 的所有虚函数。你可以直接在协程中 `co_await` DartFn：
 
 ```cpp
 // WorkerRuntime 拥有独立的 io_context + AsioExecutor + thread
-worker->spawn([cb = std::move(dartFn), input]() mutable -> Lazy<> {
+// 注意：在 MSVC 上，协程 lambda 同样会触发下方 §MSVC 注意事项 的捕获 bug；
+// 生产代码建议写成 static 协程函数，这里为简洁仍用 lambda。
+worker->spawn([cb = std::move(dartFn), input]() mutable -> async_simple::coro::Lazy<> {
   auto result = co_await cb(input);  // 直接 co_await，无需额外配置
   // 使用 result...
   co_return;
 });
 ```
 
-AsioExecutor 已完整实现所有虚函数，无需任何 workaround。详见 `examples/multi_runtime_demo`。
+详见 `examples/multi_runtime_demo`。
 
 ## MSVC 注意事项
 
@@ -373,7 +391,7 @@ static Lazy<> my_coro(DartFn<...> cb, std::string input) {
 ```
 :::
 
-此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。详见 [已知问题 §10](../reference/known-issues/)。
+此 bug 与 ForeignExecutor 无关，在任何 executor 上的协程 lambda 都可能触发。详见 [async-simple 协程入门](/dart_cpp_bridge/guides/fundamentals/async-simple/) 和 [已知问题 §10](/dart_cpp_bridge/reference/known-issues/)。
 
 ## 关键设计约束
 
@@ -393,4 +411,4 @@ static Lazy<> my_coro(DartFn<...> cb, std::string input) {
 
 ## 不想用 C++ 协程？
 
-如果你的代码是纯 C，或者不想引入 async-simple / asio 依赖，可以使用 [纯 C 桥接 API](cbridge/)——零依赖的 callback 风格接口，从任意线程调用 Dart 函数或等待外部异步操作。
+如果你的代码是纯 C，或者不想引入 async-simple / asio 依赖，可以使用 [纯 C 桥接 API](/dart_cpp_bridge/guides/advanced/cbridge/)——零依赖的 callback 风格接口，从任意线程调用 Dart 函数或等待外部异步操作。
