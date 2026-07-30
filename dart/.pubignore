@@ -1,5 +1,4 @@
 # Keep the published tarball small.
 .dart_tool/
 test/
-native/
 pubspec.lock
