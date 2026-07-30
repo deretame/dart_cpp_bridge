@@ -1,9 +1,9 @@
 #pragma once
 
-// UvWorker — 基于 libuv 的独立运行时，通过 ForeignExecutor 接入 bridge channel 系统。
+// UvWorker — Independent runtime based on libuv, integrated into the bridge channel system via ForeignExecutor.
 //
-// 演示非 asio 事件循环如何参与 co::oneshot / co::mpsc 通信：
-//   bridge schedule → uv_async_send → loop 线程 drain → 执行协程/任务
+// Demonstrates how a non-asio event loop participates in co::oneshot / co::mpsc communication:
+//   bridge schedule → uv_async_send → loop thread drain → execute coroutines/tasks
 
 #include <uv.h>
 
@@ -34,19 +34,19 @@ class UvWorker {
 
     uv_loop_init(&loop_);
 
-    // async handle 用于跨线程唤醒 loop
+    // async handle used to wake the loop across threads
     uv_async_init(&loop_, &async_, [](uv_async_t* handle) {
       auto* self = static_cast<UvWorker*>(handle->data);
       self->drain_pending();
     });
     async_.data = this;
 
-    // 注册到 bridge，获取 ForeignExecutor
+    // Register with bridge to obtain a ForeignExecutor
     foreign_id_ = dcb_foreign_register(name_.c_str(), &schedule_callback, this);
 
-    // 启动 loop 线程
+    // Start the loop thread
     thread_ = std::thread([this] {
-      // 在 loop 线程上标记自己，使 currentThreadInExecutor() 能正确判断
+      // Mark ourselves on the loop thread so currentThreadInExecutor() works correctly
       dcb_foreign_mark_loop_thread(foreign_id_);
       uv_run(&loop_, UV_RUN_DEFAULT);
     });
@@ -56,15 +56,15 @@ class UvWorker {
     if (!running_.load(std::memory_order_acquire)) return;
     running_.store(false, std::memory_order_release);
 
-    // 注销（之后 bridge 不再向我们 schedule）
+    // Unregister (bridge will no longer schedule to us afterwards)
     if (foreign_id_) {
       dcb_foreign_unregister(foreign_id_);
       foreign_id_ = 0;
     }
 
-    // 停止 loop
+    // Stop the loop
     uv_stop(&loop_);
-    uv_async_send(&async_);  // 唤醒使其退出 uv_run
+    uv_async_send(&async_);  // Wake it up so it exits uv_run
 
     if (thread_.joinable()) thread_.join();
     uv_loop_close(&loop_);
@@ -74,28 +74,28 @@ class UvWorker {
   const std::string& name() const { return name_; }
   uint32_t foreign_id() const { return foreign_id_; }
 
-  /// 获取 ForeignExecutor（用于 channel coAwait / Lazy.via()）
+  /// Get ForeignExecutor (used for channel coAwait / Lazy.via())
   dcb::ForeignExecutor* executor() {
     return static_cast<dcb::ForeignExecutor*>(dcb_foreign_executor(foreign_id_));
   }
 
-  /// 在 libuv loop 线程上执行一个任务（C++ 便利接口）
+  /// Execute a task on the libuv loop thread (C++ convenience interface)
   void post(void (*fn)(void*), void* userdata) {
     schedule_callback(fn, userdata, this);
   }
 
  private:
-  /// bridge 的 ForeignExecutor 调用此函数投递任务（静态，C linkage 兼容）
+  /// Bridge's ForeignExecutor calls this function to schedule tasks (static, C-linkage compatible)
   static void schedule_callback(void (*fn)(void*), void* userdata, void* ctx) {
     auto* self = static_cast<UvWorker*>(ctx);
     {
       std::lock_guard lock(self->mu_);
       self->pending_.push({fn, userdata});
     }
-    uv_async_send(&self->async_);  // 线程安全唤醒 loop
+    uv_async_send(&self->async_);  // Thread-safe loop wake-up
   }
 
-  /// 在 loop 线程上执行所有待处理任务
+  /// Execute all pending tasks on the loop thread
   void drain_pending() {
     std::queue<std::pair<void (*)(void*), void*>> batch;
     {
@@ -105,7 +105,7 @@ class UvWorker {
     while (!batch.empty()) {
       auto [fn, ud] = batch.front();
       batch.pop();
-      fn(ud);  // 执行（如协程恢复 trampoline）
+      fn(ud);  // Execute (e.g. coroutine-resume trampoline)
     }
   }
 

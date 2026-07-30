@@ -1,4 +1,4 @@
-// foreign_api.cpp — 业务实现：libuv worker 通过 ForeignExecutor + channel 与 bridge 通信。
+// foreign_api.cpp — Business implementation: libuv worker communicates with bridge via ForeignExecutor + channel.
 
 #include "foreign_api.h"
 
@@ -58,19 +58,19 @@ async_simple::coro::Lazy<std::string> ask_uv(std::string message) {
       throw std::runtime_error("uv worker not running");
     }
 
-    // 通过 ForeignExecutor::schedule 投递到 libuv loop 线程。
-    // trampoline 在 uv loop 线程上执行 lambda → send 回 bridge。
-    // 注意：std::function 要求可拷贝，所以用 shared_ptr 包装 move-only 的 Sender。
+    // Schedule onto the libuv loop thread via ForeignExecutor::schedule.
+    // The trampoline executes a lambda on the uv loop thread → sends back to bridge.
+    // Note: std::function must be copyable, so wrap the move-only Sender in shared_ptr.
     auto* ex = g_uv_worker->executor();
     auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
     ex->schedule([tx_ptr, msg = std::move(message)]() {
-      // 此代码在 libuv loop 线程上执行
+      // This code runs on the libuv loop thread
       std::string result = "[uv:" + msg + "]";
-      tx_ptr->send(std::move(result));  // 非阻塞 send，唤醒 bridge 侧协程
+      tx_ptr->send(std::move(result));  // non-blocking send, wakes the bridge-side coroutine
     });
   }
 
-  // 在 bridge 主运行时上等待回复（挂起协程，不阻塞 io 线程）
+  // Wait for the reply on the bridge main runtime (suspends the coroutine, does not block the io thread)
   auto reply = co_await rx.recv();
   if (!reply) {
     throw std::runtime_error("uv worker dropped");
@@ -90,7 +90,7 @@ async_simple::coro::Lazy<std::int32_t> uv_compute(std::int32_t n) {
     auto* ex = g_uv_worker->executor();
     auto tx_ptr = std::make_shared<co::oneshot::Sender<std::int32_t>>(std::move(tx));
     ex->schedule([tx_ptr, n]() {
-      // 在 libuv loop 线程上执行计算
+      // Compute on the libuv loop thread
       std::int32_t sum = 0;
       for (std::int32_t i = 1; i <= n; ++i) {
         sum += i;
@@ -117,12 +117,12 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
       return;
     }
 
-    // 在 libuv loop 线程上启动发送任务
-    // 注意：std::function 要求可拷贝，所以用 shared_ptr 包装 move-only 的 Sender。
+    // Start the sender task on the libuv loop thread
+    // Note: std::function must be copyable, so wrap the move-only Sender in shared_ptr.
     auto* ex = g_uv_worker->executor();
     auto tx_ptr = std::make_shared<co::mpsc::Sender<std::string>>(std::move(tx));
     ex->schedule([tx_ptr, count, interval_ms]() {
-      // 在 uv loop 线程上执行（注意：sleep 会阻塞 uv loop，仅用于演示）
+      // Run on the uv loop thread (note: sleep blocks the uv loop; for demo only)
       for (std::int32_t i = 0; i < count; ++i) {
         if (interval_ms > 0) {
           std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
@@ -131,11 +131,11 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
           break;
         }
       }
-      // tx_ptr 析构 → channel 关闭 → recv 返回 nullopt
+      // tx_ptr destruction → channel closes → recv returns nullopt
     });
   }
 
-  // 在 bridge 主运行时上消费 mpsc 并转发到 StreamSink
+  // Consume the mpsc on the bridge main runtime and forward to StreamSink
   dcb::Runtime::instance().spawn_on_asio(
       [sink = std::move(sink), rx = std::move(rx)]() mutable
       -> async_simple::coro::Lazy<> {
@@ -149,8 +149,8 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
       });
 }
 
-// MSVC 19.51 协程 lambda 捕获 bug 的 workaround：
-// 使用独立的 static 协程函数，通过参数传递所有变量。
+// Workaround for MSVC 19.51 coroutine lambda capture bug:
+// Use a separate static coroutine function and pass all variables as parameters.
 static async_simple::coro::Lazy<> uv_dart_fn_coro(
     std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
     dcb::DartFn<std::string(std::string)> cb,
@@ -177,8 +177,8 @@ async_simple::coro::Lazy<std::string> call_dart_from_uv(
     auto* ex = g_uv_worker->executor();
     auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
 
-    // 在 uv loop 线程上启动协程，非阻塞地 co_await DartFn。
-    // 使用 static 协程函数而非协程 lambda（MSVC 19.51 bug workaround）。
+    // Start a coroutine on the uv loop thread that co_awaits the DartFn non-blockingly.
+    // Use a static coroutine function instead of a coroutine lambda (MSVC 19.51 bug workaround).
     ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() mutable {
       uv_dart_fn_coro(std::move(tx_ptr), std::move(cb), std::move(input))
           .via(ex)
@@ -186,7 +186,7 @@ async_simple::coro::Lazy<std::string> call_dart_from_uv(
     });
   }
 
-  // 在 bridge 主运行时上等待结果
+  // Wait for the result on the bridge main runtime
   auto reply = co_await rx.recv();
   if (!reply) {
     throw std::runtime_error("uv worker dropped");
@@ -194,13 +194,13 @@ async_simple::coro::Lazy<std::string> call_dart_from_uv(
   co_return *reply;
 }
 
-// ─── cbridge 纯 C API 测试 ────────────────────────────────────────────────
+// ─── cbridge pure C API tests ────────────────────────────────────────────────
 
 async_simple::coro::Lazy<std::string> test_cbridge_async() {
-  // 创建异步操作
+  // Create async operation
   uint64_t op = dcb_async_create();
 
-  // 启动一个线程，50ms 后从外部完成该操作（模拟外部 C 库回调）
+  // Launch a thread that completes the op after 50ms from outside (simulates an external C library callback)
   std::thread completer([op] {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     const char* msg = "cbridge_ok";
@@ -208,7 +208,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_async() {
   });
   completer.detach();
 
-  // 协程非阻塞等待（挂起，不占线程）
+  // Coroutine waits non-blockingly (suspends, does not occupy a thread)
   auto data = co_await dcb::async_wait(op);
   co_return std::string(data.begin(), data.end());
 }
@@ -249,7 +249,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_async_cancel() {
 
 async_simple::coro::Lazy<std::string> test_cbridge_invoke(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
-  // 从 DartFn 提取 session_id 和 fn_id
+  // Extract session_id and fn_id from DartFn
   auto session = callback.session();
   if (!session) {
     throw std::runtime_error("test_cbridge_invoke: empty callback");
@@ -257,13 +257,13 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
   uint64_t session_id = dcb::SessionRegistry::instance().find_id(session);
   uint64_t fn_id = callback.fn_id();
 
-  // 编码参数（使用纯 C codec API）
+  // Encode arguments (using the pure C codec API)
   dcb_writer cw;
   dcb_writer_init(&cw);
   dcb_write_str(&cw, input.c_str());
 
-  // 在独立线程上调用纯 C API 并等待回调。
-  // 不能在 io 线程上阻塞（回调在 io 线程触发，会死锁）。
+  // Invoke the pure C API on an independent thread and wait for the callback.
+  // Do not block on the io thread (the callback fires on the io thread and would deadlock).
   auto [promise, future] = []{
     std::promise<std::string> p;
     auto f = p.get_future();
@@ -271,7 +271,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
   }();
   auto promise_ptr = std::make_shared<std::promise<std::string>>(std::move(promise));
 
-  // 将 C writer 数据拷贝到 vector（writer 生命周期不跟线程）
+  // Copy C writer data into a vector (writer lifetime is not tied to the thread)
   std::vector<uint8_t> args(cw.data, cw.data + cw.len);
   dcb_writer_free(&cw);
 
@@ -287,7 +287,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
         [](void* ud, int ok, const uint8_t* data, uint32_t data_len, const char* error) {
           auto* c = static_cast<Ctx*>(ud);
           if (ok) {
-            // 解码返回值（使用纯 C codec API）
+            // Decode the return value (using the pure C codec API)
             dcb_reader cr;
             dcb_reader_init(&cr, data, data_len);
             uint32_t slen = 0;
@@ -306,7 +306,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
     }
   });
 
-  // 在 io 线程上非阻塞等待结果（通过 spawn_blocking）
+  // Wait for the result non-blockingly on the io thread (via spawn_blocking)
   auto result = co_await dcb::spawn_blocking([&future] {
     return future.get();
   });
@@ -314,22 +314,22 @@ async_simple::coro::Lazy<std::string> test_cbridge_invoke(
   co_return result;
 }
 
-// ─── channel 服务模式测试 ───────────────────────────────────────────────
+// ─── Channel service mode tests ───────────────────────────────────────────────
 
-// 请求类型：数据 + 一次性回复通道
+// Request type: payload + a one-shot reply channel
 struct ServiceRequest {
   std::string payload;
   co::oneshot::Sender<std::string> reply_tx;
 };
 
-// 服务循环：在 uv worker 的 ForeignExecutor 上长期运行
+// Service loop: runs for a long time on the uv worker's ForeignExecutor
 static async_simple::coro::Lazy<> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   while (auto req = co_await rx.recv()) {
-    // 处理任务：加上前缀
+    // Process the request: add a prefix
     std::string result = "[svc:" + req->payload + "]";
     req->reply_tx.send(std::move(result));
   }
-  co_return;  // channel 关闭，服务结束
+  co_return;  // channel closed, service ends
 }
 
 async_simple::coro::Lazy<std::string> test_channel_service() {
@@ -338,33 +338,33 @@ async_simple::coro::Lazy<std::string> test_channel_service() {
     throw std::runtime_error("uv worker not running");
   }
 
-  // 创建 mpsc channel（bridge 侧发送，uv worker 侧接收）
+  // Create mpsc channel (bridge side sends, uv worker side receives)
   auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
 
-  // 在 uv worker 的 ForeignExecutor 上启动服务循环
+  // Start the service loop on the uv worker's ForeignExecutor
   auto* ex = g_uv_worker->executor();
   service_loop(std::move(rx)).via(ex).start([](auto&&) {});
 
-  // 从 bridge 侧发送 3 个请求，每个带独立的回复通道
+  // Send 3 requests from the bridge side, each with its own reply channel
   std::string results;
   for (int i = 0; i < 3; ++i) {
     auto [reply_tx, reply_rx] = co::oneshot::channel<std::string>();
     tx.send(ServiceRequest{"msg" + std::to_string(i), std::move(reply_tx)});
 
-    // 非阻塞等待回复（挂起当前协程，不占 io 线程）
+    // Wait non-blockingly for the reply (suspends current coroutine, does not occupy the io thread)
     auto reply = co_await reply_rx.recv();
     if (!reply) throw std::runtime_error("service dropped");
     if (!results.empty()) results += ",";
     results += *reply;
   }
 
-  // 关闭 sender → 服务循环退出
+  // Close sender → service loop exits
   tx.close();
   co_return results;  // "[svc:msg0],[svc:msg1],[svc:msg2]"
 }
 
-// 并发版本：一次性发送所有请求，然后收集所有回复。
-// 测试 mpsc 排队 + 服务循环逐个处理的能力。
+// Concurrent version: send all requests in one batch, then collect all replies.
+// Tests mpsc queuing + service loop processing one by one.
 async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker || !g_uv_worker->running()) {
@@ -375,7 +375,7 @@ async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
   auto* ex = g_uv_worker->executor();
   service_loop(std::move(rx)).via(ex).start([](auto&&) {});
 
-  // 先一次性发送 5 个请求（不等待），测试 mpsc 排队
+  // Send 5 requests in one batch first (without waiting) to test mpsc queuing
   std::vector<co::oneshot::Receiver<std::string>> receivers;
   for (int i = 0; i < 5; ++i) {
     auto [reply_tx, reply_rx] = co::oneshot::channel<std::string>();
@@ -383,7 +383,7 @@ async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
     receivers.push_back(std::move(reply_rx));
   }
 
-  // 然后收集所有回复（服务循环在 uv loop 线程上逐个处理）
+  // Then collect all replies (service loop processes them one by one on the uv loop thread)
   std::string results;
   for (auto& reply_rx : receivers) {
     auto reply = co_await reply_rx.recv();

@@ -1,31 +1,31 @@
 # =============================================================================
-# dart_cpp_bridge codegen_demo — 可复制的项目模板
+# dart_cpp_bridge codegen_demo — Reusable project template
 # =============================================================================
 #
-# 本 CMakeLists 演示如何构建一个使用 dart_cpp_bridge codegen 的动态库。
-# 此文件位于 native/ 目录下，hook/build.dart 通过 sourceDir: 'native' 指定。
+# This CMakeLists demonstrates how to build a dynamic library using dart_cpp_bridge codegen.
+# This file lives in the native/ directory; hook/build.dart points sourceDir: 'native' at it.
 #
-# 接入方式：
-#   A) Monorepo（当前方式）：通过 package_config.json 自动解析
-#      dart_cpp_bridge 包路径，以 WHOLE_ARCHIVE 链接 dart_cpp_bridge::runtime。
-#   B) 外部项目（FetchContent，Phase 3 产品化后推荐）：
+# Integration options:
+#   A) Monorepo (current approach): automatically resolved via package_config.json
+#      dart_cpp_bridge package path, linked with WHOLE_ARCHIVE to dart_cpp_bridge::runtime.
+#   B) External project (FetchContent, recommended after Phase 3 productization):
 #
 #      include(FetchContent)
 #      FetchContent_Declare(
 #        dart_cpp_bridge
 #        GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#        GIT_TAG        main  # 或钉死 tag/commit
+#        GIT_TAG        main  # or pin a tag/commit
 #      )
 #      FetchContent_MakeAvailable(dart_cpp_bridge)
 #      target_link_libraries(my_bridge PRIVATE
 #        $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 #
-#   两种方式下 asio / async-simple 的版本都由基础库钉死并传递，无需自行声明。
-#   WHOLE_ARCHIVE 强制链入全部对象，保住 dcb_* FFI 导出（需 CMake 3.24+）。
+#   In both approaches, asio / async-simple versions are pinned and propagated by the base library; no need to declare them yourself.
+#   WHOLE_ARCHIVE forces all objects to be linked, keeping dcb_* FFI exports (requires CMake 3.24+).
 #
-# 自定义清单：
-#   - 修改 target 名（dcb_codegen_demo → 你的库名）
-#   - 修改源文件列表（api_impl/*.cpp）
+# Customization checklist:
+#   - Change the target name (dcb_codegen_demo → your library name)
+#   - Change the source file list (api_impl/*.cpp)
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.24)
@@ -60,7 +60,7 @@ endif()
 include("${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
-# --- libuv (FetchContent) — foreign_executor 测试需要 ---
+# --- libuv (FetchContent) — required for foreign_executor tests ---
 include(FetchContent)
 set(LIBUV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
@@ -72,16 +72,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libuv)
 
-# --- 生成物检查 ---
+# --- Generated artifacts check ---
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
 endif()
 
-# --- 库 target ---
-# 源文件 = 生成的 wire + 用户业务实现。基础运行时经链接传递进来。
-# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+# --- Library target ---
+# Sources = generated wire + user business implementation. Base runtime is propagated via linking.
+# BUILD_SHARED_LIBS is passed in by the hook (ON=shared, OFF=static, default ON).
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 add_library(dcb_codegen_demo
   generated/wire_dispatch.cpp
@@ -91,7 +91,7 @@ add_library(dcb_codegen_demo
   api_impl/multi_runtime_api.cpp
 )
 
-# --- Include 路径 ---
+# --- Include paths ---
 target_include_directories(dcb_codegen_demo
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

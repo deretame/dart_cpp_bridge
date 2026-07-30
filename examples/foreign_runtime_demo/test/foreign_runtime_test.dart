@@ -55,7 +55,7 @@ void main() {
     test('multiple concurrent requests', () async {
       await startUvWorker();
 
-      // 并发发送多个请求
+      // Send multiple requests concurrently
       final results = await Future.wait([
         askUv(message: 'a'),
         askUv(message: 'b'),
@@ -68,7 +68,7 @@ void main() {
     });
 
     test('error when worker not running', () async {
-      // 确保 worker 已停止
+      // Ensure the worker is stopped
       await stopUvWorker();
 
       expect(
@@ -84,7 +84,7 @@ void main() {
 
       await stopUvWorker();
 
-      // 重新启动
+      // Restart
       await startUvWorker();
       final r2 = await askUv(message: 'second');
       expect(r2, '[uv:second]');

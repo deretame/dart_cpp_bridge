@@ -858,7 +858,7 @@ void main() {
         callback: (s) async => 'dart-pure:$s',
         input: 'hello',
       );
-      // C 层拼接 "C:" 前缀
+      // C layer prepends the "C:" prefix
       expect(result, 'C:dart-pure:hello');
     });
 
@@ -874,7 +874,7 @@ void main() {
     });
 
     testWidgets('pure C invoke: Dart callback that throws', (tester) async {
-      // dcb_async_fail 传播错误 → 协程抛 runtime_error → Dart 收到异常
+      // dcb_async_fail propagates error → coroutine throws runtime_error → Dart receives exception
       expect(
         () => testCbridgeInvokePureC(
           callback: (s) async => throw StateError('boom-$s'),

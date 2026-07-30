@@ -1,15 +1,15 @@
 # =============================================================================
-# multi_runtime_demo — 多运行时非阻塞通信示例（codegen 自动生成绑定）
+# multi_runtime_demo — Multi-runtime non-blocking communication example (codegen auto-generates bindings)
 # =============================================================================
 #
-# 演示主调度器 (dcb::Runtime) 与独立 Worker 运行时之间通过
-# co::mpsc / co::oneshot channel 进行非阻塞消息传递。
+# Demonstrates non-blocking messaging between the main dispatcher (dcb::Runtime)
+# and independent Worker runtimes through co::mpsc / co::oneshot channels.
 #
-# 此文件位于 native/ 目录下，hook/build.dart 通过 sourceDir: 'native' 指定。
-# 基础运行时经 dcb_find_package.cmake 接入，WHOLE_ARCHIVE 链接保住 dcb_* 导出。
-# asio / async-simple 的版本由基础库钉死并传递，本文件无需声明依赖。
+# This file lives in the native/ directory; hook/build.dart points sourceDir: 'native' at it.
+# The base runtime is brought in via dcb_find_package.cmake and linked with WHOLE_ARCHIVE to keep dcb_* exports.
+# asio / async-simple versions are pinned and propagated by the base library; no need to declare them here.
 #
-# 构建前需先运行 codegen：
+# Run codegen before building:
 #   dcb_gen generate dart_cpp_bridge.yaml
 # =============================================================================
 
@@ -20,20 +20,20 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# --- 基础运行时（monorepo 直接路径） ---
+# --- Base runtime (direct monorepo path) ---
 set(DCB_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../dart")
 include("${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
-# --- 生成物检查 ---
+# --- Generated artifacts check ---
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
 endif()
 
-# --- 动态库 / 静态库 ---
-# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+# --- Shared / static library ---
+# BUILD_SHARED_LIBS is passed in by the hook (ON=shared, OFF=static, default ON).
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 add_library(dcb_multi_runtime_demo
   generated/wire_dispatch.cpp

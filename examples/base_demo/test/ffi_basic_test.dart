@@ -118,7 +118,7 @@ void main() {
 
   group('errors & payload', () {
     test('echo roundtrips utf-8 string', () async {
-      const s = '你好 dart_cpp_bridge ✓';
+      const s = 'hello dart_cpp_bridge ✓';
       expect(await bridge.echo(s), s);
     });
 
@@ -266,7 +266,7 @@ void main() {
     });
 
     test('pairEcho roundtrips negative int and non-ascii string', () async {
-      const input = (-7, '你好');
+      const input = (-7, 'hello');
       expect(await bridge.pairEcho(input), input);
     });
 

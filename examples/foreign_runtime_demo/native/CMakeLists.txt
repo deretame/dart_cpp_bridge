@@ -1,16 +1,16 @@
 # =============================================================================
-# foreign_runtime_demo — 外部运行时集成示例（libuv + ForeignExecutor）
+# foreign_runtime_demo — Foreign runtime integration example (libuv + ForeignExecutor)
 # =============================================================================
 #
-# 演示非 asio 事件循环（libuv）通过 ForeignExecutor C API 接入 bridge
-# 的 channel/coroutine 系统，实现跨运行时非阻塞消息传递。
+# Demonstrates a non-asio event loop (libuv) integrating with the bridge
+# channel/coroutine system via the ForeignExecutor C API, for non-blocking cross-runtime messaging.
 #
-# 此文件位于 native/ 目录下，hook/build.dart 通过 sourceDir: 'native' 指定。
-# 基础运行时经 dcb_find_package.cmake 接入，WHOLE_ARCHIVE 链接保住 dcb_* 导出。
-# foreign_runtime.cpp（ForeignExecutor C API）已包含在基础库中。
-# asio / async-simple 的版本由基础库钉死并传递，本文件只需声明 libuv。
+# This file lives in the native/ directory; hook/build.dart points sourceDir: 'native' at it.
+# The base runtime is brought in via dcb_find_package.cmake and linked with WHOLE_ARCHIVE to keep dcb_* exports.
+# foreign_runtime.cpp (ForeignExecutor C API) is already included in the base library.
+# asio / async-simple versions are pinned and propagated by the base library; only libuv is declared here.
 #
-# 构建前需先运行 codegen：
+# Run codegen before building:
 #   dcb_gen generate dart_cpp_bridge.yaml
 # =============================================================================
 
@@ -21,7 +21,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# --- 基础运行时（monorepo 直接路径） ---
+# --- Base runtime (direct monorepo path) ---
 set(DCB_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../dart")
 include("${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
@@ -38,15 +38,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(libuv)
 
-# --- 生成物检查 ---
+# --- Generated artifacts check ---
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
 endif()
 
-# --- 动态库 / 静态库 ---
-# BUILD_SHARED_LIBS 由 hook 传入（ON=动态库，OFF=静态库，默认 ON）。
+# --- Shared / static library ---
+# BUILD_SHARED_LIBS is passed in by the hook (ON=shared, OFF=static, default ON).
 option(BUILD_SHARED_LIBS "Build shared library" ON)
 add_library(dcb_foreign_runtime_demo
   generated/wire_dispatch.cpp
