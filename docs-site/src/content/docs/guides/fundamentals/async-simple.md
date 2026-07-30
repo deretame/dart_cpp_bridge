@@ -122,6 +122,113 @@ tx.send("hello");
 auto value = co_await rx.recv();  // suspend, resume when received
 ```
 
+### Promise / Future
+
+If you need to **non-blockingly wait inside a coroutine for data returned by an external callback or another thread**, and want exceptions to propagate back into the coroutine automatically, use `async_simple::Promise<T>` + `async_simple::Future<T>` directly.
+
+Basic pattern:
+
+```cpp
+async_simple::coro::Lazy<std::string> wait_for_callback() {
+  async_simple::Promise<std::string> p;
+  auto fut = p.getFuture();
+
+  // hand the promise or callback to the external system
+  register_callback([p = std::move(p)](std::string result) mutable {
+    p.setValue(std::move(result));
+  });
+
+  // coroutine suspends until setValue / setException is called
+  auto value = co_await std::move(fut);
+  co_return value;
+}
+```
+
+Key points:
+
+- `co_await Future<T>` suspends the current coroutine and **does not occupy a thread**
+- When the external system (callback, thread, event loop) finishes, it calls `p.setValue(...)` to resume the coroutine
+- If the external system fails, call `p.setException(std::current_exception())`; the exception is rethrown at the `co_await`
+- `Future<T>` supports only a single consumer and is single-use
+
+### Returning results from a thread
+
+This is the same mechanism used by `dcb::spawn_blocking` under the hood. You can also write it yourself:
+
+```cpp
+async_simple::coro::Lazy<int> fetch_from_thread() {
+  async_simple::Promise<int> p;
+  auto fut = p.getFuture();
+
+  std::thread([p = std::move(p)]() mutable {
+    try {
+      int value = do_some_blocking_work();
+      p.setValue(value);
+    } catch (...) {
+      p.setException(std::current_exception());
+    }
+  }).detach();
+
+  co_return co_await std::move(fut);
+}
+```
+
+### Bridging callback-based APIs
+
+This is the core idea behind the pure C bridge (`cbridge_wait.hpp`):
+
+```cpp
+// Conceptual: maintain an op_id → Promise mapping in your own code
+async_simple::coro::Lazy<std::vector<uint8_t>> wait_for_c_callback(
+    uint64_t op_id) {
+  auto fut = take_promise_for_op(op_id);  // retrieve the Future for this op from your own registry
+  co_return co_await std::move(fut);
+}
+```
+
+The external C code does not need to know about coroutines; it only needs to call `setValue` or `setException` when it has a result.
+
+:::note
+`take_promise_for_op` is not a bridge-provided API; it represents the registry logic you maintain yourself. See `cbridge_wait.hpp` for a concrete implementation of this pattern.
+:::
+
+### Void return values
+
+If the result has no value, use `async_simple::Unit` instead of `void`. This is the same reason `spawn_blocking` does it: `Future<void>` does not call `Future::value()` after `co_await`, so an exception set via `setException` would be silently swallowed. `Future<Unit>` always goes through `value()`, so the exception is always rethrown.
+
+```cpp
+async_simple::coro::Lazy<> wait_for_event() {
+  async_simple::Promise<async_simple::Unit> p;
+  auto fut = p.getFuture();
+
+  register_callback([p = std::move(p)]() mutable {
+    if (ok) {
+      p.setValue(async_simple::Unit{});
+    } else {
+      p.setException(std::make_exception_ptr(std::runtime_error("failed")));
+    }
+  });
+
+  co_await std::move(fut);
+  co_return;
+}
+```
+
+### Relationship with spawn_blocking
+
+`dcb::spawn_blocking` is essentially:
+
+```cpp
+async_simple::Promise<WireT> p;
+auto fut = p.getFuture();
+asio::post(rt.pool(), [f = std::forward<F>(f), p = std::move(p)]() mutable {
+  try { p.setValue(f()); } catch (...) { p.setException(std::current_exception()); }
+});
+co_return co_await std::move(fut);
+```
+
+So if you just want to throw a callable onto the thread pool and `co_await` the result, use `spawn_blocking` directly. `Promise/Future` is for more flexible scenarios, such as threads you manage yourself, external event loops, or C callbacks.
+
 ### Async sleep
 
 ```cpp

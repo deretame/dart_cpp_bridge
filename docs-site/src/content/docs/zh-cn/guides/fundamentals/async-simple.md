@@ -112,14 +112,112 @@ async_simple::coro::Lazy<int> outer() {
 }
 ```
 
-### channel
+### Promise / Future
+
+如果你需要在协程里**非阻塞地等待一个外部回调或另一个线程返回的数据**，并且希望异常能自动抛回协程，可以直接使用 `async_simple::Promise<T>` + `async_simple::Future<T>`。
+
+基本模式：
 
 ```cpp
-auto [tx, rx] = co::oneshot::channel<std::string>();
-tx.send("hello");
+async_simple::coro::Lazy<std::string> wait_for_callback() {
+  async_simple::Promise<std::string> p;
+  auto fut = p.getFuture();
 
-auto value = co_await rx.recv();  // 挂起，收到后恢复
+  // 把 promise 或回调传给外部系统
+  register_callback([p = std::move(p)](std::string result) mutable {
+    p.setValue(std::move(result));
+  });
+
+  // 协程挂起，直到 setValue / setException 被调用
+  auto value = co_await std::move(fut);
+  co_return value;
+}
 ```
+
+关键点：
+
+- `co_await Future<T>` 会把当前协程挂起，**不占用线程**
+- 外部系统（回调、线程、事件循环）完成后调用 `p.setValue(...)` 恢复协程
+- 如果外部系统出错，调用 `p.setException(std::current_exception())`，异常会在 `co_await` 处重新抛出
+- `Future<T>` 只支持单消费者、一次性使用
+
+### 在线程里返回结果
+
+这和 `dcb::spawn_blocking` 底层用到的机制一样。你也可以自己写：
+
+```cpp
+async_simple::coro::Lazy<int> fetch_from_thread() {
+  async_simple::Promise<int> p;
+  auto fut = p.getFuture();
+
+  std::thread([p = std::move(p)]() mutable {
+    try {
+      int value = do_some_blocking_work();
+      p.setValue(value);
+    } catch (...) {
+      p.setException(std::current_exception());
+    }
+  }).detach();
+
+  co_return co_await std::move(fut);
+}
+```
+
+### 桥接回调式 API
+
+这是纯 C bridge (`cbridge_wait.hpp`) 的核心思路：
+
+```cpp
+// 示意：你的代码里自己维护一个 op_id → Promise 的映射
+async_simple::coro::Lazy<std::vector<uint8_t>> wait_for_c_callback(
+    uint64_t op_id) {
+  auto fut = take_promise_for_op(op_id);  // 从你自己的 registry 取出对应 Promise 的 Future
+  co_return co_await std::move(fut);
+}
+```
+
+外部 C 代码不需要知道协程，只需要拿到结果后调用 `setValue` 或 `setException`。
+
+:::note
+这里的 `take_promise_for_op` 不是 bridge 提供的 API，而是你自己维护的映射表逻辑。实际用法可以参考 `cbridge_wait.hpp` 的实现思路。
+:::
+
+### void 返回值
+
+如果结果不需要返回值，用 `async_simple::Unit` 而不是 `void`。原因和 `spawn_blocking` 一样：`Future<void>` 在 `co_await` 后不会调用 `Future::value()`，通过 `setException` 设置的异常会被静默吞掉；`Future<Unit>` 会走 `value()`，异常一定会重新抛出。
+
+```cpp
+async_simple::coro::Lazy<> wait_for_event() {
+  async_simple::Promise<async_simple::Unit> p;
+  auto fut = p.getFuture();
+
+  register_callback([p = std::move(p)]() mutable {
+    if (ok) {
+      p.setValue(async_simple::Unit{});
+    } else {
+      p.setException(std::make_exception_ptr(std::runtime_error("failed")));
+    }
+  });
+
+  co_await std::move(fut);
+  co_return;
+}
+```
+
+### 与 spawn_blocking 的关系
+
+`dcb::spawn_blocking` 本质上就是：
+
+```cpp
+async_simple::Promise<WireT> p;
+auto fut = p.getFuture();
+asio::post(rt.pool(), [f = std::forward<F>(f), p = std::move(p)]() mutable {
+  try { p.setValue(f()); } catch (...) { p.setException(std::current_exception()); }
+});
+co_return co_await std::move(fut);
+```
+
+所以如果你只是想把一个可调用对象扔到线程池并 `co_await` 结果，直接用 `spawn_blocking` 即可；`Promise/Future` 适合更灵活的场景（比如你自己管理的线程、外部事件循环、C 回调等）。
 
 ### 异步 sleep
 
