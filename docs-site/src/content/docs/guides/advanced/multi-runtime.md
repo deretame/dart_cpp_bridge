@@ -1,5 +1,5 @@
 ---
-title: Multi-Runtime
+title: Multiple Runtimes
 description: Create independent asio + async-simple runtimes outside the dart_cpp_bridge main Runtime, and communicate with the main Runtime through coroutine channels.
 ---
 

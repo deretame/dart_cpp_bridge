@@ -1,5 +1,5 @@
 ---
-title: Project Directory Structure
+title: Project Structure
 description: The directory layout of a typical dart_cpp_bridge project
 ---
 

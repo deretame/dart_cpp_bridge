@@ -1,5 +1,5 @@
 ---
-title: Marker Selection Guide
+title: Choosing a Marker
 description: How to choose BRIDGE_SYNC / BRIDGE_ASYNC / BRIDGE_NORMAL / stream / DartFn
 ---
 

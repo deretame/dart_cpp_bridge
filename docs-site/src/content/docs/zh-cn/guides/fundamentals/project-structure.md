@@ -1,5 +1,5 @@
 ---
-title: 项目目录结构
+title: 项目结构
 description: 一个典型 dart_cpp_bridge 项目的目录布局
 ---
 

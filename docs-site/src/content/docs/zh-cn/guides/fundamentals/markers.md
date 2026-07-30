@@ -1,5 +1,5 @@
 ---
-title: 函数标记选择指南
+title: 标记选择指南
 description: 如何选择 BRIDGE_SYNC / BRIDGE_ASYNC / BRIDGE_NORMAL / stream / DartFn
 ---
 
