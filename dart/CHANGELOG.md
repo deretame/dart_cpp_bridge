@@ -1,3 +1,14 @@
+## 1.0.0
+
+- First stable release.
+- Dart FFI session layer with sync, async, stream, and DartFn reverse-call support.
+- Multi-runtime support: bridge isolated C++ runtimes via `co::oneshot` / `co::mpsc` channels.
+- Foreign runtime integration (libuv demo) through `ForeignExecutor` C API.
+- Pure C cross-runtime bridge API (`cbridge.h`) for non-asio / non-C++ callers.
+- Native Assets hooks (`hook/link.dart`, `hook/build.dart`) for Android, iOS, Linux, macOS, and Windows.
+- Vendored Dart API DL headers (no network fetch during build).
+- English-only public API comments and documentation.
+
 ## 0.1.0-dev.2
 
 - Point `repository` at monorepo package path (`.../tree/main/dart`) for pub.dev verification.

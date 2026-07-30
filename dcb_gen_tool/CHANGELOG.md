@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- Stable release aligned with `dart_cpp_bridge` 1.0.0.
+- `dcb_gen generate` — full codegen pipeline for sync / async / normal / stream / DartFn APIs.
+- `dcb_gen init` — scaffold `native/CMakeLists.txt`, `hook/build.dart`, and `dart_cpp_bridge.yaml`.
+- Version consistency check before codegen.
+- Pinned Python 3.13 + libclang-ng 22.1 toolchain with SHA-256 verification.
+- Supports Windows (x86_64, aarch64), Linux (x86_64, aarch64), macOS (x86_64, aarch64).
+
 ## 0.1.0-dev.2
 
 - `dcb_gen init`: auto-read `pubspec.yaml` name for `dart_package` (no `--name`

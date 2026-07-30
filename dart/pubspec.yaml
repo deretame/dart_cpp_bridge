@@ -2,7 +2,7 @@ name: dart_cpp_bridge
 description: >
   Experimental Dart ↔ C++20 bridge (FRB-like). Dart FFI session layer;
   native library built from the monorepo (hooks not ready).
-version: 0.1.0-dev.2
+version: 1.0.0
 homepage: https://github.com/deretame/dart_cpp_bridge
 # Monorepo: point at the package directory so pub.dev can verify.
 repository: https://github.com/deretame/dart_cpp_bridge/tree/main/dart
