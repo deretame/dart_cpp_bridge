@@ -71,6 +71,7 @@ See [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) and [async-si
 - [Lifecycle Management](/dart_cpp_bridge/guides/fundamentals/lifecycle/) — Runtime, Session, Opaque objects, NativeFinalizer
 - [Exceptions and Error Handling](/dart_cpp_bridge/guides/fundamentals/errors/) — C++ ↔ Dart exception propagation rules
 - [Project Directory Structure](/dart_cpp_bridge/guides/fundamentals/project-structure/) — hand-written files and generated artifacts
+- [Native Assets Build Hooks](/dart_cpp_bridge/guides/fundamentals/native-assets-hooks/) — how `hook/build.dart` compiles and bundles the C++ library
 - [C++ ↔ Dart Type Encoding](/dart_cpp_bridge/guides/fundamentals/encoding/) — how C++ types map to Dart types
 - [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime, spawn, channel, sleep
 - [async-simple Coroutines Primer](/dart_cpp_bridge/guides/fundamentals/async-simple/) — `Lazy`, `Executor`, `co_await` behavior

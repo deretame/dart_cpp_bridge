@@ -71,6 +71,7 @@ bridge 自带一个基于 **asio + async-simple** 的运行时，业务代码通
 - [生命周期管理](/dart_cpp_bridge/guides/fundamentals/lifecycle/) — Runtime、Session、Opaque 对象、NativeFinalizer
 - [异常与错误处理](/dart_cpp_bridge/guides/fundamentals/errors/) — C++ ↔ Dart 异常透传规则
 - [项目目录结构](/dart_cpp_bridge/guides/fundamentals/project-structure/) — 手写文件与生成产物
+- [Native Assets Build Hook](/dart_cpp_bridge/zh-cn/guides/fundamentals/native-assets-hooks/) — `hook/build.dart` 如何编译并打包 C++ 库
 - [C++ ↔ Dart 类型翻译](/dart_cpp_bridge/guides/fundamentals/encoding/) — C++ 类型如何映射到 Dart 类型
 - [基础运行时](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime、spawn、channel、sleep
 - [async-simple 协程入门](/dart_cpp_bridge/guides/fundamentals/async-simple/) — `Lazy`、`Executor`、`co_await` 行为
