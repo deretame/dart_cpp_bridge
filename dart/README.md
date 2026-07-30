@@ -1,44 +1,66 @@
-# dart_cpp_bridge
+# [dart_cpp_bridge](https://github.com/deretame/dart_cpp_bridge)
 
 [![pub package](https://img.shields.io/pub/v/dart_cpp_bridge.svg)](https://pub.dev/packages/dart_cpp_bridge)
 
-**Dart-facing package** for an experimental **Dart ↔ C++20** bridge (FRB-like).
+Dart/Flutter ↔ C++20 binding generator, inspired by [flutter_rust_bridge](https://cjycode.com/flutter_rust_bridge/).
 
-> **Dev / early preview** (`0.1.0-dev.2`). Native library is **not** built by this package yet (no build hooks). You must compile the C++ dynamic library yourself from the monorepo.
+Write normal C++ code and call it from Dart/Flutter, with sync, async, stream, and Dart-closure reverse calls.
 
-## Full documentation
+## What's this?
 
-This package is developed inside a monorepo. **Do not maintain a second long README here** — use the repo docs:
+- Write **plain C++20** functions and classes — no hand-written FFI boilerplate
+- Codegen generates Dart API + C++ wire dispatch from annotated headers
+- Built-in runtime based on Asio + async-simple coroutines
+- Supports Android, iOS, Windows, Linux, and macOS
 
-| | |
-|--|--|
-| English | [README.md](https://github.com/deretame/dart_cpp_bridge/blob/main/README.md) |
-| 中文 | [README.zh-CN.md](https://github.com/deretame/dart_cpp_bridge/blob/main/README.zh-CN.md) |
-| Design / progress | [docs/](https://github.com/deretame/dart_cpp_bridge/tree/main/docs) |
-| Issues | [github.com/deretame/dart_cpp_bridge](https://github.com/deretame/dart_cpp_bridge/issues) |
+## Quickstart
 
-## What this package is
+See the documentation for a complete quickstart:
 
-- Dart FFI bindings + session / Completer / Stream / DartFn plumbing
-- Companion to the C++ runtime in the same repo (`native/include/`, `native/src/`)
-- Requires **Dart ≥ 3.10**
+- English: <https://deretame.github.io/dart_cpp_bridge/getting-started/>
+- 中文: <https://deretame.github.io/dart_cpp_bridge/zh-cn/getting-started/>
 
-## Minimal usage
+## Show me the code
 
-```dart
-import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
+**C++**
 
-Future<void> main() async {
-  final b = await DartCppBridge.init(
-    libraryPath: 'path/to/dart_cpp_bridge.dll', // .so / .dylib on other OS
-  );
-  // Use invokeSyncMethod / invokeAsyncMethod / openStream with your
-  // generated or hand-written method ids and codec payloads.
-  b.shutdown(); // main isolate only, on process exit
+```cpp
+#include <dart_cpp_bridge/annotate.h>
+
+BRIDGE_SYNC int32_t add(int32_t a, int32_t b) { return a + b; }
+
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> greet(std::string name) {
+  co_return "Hello, " + name;
 }
 ```
 
-Build the native library from the repo root (CMake + C++20); see the main README.
+**Dart**
+
+```dart
+import 'package:my_app/src/native_gen/api/api_fn.dart';
+
+void main() async {
+  await DcbLib.init();
+
+  print(add(a: 1, b: 2));            // 3
+  print(await greet(name: 'World')); // Hello, World
+}
+```
+
+## Documentation
+
+- Homepage: <https://deretame.github.io/dart_cpp_bridge/>
+- Quickstart: <https://deretame.github.io/dart_cpp_bridge/getting-started/>
+- GitHub: <https://github.com/deretame/dart_cpp_bridge>
+
+## Acknowledgments
+
+- [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — architecture and product shape inspiration
+- [Asio](https://think-async.com/Asio/) — event loop and asynchronous I/O
+- [async-simple](https://github.com/alibaba/async-simple) — C++20 coroutine runtime
+- [concurrentqueue](https://github.com/cameron314/concurrentqueue) — lock-free concurrent queue
+- Dart / Flutter team — FFI, Isolate, NativeFinalizer, and the broader Dart native ecosystem
 
 ## License
 

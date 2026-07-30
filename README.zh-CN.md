@@ -1,338 +1,74 @@
-# dart_cpp_bridge
+# [dart_cpp_bridge](https://github.com/deretame/dart_cpp_bridge)
 
 [English](README.md) | **中文**
 
-面向 **Dart / Flutter** 的 **C++20** 互操作桥：用协程与事件循环把现有 C/C++ 代码方便地接到 Dart 侧，体验尽量对齐 [Flutter Rust Bridge (FRB)](https://cjycode.com/flutter_rust_bridge/)。
+[![pub package](https://img.shields.io/pub/v/dart_cpp_bridge.svg)](https://pub.dev/packages/dart_cpp_bridge)
+[![GitHub stars](https://img.shields.io/github/stars/deretame/dart_cpp_bridge?logo=github&style=flat)](https://github.com/deretame/dart_cpp_bridge)
 
-仓库：<https://github.com/deretame/dart_cpp_bridge>
+Dart/Flutter ↔ C++20 绑定生成器，灵感来自 [flutter_rust_bridge](https://cjycode.com/flutter_rust_bridge/)。
 
-> **状态**：独立实验仓库。Phase 1 手写运行时已基本完成；Phase 2 codegen 已能对 fixture 生成 **SYNC/ASYNC/NORMAL**（见 `examples/codegen_demo`）。**Native Assets / 富类型 / 产品化模板**尚未就绪，尚不适合作为生产依赖直接替换 FRB。
+用普通的 C++20 代码就能被 Dart/Flutter 调用，支持同步、异步、流式以及 Dart 闭包反向调用。
 
----
+## 这是什么？
 
-## 为什么要做这个项目？
-
-生态里：
-
-- **Rust** 有成熟的 [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/)，从业务函数到 Dart API 链路清晰；
-- **C / C++** 仍有大量存量代码（多媒体、网络、游戏、嵌入式、历史业务库……），却缺少一套**同样顺手**的 Dart 接入方案。
-
-常见路径要么是手写 FFI + 自管线程与回调，要么是 JNI / 平台通道碎片化，异步与流式调用容易写成「回调地狱」或堵死事件循环。
-
-**本项目的目标**是补上这块空白：
-
-- 给 C++ 业务一个**清晰的接入面**（sync / async / stream / 反向 Dart 闭包）；
-- 用 **C++20 协程**编写异步逻辑，语义上贴近 Dart 的 `async` / `await` / `Stream`；
-- 运行时模型参考 FRB（进程级 Runtime、Isolate 级 Session、长期 port + `request_id`），降低心智切换成本。
-
----
-
-## 设计理念
-
-| 原则 | 说明 |
-|------|------|
-| 对齐 FRB 体验 | 通道划分、生命周期、DartFn 反向调用等概念与 FRB 同构，便于两边对照 |
-| 协程优先 | 业务侧写 `async_simple::coro::Lazy<T>`，在 io 上 `co_await`，而不是到处 `std::future::get` |
-| 不替用户兜底错误用法 | 例如在 io 线程上 `syncAwait` 会自死锁——文档写清，由调用方负责 |
-| 渐进落地 | Phase 1 手写 demo 验证模型 → Phase 2 codegen → Phase 3 Native Assets / 产品化 |
-
-业务代码**不**需要返回「桥专用 Future 包装」；正常写同步函数或 `Lazy`，由桥负责编解码与调度。
-
----
-
-## 技术栈
-
-| 层级 | 选型 | 作用 |
-|------|------|------|
-| 语言 | **C++20**（最低要求） | 协程、概念等；请使用支持 C++20 的编译器（MSVC 较新版本 / GCC / Clang） |
-| 事件循环 | **[Asio](https://think-async.com/Asio/)**（standalone） | 单线程 `io_context`：定时、post、与外部完成对接 |
-| 协程与管道 | **[async-simple](https://github.com/alibaba/async-simple)** | `Lazy` 协程、`Executor` 调度；配合本仓库 `co::oneshot` / mpsc 等 channel |
-| Dart 侧 | Dart 3 + `package:ffi` | Isolate、ReceivePort、Completer / Stream |
-| 参考实现 | Flutter Rust Bridge | 架构与 API 形态对照，而非代码依赖 |
-
-运行时关系（简化）：
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│  Dart Isolate(s)                                        │
-│    Session（每 Isolate 一个 reply port）                  │
-│    Future / Stream / DartFn 回调                        │
-└──────────────────────────▲──────────────────────────────┘
-                           │ FFI + 二进制 frame
-┌──────────────────────────┴──────────────────────────────┐
-│  Runtime（进程唯一）                                      │
-│    asio::io_context（单线程）+ AsioExecutor              │
-│    asio::thread_pool（normal / 阻塞型工作）               │
-│    wire：sync / async Lazy / stream / DartFn            │
-└─────────────────────────────────────────────────────────┘
-```
-
-**DartFn（C++ → Dart 闭包）async 路径**：在 io 上 `co_await` oneshot 真挂起，**不堵 io 线程、不占 pool 线程**；sync 路径阻塞当前线程（在 io 上调用则自负）。
-
----
-
-## 当前能力（Phase 1）
-
-| 能力 | 状态 |
-|------|------|
-| 单线程 asio + thread_pool | ✅ |
-| Runtime 进程唯一 / Session 每 Isolate | ✅ |
-| sync / async（Lazy）/ normal / stream | ✅ |
-| DartFn 反向调用（参数式闭包，类 FRB） | ✅（async = io 真挂起） |
-| NativeFinalizer 自动关 session | ✅ |
-| Dart 测试（含多 Isolate） | ✅ |
-| C++ smoke（oneshot / DartFn e2e） | ✅ |
-| Codegen（扫头 + 标记 → wire / Dart） | ⏳ SYNC/ASYNC/NORMAL + Dart 三层 API；见 `examples/codegen_demo` |
-| Native Assets hook 产品化 | ⏳ 未开始 |
-
-### Demo API（手写）
-
-| C++ / 概念 | Dart | 通道 |
-|------------|------|------|
-| `bridgeVersion` | `int bridgeVersion()` | sync |
-| `add(a, b)` | `Future<int> add(a, b)` | async（Lazy） |
-| `sleepTest` | `Future<String> sleepTest()` | normal（pool） |
-| `ticks(count, intervalMs)` | `Stream<int> ticks(...)` | stream |
-| `callDartHello(cb)` | `Future<String> callDartHello(cb)` | DartFn **async**（io `co_await`） |
-| `callDartHelloSync(cb)` | `Future<String> callDartHelloSync(cb)` | DartFn **sync**（堵当前线程） |
-
----
-
-## C++ 协程启动 API（`spawn` 家族）
-
-`dart_cpp_bridge/runtime.hpp` 提供三个辅助函数，用于从**非协程**环境启动 `async_simple::coro::Lazy<T>`。如果已经在 io 上运行的协程内部，三个都不需要——直接 `co_await std::move(lazy)`（会继承当前 executor，异常直接重抛）。
-
-| 辅助函数 | 返回 | 用途 |
-|--------|---------|---------|
-| `dcb::spawn(lazy)` | `RescheduleLazy<T>`（惰性，未启动） | 把协程绑定到 io executor；由调用方选择如何触发 |
-| `dcb::spawn_detached(lazy)` | `void` | 发射后不理：立即在 io 上启动，值**和**异常都丢弃 |
-| `dcb::spawn_blocking(f)` | `Lazy<T>` | 在线程池上跑阻塞 callable；等待它时不会阻塞 io |
-
-### `spawn` —— 三种触发方式
-
-`spawn` 返回的 `RescheduleLazy` 已绑定 io 但**尚未启动**（它是 `[[nodiscard]]` 且惰性的——直接丢弃意味着协程永远不会运行）。三选一：
-
-```cpp
-#include <async_simple/coro/SyncAwait.h>
-
-// 1) 阻塞一个普通（非 io）线程直到就绪；返回值，或重抛协程异常。
-//    不需要 std::promise/future 手工接线。
-int v = async_simple::coro::syncAwait(dcb::spawn(std::move(lazy)));
-
-// 2) 发射后不理（值和异常都丢弃）：
-dcb::spawn_detached(std::move(lazy));
-
-// 3) 自定义完成回调（Try<T> 携带值或异常）：
-dcb::spawn(std::move(lazy)).start([](async_simple::Try<int>&& t) { /* ... */ });
-```
-
-### `spawn_blocking` —— 卸载阻塞工作
-
-```cpp
-// 在 io 上的协程内部——f() 阻塞线程池线程期间，io 线程照常运行：
-auto v = co_await dcb::spawn_blocking([&] { return heavyComputation(); });
-
-// 阻塞一个普通线程等结果：
-auto v = async_simple::coro::syncAwait(dcb::spawn(dcb::spawn_blocking(f)));
-
-// 从非协程环境发射后不理：
-dcb::spawn_detached(dcb::spawn_blocking(f));
-```
-
-callable 抛出的异常会在线程池线程上被捕获（`Promise::setException`），并在等待处重抛。支持 void callable（通过 `async_simple::Unit` 桥接，保证异常照样传播——裸的 `co_await Future<void>` 会静默吞掉异常）。
-
-### 定时器 / sleep
-
-协程内延时直接用 async_simple 标准 API——不需要桥的包装：
-
-```cpp
-#include <async_simple/coro/Sleep.h>
-
-co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
-```
-
-它通过 `AsioExecutor` 的定时 `schedule` 重载挂在 io 事件循环的 `asio::steady_timer` 上：等待期间 io 线程照常响应，也不占用线程池/OS 线程——所以不要手写 `Promise` + 定时器的轮子。
-
-### 安全约束
-
-- **不要在 io 线程上 `syncAwait`。** 它会阻塞调用者，而被等待的 Lazy 又需要 io 线程才能推进——自我死锁。`AsioExecutor::currentThreadInExecutor()` 会识别 io 线程，`syncAwait` 在其上会断言拒绝。在 io 上请用 `co_await`。
-- **不要用 async_simple 自带的 `RescheduleLazy::detach()`。** 它的完成回调会在 *io 线程上*重抛协程异常，异常会冲进事件循环并终结 io 线程。请用 `dcb::spawn_detached`（空回调）。
-- **保活协程 lambda。** 协程 lambda 的捕获存在于 lambda 对象而非协程帧中。`Runtime::spawn_on_asio` 用 shared holder 保活 factory；裸用 `spawn(...).start(...)` 时优先用自由协程函数（参数会拷贝进协程帧），或确保捕获活过协程。
-
----
+- 写**普通 C++20** 函数和类，无需手写 FFI 胶水
+- 代码生成器从带注解的头文件生成 Dart API + C++ wire dispatch
+- 内置基于 Asio + async-simple 协程的运行时
+- 支持 Android、iOS、Windows、Linux、macOS
 
 ## 快速开始
 
-### 环境
+完整快速开始见文档：
 
-- CMake ≥ 3.24  
-- **C++20** 编译器  
-- Git（FetchContent 拉取 Asio / async-simple）  
-- **Dart SDK ≥ 3.10**（`dart/pubspec.yaml`：`sdk: ^3.10.0`）  
-  - Build hooks / Native Assets：≥ 3.10（当前稳定版 Flutter 自带 Dart 3.12.x 即可）  
-  - Link hooks + recorded-usage 摇树：≥ 3.13（稳定版普及后再考虑抬下限）
+- 英文：<https://deretame.github.io/dart_cpp_bridge/getting-started/>
+- 中文：<https://deretame.github.io/dart_cpp_bridge/zh-cn/getting-started/>
 
-### 构建 C++
+## 看看代码
 
-```bash
-# 1) 拉取 Dart API DL 头文件
-cmake -P dart/native/cmake/fetch_dart_api.cmake
+**C++**
 
-# 2) 配置并编译
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+```cpp
+#include <dart_cpp_bridge/annotate.h>
 
-# 3) 原生 smoke
-./build/dcb_smoke                 # Linux / macOS（路径因生成器而异）
-build/Release/dcb_smoke.exe       # Windows 多配置生成器
-```
+BRIDGE_SYNC int32_t add(int32_t a, int32_t b) { return a + b; }
 
-Windows（PowerShell）：
-
-```powershell
-cmake -P dart/native/cmake/fetch_dart_api.cmake
-cmake -S . -B build
-cmake --build build --config Release
-.\build\Release\dcb_smoke.exe
-```
-
-### Dart 侧
-
-```powershell
-cd dart
-dart pub get
-```
-
-```dart
-import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
-
-Future<void> main() async {
-  final b = await DartCppBridge.init(
-    libraryPath: r'..\build\Release\dart_cpp_bridge.dll', // 按平台改路径
-  );
-
-  print(b.bridgeVersion());
-  print(await b.add(40, 2));
-  print(await b.sleepTest());
-
-  // DartFn：C++ 在 io 上 await，Dart 侧跑闭包
-  print(await b.callDartHello((name) => 'Hello, $name!'));
-  print(await b.callDartHello((name) async {
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    return 'Hello async, $name!';
-  }));
-
-  await for (final n in b.ticks(count: 3, intervalMs: 0)) {
-    print('tick $n');
-  }
-
-  // 进程退出前（仅主 isolate）
-  b.shutdown();
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> greet(std::string name) {
+  co_return "Hello, " + name;
 }
 ```
 
-### 测试
+**Dart**
 
-```powershell
-# C++ smoke（无 Dart VM，模拟 post / DartFn reply）
-.\build\Release\dcb_smoke.exe
+```dart
+import 'package:my_app/src/native_gen/api/api_fn.dart';
 
-# Dart FFI 全量测试（需先编出动态库）
-cd dart
-dart test
+void main() async {
+  await DcbLib.init();
+
+  print(add(a: 1, b: 2));            // 3
+  print(await greet(name: 'World')); // Hello, World
+}
 ```
-
-默认从仓库 `build/Release/dart_cpp_bridge.dll`（或对应平台 so/dylib）加载；也可：
-
-```powershell
-$env:DCB_LIBRARY_PATH = "D:\path\to\dart_cpp_bridge.dll"
-dart test
-```
-
----
-
-## 生命周期（对齐 FRB 思路）
-
-| 动作 | 谁调用 | 说明 |
-|------|--------|------|
-| `DartCppBridge.init` | 每个要用桥的 Isolate | 打开本 isolate 的 Session + reply port |
-| `dispose` | 可选 | 立即关 session；**多数情况可不调** |
-| `NativeFinalizer` | 自动 | 对象不可达 / isolate 结束时 `session_close` |
-| `shutdown` | **仅主 isolate 退出时** | 停进程级 Runtime；worker 勿调 |
-
-模型：**Runtime 进程唯一；Session 每 Isolate 一个**——后台 isolate 也可独立 async / stream。
-
----
-
-## 仓库结构
-
-```text
-docs/
-  frb_and_cpp_bridge_design.md   # 设计全文
-  progress.md                    # 实现进度
-  known_issues.md                # 技术债与已解问题
-include/dart_cpp_bridge/         # 公共 C++ 头（runtime / session / channel / DartFn …）
-src/                             # runtime · wire · ffi_entry
-third_party/dart_api/            # Dart API DL
-dart/                            # Dart 包 + test
-examples/phase1_demo/            # C++ smoke
-cmake/                           # 工具脚本
-dcb_gen_tool/                    # CLI 工具 + parse/generate
-examples/codegen_demo/           # codegen fixture（yaml + 生成物 + 测试）
-hook/                            # Native Assets 预留
-```
-
----
 
 ## 文档
 
-| 文档 | 内容 |
-|------|------|
-| [docs/frb_and_cpp_bridge_design.md](docs/frb_and_cpp_bridge_design.md) | 设计决策、通道模型、与 FRB 对照 |
-| [docs/progress.md](docs/progress.md) | 实现进度与已落地清单 |
-| [docs/known_issues.md](docs/known_issues.md) | 已知问题 / 已解决问题（含 DartFn oneshot） |
+- 首页：<https://deretame.github.io/dart_cpp_bridge/>
+- 快速开始：<https://deretame.github.io/dart_cpp_bridge/zh-cn/getting-started/>
+- GitHub：<https://github.com/deretame/dart_cpp_bridge>
 
-设计与进度文档目前以**中文**为主。
+## 状态
 
----
+实验性 / `0.1.0-dev`。API 与 wire 格式可能变化。
 
-## 路线图（摘要）
+## 致谢
 
-1. **Phase 1**（当前）：手写骨架验证 Runtime / Session / 四通道 / DartFn  
-2. **Phase 2**：基础 SYNC/ASYNC/NORMAL 已通 → 扩展 struct/Stream/DartFn 与模板  
-   文档：[`dcb_gen_tool/README.md`](dcb_gen_tool/README.md)、[`examples/codegen_demo`](examples/codegen_demo/)
-3. **Phase 3**：Native Assets hook、CMake export、示例工程产品化  
-4. **Phase 4**：业务接入（不默认替换任何已有 FRB 生产桥）
-
----
-
-## 非目标（当前）
-
-- 不保证 ABI / API 稳定  
-- 不提供「在 io 上 sync 阻塞也帮你自动离载」的隐藏魔法  
-- 不把 C++ 标准库或业务二进制打包进 pub 包（后续 hook 负责编链接）  
-- 不替代平台通道去画 UI；只做 **Dart ↔ 原生逻辑** 的桥
-
----
-
-## 致谢与参考
-
-- [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考  
-- [Asio](https://think-async.com/Asio/) — 事件循环与异步 I/O  
-- [async-simple](https://github.com/alibaba/async-simple) — C++20 协程运行时  
-- Dart / Flutter 团队 — FFI、Isolate、NativeFinalizer 等能力  
-
----
+- [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考
+- [Asio](https://think-async.com/Asio/) — 事件循环与异步 I/O
+- [async-simple](https://github.com/alibaba/async-simple) — C++20 协程运行时
+- [concurrentqueue](https://github.com/cameron314/concurrentqueue) — 无锁并发队列
+- Dart / Flutter 团队 — FFI、Isolate、NativeFinalizer 等 Dart 原生能力
 
 ## 许可
 
-本项目采用 **MIT License** — 见 [LICENSE](LICENSE)。
-
-Asio、async-simple、Dart SDK 头文件等第三方组件仍遵循各自许可证。
-
----
-
-## 参与
-
-问题与设计讨论请先看 `docs/`。欢迎针对 Phase 1 行为、测试覆盖与文档清晰度提 issue / PR：  
-<https://github.com/deretame/dart_cpp_bridge/issues>
+MIT — 见 [LICENSE](LICENSE)。
