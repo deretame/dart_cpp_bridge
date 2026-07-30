@@ -1,8 +1,8 @@
-// cbridge.cpp — 纯 C 跨运行时桥接 API 实现。
+// cbridge.cpp — Pure C cross-runtime bridge API implementation.
 //
-// 提供两类功能：
-//   1. dcb_invoke_dart_fn — 从任意 C/C++ 代码调用已注册的 Dart 回调
-//   2. dcb_async_*       — 让 C++ 协程非阻塞等待外部 C 异步操作完成
+// Provides two categories of functionality:
+//   1. dcb_invoke_dart_fn — call a registered Dart callback from arbitrary C/C++ code
+//   2. dcb_async_*       — let C++ coroutines await external C async operations non-blockingly
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/cbridge_wait.hpp"
@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-// ─── 异步操作注册表 ─────────────────────────────────────────────────────────
+// ─── Async operation registry ─────────────────────────────────────────────────
 
 namespace dcb {
 namespace {
@@ -59,10 +59,10 @@ co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id) {
 }  // namespace detail
 }  // namespace dcb
 
-// ─── DartFn 调用内部协程 ────────────────────────────────────────────────────
+// ─── DartFn call internal coroutine ───────────────────────────────────────────
 
-// MSVC 19.51 协程 lambda 捕获 bug workaround：
-// 使用 static 协程函数，通过参数传递所有变量。
+// MSVC 19.51 coroutine lambda capture bug workaround:
+// Use a static coroutine function and pass all variables as parameters.
 static async_simple::coro::Lazy<> cbridge_invoke_coro(
     std::shared_ptr<dcb::Session> session,
     std::uint64_t generation,
@@ -81,7 +81,7 @@ static async_simple::coro::Lazy<> cbridge_invoke_coro(
   co_return;
 }
 
-// ─── C API 实现 ─────────────────────────────────────────────────────────────
+// ─── C API implementation ─────────────────────────────────────────────────────
 
 extern "C" {
 
@@ -138,7 +138,7 @@ DCB_API void dcb_async_cancel(uint64_t op_id) {
     tx = std::move(it->second.tx);
     p.ops.erase(it);
   }
-  // Sender 析构 → close → Receiver 收到 nullopt → "operation cancelled"
+  // Sender destruction -> close -> Receiver receives nullopt -> "operation cancelled"
 }
 
 DCB_API int dcb_invoke_dart_fn(

@@ -1,14 +1,14 @@
 #pragma once
 
-// dcb_codec.h — 纯 C wire payload 编解码。
+// dcb_codec.h — Pure C wire payload codec.
 //
-// 与 C++ 侧 ByteWriter / ByteReader (codec.hpp) 二进制兼容。
-// 纯 C99，不引入任何 C++ 头文件。
+// Binary-compatible with the C++ ByteWriter / ByteReader (codec.hpp).
+// Pure C99; no C++ headers are introduced.
 //
-// 支持类型：i32, u32, i64, u64, f64, bytes/str（长度前缀）、数组（u32 count + N 元素）。
-// 所有多字节整数均为小端序。
+// Supported types: i32, u32, i64, u64, f64, bytes/str (length-prefixed), array (u32 count + N elements).
+// All multi-byte integers are little-endian.
 //
-// 用法：
+// Usage:
 //   dcb_writer w;
 //   dcb_writer_init(&w);
 //   dcb_write_str(&w, "hello");
@@ -34,44 +34,44 @@ extern "C" {
 
 // ─── Writer ─────────────────────────────────────────────────────────────────
 
-/// 动态增长的写入缓冲区。初始分配 64 字节，按需倍增。
+/// Dynamically growing write buffer. Initially allocates 64 bytes and doubles on demand.
 typedef struct {
-  uint8_t* data;   ///< 内部缓冲区（dcb_writer_free 释放）
-  uint32_t len;    ///< 已写入字节数
-  uint32_t cap;    ///< 当前容量
+  uint8_t* data;   ///< Internal buffer (freed by dcb_writer_free)
+  uint32_t len;    ///< Number of bytes written
+  uint32_t cap;    ///< Current capacity
 } dcb_writer;
 
-/// 初始化 writer（分配初始缓冲区）。
+/// Initialize the writer (allocate the initial buffer).
 DCB_API void dcb_writer_init(dcb_writer* w);
 
-/// 释放 writer 内部缓冲区。释放后不可再使用（除非重新 init）。
+/// Free the writer's internal buffer. The writer must not be used after this (unless re-initialized).
 DCB_API void dcb_writer_free(dcb_writer* w);
 
-/// 写入 uint32（4 bytes LE）。
+/// Write uint32 (4 bytes LE).
 DCB_API void dcb_write_u32(dcb_writer* w, uint32_t v);
 
-/// 写入 uint64（8 bytes LE）。
+/// Write uint64 (8 bytes LE).
 DCB_API void dcb_write_u64(dcb_writer* w, uint64_t v);
 
-/// 写入 int32（4 bytes LE）。
+/// Write int32 (4 bytes LE).
 DCB_API void dcb_write_i32(dcb_writer* w, int32_t v);
 
-/// 写入 int64（8 bytes LE）。
+/// Write int64 (8 bytes LE).
 DCB_API void dcb_write_i64(dcb_writer* w, int64_t v);
 
-/// 写入 double（8 bytes LE, IEEE 754）。
+/// Write double (8 bytes LE, IEEE 754).
 DCB_API void dcb_write_f64(dcb_writer* w, double v);
 
-/// 写入长度前缀 + 字节（u32 len + data）。
+/// Write length-prefixed bytes (u32 len + data).
 DCB_API void dcb_write_len_bytes(dcb_writer* w, const void* p, uint32_t n);
 
-/// 写入字符串（u32 strlen + UTF-8 bytes）。便捷包装。
+/// Write a string (u32 strlen + UTF-8 bytes). Convenience wrapper.
 static inline void dcb_write_str(dcb_writer* w, const char* s) {
   dcb_write_len_bytes(w, s, (uint32_t)strlen(s));
 }
 
-/// 写入数组头（u32 count）。之后循环写入每个元素即可。
-/// 示例：
+/// Write an array header (u32 count). Loop to write each element afterwards.
+/// Example:
 ///   dcb_write_arr_begin(&w, 3);
 ///   dcb_write_i32(&w, 10);
 ///   dcb_write_i32(&w, 20);
@@ -82,49 +82,49 @@ static inline void dcb_write_arr_begin(dcb_writer* w, uint32_t count) {
 
 // ─── Reader ─────────────────────────────────────────────────────────────────
 
-/// 零拷贝读取器。不持有数据所有权，不 malloc。
-/// 越界读取时进入错误状态（后续读取返回 0），通过 dcb_reader_valid 检查。
+/// Zero-copy reader. Does not own the data and does not malloc.
+/// On out-of-bounds reads it enters an error state (subsequent reads return 0); check via dcb_reader_valid.
 typedef struct {
-  const uint8_t* data;  ///< 指向外部缓冲区（调用者持有）
-  uint32_t len;         ///< 缓冲区总长度
-  uint32_t pos;         ///< 当前读取位置
-  int      error;       ///< 越界标志（0=正常, 1=已越界）
+  const uint8_t* data;  ///< Pointer to external buffer (owned by caller)
+  uint32_t len;         ///< Total buffer length
+  uint32_t pos;         ///< Current read position
+  int      error;       ///< Out-of-bounds flag (0=ok, 1=out-of-bounds)
 } dcb_reader;
 
-/// 初始化 reader，指向外部数据（不拷贝）。
+/// Initialize the reader to point at external data (no copy).
 DCB_API void dcb_reader_init(dcb_reader* r, const uint8_t* data, uint32_t len);
 
-/// 返回 1 表示目前无错误，0 表示曾发生越界读取。
+/// Return 1 if no error has occurred, 0 if an out-of-bounds read happened.
 DCB_API int dcb_reader_valid(const dcb_reader* r);
 
-/// 读取 uint32（4 bytes LE）。越界时返回 0 并设置 error。
+/// Read uint32 (4 bytes LE). Returns 0 and sets error on out-of-bounds.
 DCB_API uint32_t dcb_read_u32(dcb_reader* r);
 
-/// 读取 uint64（8 bytes LE）。
+/// Read uint64 (8 bytes LE).
 DCB_API uint64_t dcb_read_u64(dcb_reader* r);
 
-/// 读取 int32（4 bytes LE）。
+/// Read int32 (4 bytes LE).
 DCB_API int32_t dcb_read_i32(dcb_reader* r);
 
-/// 读取 int64（8 bytes LE）。
+/// Read int64 (8 bytes LE).
 DCB_API int64_t dcb_read_i64(dcb_reader* r);
 
-/// 读取 double（8 bytes LE, IEEE 754）。
+/// Read double (8 bytes LE, IEEE 754).
 DCB_API double dcb_read_f64(dcb_reader* r);
 
-/// 读取长度前缀字节块（u32 len + data）。
-/// 返回指向 data 内部的指针（零拷贝），*out_len 为长度。
-/// 越界或长度不合法时返回 NULL，*out_len = 0。
+/// Read a length-prefixed byte block (u32 len + data).
+/// Returns a pointer into the data (zero-copy); *out_len is the length.
+/// Returns NULL and sets *out_len = 0 on out-of-bounds or invalid length.
 DCB_API const uint8_t* dcb_read_len_bytes(dcb_reader* r, uint32_t* out_len);
 
-/// 读取字符串（u32 len + UTF-8 bytes）。
-/// 返回指向内部的 const char*（零拷贝，不保证 NUL 结尾），*out_len 为字节长度。
+/// Read a string (u32 len + UTF-8 bytes).
+/// Returns an internal const char* (zero-copy, not guaranteed NUL-terminated); *out_len is the byte length.
 static inline const char* dcb_read_str(dcb_reader* r, uint32_t* out_len) {
   return (const char*)dcb_read_len_bytes(r, out_len);
 }
 
-/// 读取数组头，返回元素个数。之后循环读取每个元素即可。
-/// 示例：
+/// Read an array header and return the element count. Loop to read each element afterwards.
+/// Example:
 ///   uint32_t n = dcb_read_arr_begin(&r);
 ///   for (uint32_t i = 0; i < n; i++) vals[i] = dcb_read_i32(&r);
 static inline uint32_t dcb_read_arr_begin(dcb_reader* r) {

@@ -35,7 +35,7 @@ void main() {
     });
 
     test('utf8 string including non-ascii', () {
-      const s = '你好 bridge ✓';
+      const s = 'Hello bridge ✓';
       final payload = ByteWriter()..str(s);
       final raw = makeFrame(
         type: MsgType.responseOk,

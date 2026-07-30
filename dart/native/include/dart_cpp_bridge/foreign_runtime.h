@@ -1,11 +1,12 @@
 #pragma once
 
-// Foreign Runtime C API — 让非 asio 事件循环接入 bridge 的 channel/coroutine 系统。
+// Foreign Runtime C API — let non-asio event loops plug into the bridge's channel/coroutine system.
 //
-// 外部运行时（libuv、glib、自定义 loop 等）通过注册一个 schedule 回调，
-// 即可接收 bridge 投递的任务（如协程恢复），实现跨运行时非阻塞通信。
+// External runtimes (libuv, glib, custom loops, etc.) register a schedule callback to receive
+// tasks posted by the bridge (such as coroutine resumptions), enabling non-blocking cross-runtime
+// communication.
 //
-// 详见 docs/foreign_runtime_design.md
+// See docs/foreign_runtime_design.md for details.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -24,51 +25,51 @@
 extern "C" {
 #endif
 
-/// 调度回调类型。
-/// bridge 通过此回调向外部运行时投递一个任务。
-/// 实现者必须保证 fn(userdata) 在目标事件循环的线程上被调用。
+/// Schedule callback type.
+/// The bridge uses this callback to post a task to the external runtime.
+/// Implementations must ensure fn(userdata) is invoked on the target event-loop thread.
 ///
-/// 参数：
-///   fn       - 要执行的函数（通常是协程恢复 trampoline）
-///   userdata - fn 的参数（heap-allocated，fn 内部会释放）
-///   ctx      - 注册时传入的上下文指针
+/// Parameters:
+///   fn       - function to execute (usually a coroutine-resumption trampoline)
+///   userdata - argument for fn (heap-allocated; freed inside fn)
+///   ctx      - context pointer passed during registration
 typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 
-/// 注册一个外部运行时。
+/// Register an external runtime.
 ///
-/// 参数：
-///   name        - 运行时名称（调试用，如 "libuv-worker"）
-///   schedule_fn - bridge 用来向该运行时投递任务的回调
-///   ctx         - 传给 schedule_fn 的上下文（如 UvWorker* 或 uv_loop_t*）
+/// Parameters:
+///   name        - runtime name (for debugging, e.g. "libuv-worker")
+///   schedule_fn - callback the bridge uses to post tasks to this runtime
+///   ctx         - context passed to schedule_fn (e.g. UvWorker* or uv_loop_t*)
 ///
-/// 返回：runtime_id (>0)，用于后续获取 executor 或注销。
-///        返回 0 表示失败。
+/// Returns: runtime_id (>0), used later to fetch the executor or unregister.
+///          Returns 0 on failure.
 DCB_API uint32_t dcb_foreign_register(const char* name, dcb_schedule_fn schedule_fn, void* ctx);
 
-/// 注销外部运行时。
-/// 注销后，任何对该运行时的 schedule 调用变为 no-op（安全降级）。
-/// 已挂起的协程不会被恢复（调用方应确保 channel 已关闭或不再等待）。
+/// Unregister an external runtime.
+/// After unregistering, any schedule call targeting this runtime becomes a no-op (safe degradation).
+/// Already suspended coroutines are not resumed (caller should ensure channels are closed or no longer awaited).
 DCB_API void dcb_foreign_unregister(uint32_t runtime_id);
 
-/// 从外部运行时向 bridge 主 io_context 投递一个任务。
-/// 线程安全，非阻塞。任务在 bridge 的 io 线程上执行。
+/// Post a task from the external runtime to the bridge's main io_context.
+/// Thread-safe and non-blocking. The task executes on the bridge's io thread.
 ///
-/// 典型用途：外部运行时处理完请求后，通过此函数将结果发回 bridge。
+/// Typical use: the external runtime sends results back to the bridge after processing a request.
 DCB_API void dcb_post_to_bridge(void (*fn)(void*), void* userdata);
 
-/// 获取外部运行时对应的 ForeignExecutor 指针（实际类型为 dcb::ForeignExecutor*）。
-/// 返回的指针可直接用于：
-///   - channel 的 coAwait(executor) 路径
-///   - Lazy.via(executor) 绑定
-///   - 任何需要 async_simple::Executor* 的地方
+/// Get the ForeignExecutor pointer for an external runtime (actual type is dcb::ForeignExecutor*).
+/// The returned pointer can be used directly for:
+///   - channel coAwait(executor) paths
+///   - Lazy.via(executor) binding
+///   - any place expecting an async_simple::Executor*
 ///
-/// 指针生命周期与 runtime_id 绑定，unregister 后不可再使用。
-/// 返回 NULL 表示 runtime_id 无效。
+/// The pointer's lifetime is tied to runtime_id; do not use it after unregistering.
+/// Returns NULL if runtime_id is invalid.
 DCB_API void* dcb_foreign_executor(uint32_t runtime_id);
 
-/// 在外部 loop 线程上调用，将当前线程注册为该运行时的 loop 线程。
-/// 使 ForeignExecutor::currentThreadInExecutor() 能正确判断。
-/// 应在 loop 线程启动后、执行任何协程之前调用一次。
+/// Call on the external loop thread to register the current thread as the loop thread for this runtime.
+/// Enables ForeignExecutor::currentThreadInExecutor() to return the correct value.
+/// Should be called once after the loop thread starts and before any coroutines run.
 DCB_API void dcb_foreign_mark_loop_thread(uint32_t runtime_id);
 
 #ifdef __cplusplus

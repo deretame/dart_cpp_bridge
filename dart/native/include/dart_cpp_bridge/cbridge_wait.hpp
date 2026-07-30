@@ -1,16 +1,17 @@
 #pragma once
 
-// cbridge_wait.hpp — C++ 协程侧辅助：等待 C 端完成的异步操作。
+// cbridge_wait.hpp — C++ coroutine helper: await async operations completed by the C side.
 //
-// 配合 cbridge.h 中的 dcb_async_create / dcb_async_complete / dcb_async_fail 使用。
-// 典型场景：C++ 协程调用外部 C 库的异步 API，将 op_id 作为 context 传入，
-// 外部库完成时调用 dcb_async_complete，协程通过 async_wait 自动恢复。
+// Use together with dcb_async_create / dcb_async_complete / dcb_async_fail from cbridge.h.
+// Typical scenario: a C++ coroutine calls an external C library's async API, passes op_id
+// as context, and when the external library calls dcb_async_complete, the coroutine resumes
+// automatically via async_wait.
 //
-// 用法：
+// Usage:
 //   uint64_t op = dcb_async_create();
-//   external_c_lib_start_work(op, on_done);  // C 库完成后调 dcb_async_complete(op, ...)
+//   external_c_lib_start_work(op, on_done);  // C lib calls dcb_async_complete(op, ...) when done
 //   auto result = co_await dcb::async_wait(op);
-//   // result 为 payload bytes；失败时抛 std::runtime_error
+//   // result is payload bytes; throws std::runtime_error on failure
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/channel.hpp"
@@ -24,7 +25,7 @@
 
 namespace dcb {
 
-/// 异步操作的结果。
+/// Result of an async operation.
 struct OpResult {
   bool ok{false};
   std::vector<std::uint8_t> data;
@@ -32,15 +33,15 @@ struct OpResult {
 };
 
 namespace detail {
-/// 内部：获取 op 的接收端（由 cbridge.cpp 实现）。
-/// 如果 op_id 无效返回空的 Receiver。
+/// Internal: take the receiver side of an op (implemented by cbridge.cpp).
+/// Returns an empty Receiver if op_id is invalid.
 co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id);
 }  // namespace detail
 
-/// 在协程中非阻塞等待一个由 dcb_async_create() 创建的异步操作完成。
-/// 成功时返回 payload bytes；失败/取消时抛出 std::runtime_error。
+/// Await non-blockingly in a coroutine for an async operation created by dcb_async_create() to complete.
+/// Returns payload bytes on success; throws std::runtime_error on failure / cancellation.
 ///
-/// 必须在绑定了 Executor 的 Lazy 中调用（.via(ex)）。
+/// Must be called inside a Lazy bound to an Executor (.via(ex)).
 inline async_simple::coro::Lazy<std::vector<std::uint8_t>> async_wait(std::uint64_t op_id) {
   auto rx = detail::take_async_receiver(op_id);
   if (!rx) {

@@ -1,5 +1,5 @@
-// dcb_codec.c — 纯 C wire payload 编解码实现。
-// 与 C++ ByteWriter / ByteReader (codec.hpp) 二进制兼容。
+// dcb_codec.c — Pure C wire payload codec implementation.
+// Binary-compatible with the C++ ByteWriter / ByteReader (codec.hpp).
 
 #include "dart_cpp_bridge/dcb_codec.h"
 
@@ -16,7 +16,7 @@ static void dcb_writer_ensure(dcb_writer* w, uint32_t extra) {
   uint32_t new_cap = w->cap ? w->cap : DCB_WRITER_INIT_CAP;
   while (new_cap < need) new_cap *= 2;
   uint8_t* p = (uint8_t*)realloc(w->data, new_cap);
-  if (!p) return;  // OOM: 静默失败（写入丢失，len 不更新）
+  if (!p) return;  // OOM: silently fail (write is lost, len is not updated)
   w->data = p;
   w->cap = new_cap;
 }

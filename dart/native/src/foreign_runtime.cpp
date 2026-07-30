@@ -1,4 +1,4 @@
-// foreign_runtime.cpp — C API 实现：外部运行时注册表 + ForeignExecutor 管理。
+// foreign_runtime.cpp — C API implementation: external-runtime registry + ForeignExecutor management.
 
 #include "dart_cpp_bridge/foreign_runtime.h"
 
@@ -28,7 +28,7 @@ std::uint32_t g_foreign_next_id = 1;
 }  // namespace
 }  // namespace dcb
 
-// ─── C API 实现 ──────────────────────────────────────────────────────────────
+// ─── C API implementation ─────────────────────────────────────────────────────
 
 extern "C" {
 
@@ -49,7 +49,7 @@ DCB_API void dcb_foreign_unregister(uint32_t runtime_id) {
   auto it = dcb::g_foreign_registry.find(runtime_id);
   if (it == dcb::g_foreign_registry.end()) return;
 
-  // 标记失效（之后 schedule 返回 false）
+  // Mark inactive (subsequent schedule calls return false)
   it->second.executor->deactivate();
   dcb::g_foreign_registry.erase(it);
 }

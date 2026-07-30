@@ -1,13 +1,13 @@
 #pragma once
 
-// ForeignExecutor — 通用外部运行时执行器。
+// ForeignExecutor — Generic external-runtime executor.
 //
-// 将 async_simple::Executor::schedule() 转发到用户注册的 C 回调。
-// 任何事件循环只需实现 “在 loop 线程上执行一个 void(*)(void*)” 即可接入
-// bridge 的 channel / coroutine 系统。
+// Forwards async_simple::Executor::schedule() to a user-registered C callback.
+// Any event loop only needs to implement "execute a void(*)(void*) on the loop thread"
+// to plug into the bridge's channel / coroutine system.
 //
-// 不依赖 asio。仅需要 async_simple/Executor.h。
-// 详见 docs/foreign_runtime_design.md
+// No dependency on asio. Only async_simple/Executor.h is required.
+// See docs/foreign_runtime_design.md for details.
 
 #include <async_simple/Executor.h>
 
@@ -34,11 +34,11 @@ class ForeignExecutor : public async_simple::Executor {
   ForeignExecutor(const ForeignExecutor&) = delete;
   ForeignExecutor& operator=(const ForeignExecutor&) = delete;
 
-  // ─── async_simple::Executor 完整接口 ───────────────────────────────────
+  // ─── async_simple::Executor interface ─────────────────────────────────────
 
-  /// 将任务投递到外部运行时。
-  /// 内部将 std::function 装箱到堆上，通过 C 函数指针传递。
-  /// 外部 loop 线程执行 trampoline 时释放并调用原始函数。
+  /// Post a task to the external runtime.
+  /// Boxes the std::function on the heap and passes it via the C function pointer.
+  /// The external loop thread frees and invokes the original function inside the trampoline.
   bool schedule(Func func) override {
     if (!alive_.load(std::memory_order_acquire)) return false;
     auto* boxed = new Func(std::move(func));
@@ -50,9 +50,9 @@ class ForeignExecutor : public async_simple::Executor {
     return schedule(std::move(func));
   }
 
-  /// 判断当前线程是否是外部 loop 线程。
-  /// async_simple 内部多处调用此方法（syncAwait 断言、FutureState 调度等），
-  /// 基类默认 throw，必须 override。
+  /// Return whether the current thread is the external loop thread.
+  /// async_simple calls this internally in many places (syncAwait assertion, FutureState scheduling, etc.).
+  /// The base class default throws, so this must be overridden.
   bool currentThreadInExecutor() const override {
     auto id = loop_thread_id_.load(std::memory_order_acquire);
     return id != std::thread::id{} && std::this_thread::get_id() == id;
@@ -65,22 +65,22 @@ class ForeignExecutor : public async_simple::Executor {
 
   async_simple::IOExecutor* getIOExecutor() override { return nullptr; }
 
-  // ─── ForeignExecutor 特有接口 ─────────────────────────────────────────
+  // ─── ForeignExecutor-specific interface ─────────────────────────────────────
 
   const std::string& foreign_name() const { return name_; }
   bool alive() const { return alive_.load(std::memory_order_acquire); }
 
-  /// 标记为失效（unregister 时调用）。之后 schedule 返回 false。
+  /// Mark as inactive (called on unregister). Subsequent schedule calls return false.
   void deactivate() { alive_.store(false, std::memory_order_release); }
 
-  /// 设置外部 loop 线程 ID（启动 loop 线程后调用）。
-  /// 使 currentThreadInExecutor() 能正确判断。
+  /// Set the external loop thread ID (call after the loop thread starts).
+  /// Enables currentThreadInExecutor() to work correctly.
   void set_loop_thread_id(std::thread::id id) {
     loop_thread_id_.store(id, std::memory_order_release);
   }
 
  private:
-  /// Trampoline：在外部 loop 线程上执行，释放堆上的 Func 并调用。
+  /// Trampoline: runs on the external loop thread, frees the heap-allocated Func and invokes it.
   static void trampoline(void* p) {
     auto f = std::unique_ptr<Func>(static_cast<Func*>(p));
     (*f)();
