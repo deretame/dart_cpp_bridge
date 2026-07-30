@@ -9,7 +9,7 @@ import 'lock_file.dart';
 import 'package_root.dart';
 import 'platform.dart';
 
-const _version = '0.1.0-dev.2';
+const _version = '1.0.0';
 
 const _usage = '''
 dcb_gen — dart_cpp_bridge code generation tool ($_version)
