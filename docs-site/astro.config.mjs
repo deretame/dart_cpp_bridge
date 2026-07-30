@@ -28,6 +28,11 @@ export default defineConfig({
     devRootRewrite(),
     starlight({
       title: "dart_cpp_bridge",
+      defaultLocale: "root",
+      locales: {
+        root: { label: "English", lang: "en" },
+        "zh-cn": { label: "简体中文", lang: "zh-CN" },
+      },
       head: [],
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
@@ -39,26 +44,26 @@ export default defineConfig({
         },
       ],
       sidebar: [
-        { label: "快速开始", slug: "getting-started" },
+        { label: "Getting Started", slug: "getting-started" },
         {
-          label: "指南",
+          label: "Guides",
           items: [
             {
-              label: "基础",
+              label: "Fundamentals",
               items: [{ autogenerate: { directory: "guides/fundamentals" } }],
             },
             {
-              label: "进阶",
+              label: "Advanced",
               items: [{ autogenerate: { directory: "guides/advanced" } }],
             },
           ],
         },
         {
-          label: "代码生成",
+          label: "Code Generation",
           items: [{ autogenerate: { directory: "codegen" } }],
         },
         {
-          label: "参考",
+          label: "Reference",
           items: [{ autogenerate: { directory: "reference" } }],
         },
       ],

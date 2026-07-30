@@ -1,19 +1,19 @@
 ---
-title: 异常与错误处理
-description: C++ 异常如何透传到 Dart，以及 Dart 闭包异常如何回到 C++
+title: Exceptions and Error Handling
+description: How C++ exceptions propagate to Dart and how Dart closure exceptions return to C++
 ---
 
-bridge 的 wire 层会把所有 C++ 异常捕获并编码为错误帧，再交给 Dart；Dart 闭包抛出的异常也会通过 wire 回到 C++。这页说明每种路径的传递规则。
+The bridge's wire layer catches all C++ exceptions and encodes them as error frames before handing them to Dart; exceptions thrown by Dart closures also return to C++ via the wire. This page explains the propagation rules for each path.
 
-## 核心原则
+## Core Principles
 
-**异常永远不会跨越 FFI 边界。** 无论 C++ 还是 Dart 抛出的异常，都会被 bridge 捕获后编码成 wire 错误帧。
+**Exceptions never cross the FFI boundary.** Whether thrown from C++ or Dart, exceptions are caught by the bridge and encoded as wire error frames.
 
-C++ 侧的统一处理：
+Unified handling on the C++ side:
 
 ```cpp
 try {
-  // 调用用户函数
+  // call the user function
 } catch (const std::exception& e) {
   post_error(req, e.what());
 } catch (...) {
@@ -21,7 +21,7 @@ try {
 }
 ```
 
-## C++ 异常 → Dart
+## C++ Exceptions → Dart
 
 ### BRIDGE_SYNC
 
@@ -33,7 +33,7 @@ std::int32_t divide(std::int32_t a, std::int32_t b) {
 }
 ```
 
-Dart 侧：
+Dart side:
 
 ```dart
 try {
@@ -45,7 +45,7 @@ try {
 
 ### BRIDGE_ASYNC
 
-协程中抛出的异常（包括 `co_await` 抛出的）会被 wire dispatch 捕获。
+Exceptions thrown in coroutines (including those thrown by `co_await`) are caught by the wire dispatch.
 
 ```cpp
 BRIDGE_ASYNC
@@ -55,7 +55,7 @@ async_simple::coro::Lazy<std::string> fail() {
 }
 ```
 
-Dart 侧：
+Dart side:
 
 ```dart
 try {
@@ -67,7 +67,7 @@ try {
 
 ### BRIDGE_NORMAL
 
-线程池中的异常会先被 async-simple 的 awaiter 捕获，然后重新抛到 io 线程的 `co_await` 处，再被 wire dispatch 捕获。
+Exceptions in the thread pool are first caught by async-simple's awaiter, then re-thrown at the `co_await` on the io thread, where the wire dispatch catches them.
 
 ```cpp
 BRIDGE_NORMAL
@@ -76,7 +76,7 @@ std::string normal_fail() {
 }
 ```
 
-Dart 侧同样收到 `StateError`。
+Dart side also receives `StateError`.
 
 ### spawn_blocking
 
@@ -90,13 +90,13 @@ async_simple::coro::Lazy<int> compute() {
 }
 ```
 
-异常会在线程池被捕获，然后在 `co_await` 处重新抛出。如果你在 `BRIDGE_ASYNC` 里调用，最终会被 wire 捕获传给 Dart。
+The exception is caught in the thread pool and re-thrown at the `co_await`. If you call this inside `BRIDGE_ASYNC`, the wire layer eventually catches it and passes it to Dart.
 
-## Dart 异常 → C++
+## Dart Exceptions → C++
 
-当 C++ 调用 Dart 闭包（`DartFn`），Dart 闭包里抛出的异常会传回 C++。
+When C++ calls a Dart closure (`DartFn`), exceptions thrown by the Dart closure are returned to C++.
 
-### Dart 侧
+### Dart side
 
 ```dart
 Future<String> greet(String name) async {
@@ -105,7 +105,7 @@ Future<String> greet(String name) async {
 }
 ```
 
-### C++ 侧
+### C++ side
 
 ```cpp
 BRIDGE_ASYNC
@@ -115,30 +115,30 @@ async_simple::coro::Lazy<std::string> call_greet(
     auto reply = co_await callback(name);
     co_return reply;
   } catch (const std::runtime_error& e) {
-    // e.what() 包含 "Exception: name cannot be empty"
+    // e.what() contains "Exception: name cannot be empty"
     co_return std::string("error: ") + e.what();
   }
 }
 ```
 
-## 错误帧格式
+## Error Frame Format
 
-`responseErr` 帧的 payload：
+Payload of the `responseErr` frame:
 
 ```text
-code      i32   错误码（目前恒为 0）
-message   string 错误信息
+code      i32   error code (currently always 0)
+message   string error message
 ```
 
-Dart 侧生成代码会把它转成 `StateError`。
+The Dart generated code converts this into a `StateError`.
 
-## 建议
+## Recommendations
 
-- 业务级错误优先用**返回值**或 `std::optional` 表达，不要依赖异常
-- 异常留给真正的不可恢复问题
-- 不要捕获 `(...)` 后吞掉异常，至少要记录日志
+- Express business-level errors preferentially through **return values** or `std::optional`, rather than relying on exceptions
+- Reserve exceptions for truly unrecoverable problems
+- Do not swallow exceptions after catching `(...)`; at least log them
 
-## 延伸阅读
+## Further Reading
 
-- [Wire 协议](/dart_cpp_bridge/reference/wire-protocol/)
-- [函数标记选择指南](/dart_cpp_bridge/guides/fundamentals/markers/)
+- [Wire Protocol](/dart_cpp_bridge/reference/wire-protocol/)
+- [Marker Selection Guide](/dart_cpp_bridge/guides/fundamentals/markers/)

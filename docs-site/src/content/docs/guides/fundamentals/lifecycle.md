@@ -1,93 +1,93 @@
 ---
-title: 生命周期管理
-description: Runtime、Session、Opaque 对象与 NativeFinalizer 的生命周期
+title: Lifecycle Management
+description: Lifecycle of Runtime, Session, Opaque objects, and NativeFinalizer
 ---
 
-bridge 的生命周期分三层：进程级 Runtime、Isolate 级 Session、对象级 Opaque handle。理解它们谁创建、谁释放、谁不能动，是避免死锁和内存泄漏的关键。
+The bridge lifecycle has three layers: process-level Runtime, Isolate-level Session, and object-level Opaque handle. Understanding who creates, who releases, and who must not be touched is key to avoiding deadlocks and memory leaks.
 
-## Runtime：进程级单例
+## Runtime: Process-Level Singleton
 
-`dcb::Runtime` 是进程级单例，内部管理：
+`dcb::Runtime` is a process-level singleton that internally manages:
 
-- `asio::io_context` 事件循环
+- `asio::io_context` event loop
 - `AsioExecutor`
 - `thread_pool`
-- Session 注册表
+- Session registry
 
-### 启动与停止
+### Startup and Shutdown
 
-- **启动**：通常由 `DartCppBridge.init()` 自动触发；C++ 单测或纯 C++ 程序可以手动调用 `dcb::Runtime::instance().start()`
-- **停止**：`DartCppBridge.shutdown()` 或 `dcb::Runtime::instance().stop()`
+- **Startup**: usually triggered automatically by `DartCppBridge.init()`; C++ unit tests or pure C++ programs can call `dcb::Runtime::instance().start()` manually.
+- **Shutdown**: `DartCppBridge.shutdown()` or `dcb::Runtime::instance().stop()`
 
-**限制**：`shutdown()` 只能在**主 isolate / 进程退出**时调用，会关闭所有 Session 并停止 Runtime。
+**Limitation**: `shutdown()` can only be called from the **main isolate / on process exit**. It closes all Sessions and stops the Runtime.
 
-## Session：每个 Isolate 一个
+## Session: One per Isolate
 
-每个调用 `DartCppBridge.init()` 的 Dart Isolate 拥有一个 Session：
+Every Dart Isolate that calls `DartCppBridge.init()` owns a Session:
 
-- 独立的 reply port
-- 独立的 `DartFn` 闭包注册表
-- 生成计数 `generation`，用于丢弃 `dispose()` 后的迟到消息
+- Independent reply port
+- Independent `DartFn` closure registry
+- Generation counter `generation`, used to drop late messages after `dispose()`
 
-### Session 的创建与关闭
+### Session Creation and Closing
 
-| 操作 | 调用位置 | 行为 |
+| Operation | Caller Location | Behavior |
 |---|---|---|
-| `init()` | 任意 Isolate | 创建或复用 Session |
-| `dispose()` | 当前 Isolate | 立即关闭该 Isolate 的 Session |
-| isolate 关闭 / GC | 任意 | `NativeFinalizer` 自动关闭 Session |
-| `shutdown()` | 主 isolate 退出 | 关闭所有 Session |
+| `init()` | Any Isolate | Creates or reuses a Session |
+| `dispose()` | Current Isolate | Immediately closes that Isolate's Session |
+| Isolate shutdown / GC | Any | `NativeFinalizer` automatically closes the Session |
+| `shutdown()` | Main isolate exit | Closes all Sessions |
 
-### 规则
+### Rules
 
-- `dispose()` 是可选的，日常依赖 `NativeFinalizer` 即可
-- `shutdown()` 不要在 worker isolate 中调用
-- worker isolate 可以 `init()`，拥有自己的 Session，但不能 `shutdown()`
+- `dispose()` is optional; normally rely on `NativeFinalizer` alone.
+- Do not call `shutdown()` from a worker isolate.
+- Worker isolates can call `init()`, own their own Session, but must not call `shutdown()`.
 
-## Opaque 对象：per-Session handle
+## Opaque Objects: Per-Session Handle
 
-`BRIDGE_OPAQUE` 标记的 C++ 对象通过 handle 在 Dart 侧引用：
+C++ objects marked with `BRIDGE_OPAQUE` are referenced from Dart via a handle:
 
-- 构造时：C++ 创建对象，注册到 `ObjectHandleRegistry`，返回 handle
-- 使用时：Dart 传 handle 给 C++ 实例方法
-- 销毁时：Dart GC 触发 `NativeFinalizer` → `dcb_drop_object` → 从 registry 删除并析构
+- On construction: C++ creates the object, registers it in `ObjectHandleRegistry`, and returns a handle.
+- On use: Dart passes the handle to C++ instance methods.
+- On destruction: Dart GC triggers `NativeFinalizer` → `dcb_drop_object` → removes it from the registry and destructs it.
 
-### 生命周期边界
+### Lifecycle Boundaries
 
-- Session 关闭时，该 Session 下所有 Opaque 对象自动释放
-- 如果 Dart 侧仍持有对象引用但 Session 已关闭，后续调用会失败
+- When a Session closes, all Opaque objects under that Session are automatically released.
+- If Dart still holds an object reference but the Session is already closed, subsequent calls will fail.
 
-## 典型流程
+## Typical Flow
 
 ```text
-App 启动
-  └─ main isolate 调用 DartCppBridge.init()
-       └─ Runtime 启动（如未启动）
-       └─ 创建 Session A
-  ├─ worker isolate 调用 DartCppBridge.init()
-  │    └─ 创建 Session B
+App starts
+  └─ main isolate calls DartCppBridge.init()
+       └─ Runtime starts (if not already started)
+       └─ Session A is created
+  ├─ worker isolate calls DartCppBridge.init()
+  │    └─ Session B is created
   │
-  ├─ Dart 调用 C++ 创建 Opaque 对象
-  │    └─ ObjectHandleRegistry 注册，返回 handle
+  ├─ Dart calls C++ to create an Opaque object
+  │    └─ ObjectHandleRegistry registers it and returns a handle
   │
-  ├─ Dart GC 或 dispose 释放 Opaque
-  │    └─ NativeFinalizer → dcb_drop_object → 析构
+  ├─ Dart GC or dispose releases the Opaque object
+  │    └─ NativeFinalizer → dcb_drop_object → destruct
   │
-  └─ App 退出
-       └─ main isolate 调用 shutdown()
-            └─ 关闭 Session A / B，停止 Runtime
+  └─ App exits
+       └─ main isolate calls shutdown()
+            └─ Sessions A / B close, Runtime stops
 ```
 
-## 常见错误
+## Common Mistakes
 
-| 错误 | 后果 |
+| Mistake | Consequence |
 |---|---|
-| worker isolate 调 `shutdown()` | 会关闭主 isolate 的 Session，Runtime 停止，bridge 失效 |
-| `dispose()` 后继续调用 | 该 isolate 的调用会失败 |
-| 持有 Opaque 对象跨 Isolate | 对象不能跨 Isolate 共享 |
-| 在 `BRIDGE_SYNC` 里调 DartFn | 死锁（Dart 回复需要 io 线程） |
+| Worker isolate calls `shutdown()` | Closes the main isolate's Session, stops the Runtime, and breaks the bridge |
+| Calling after `dispose()` | Calls from that isolate will fail |
+| Holding Opaque objects across Isolates | Objects cannot be shared across Isolates |
+| Calling DartFn inside `BRIDGE_SYNC` | Deadlock (Dart replies need the io thread) |
 
-## 延伸阅读
+## Further Reading
 
-- [函数标记选择指南](/dart_cpp_bridge/guides/fundamentals/markers/)
-- [架构设计](/dart_cpp_bridge/guides/fundamentals/architecture/)
+- [Function Marker Selection Guide](/dart_cpp_bridge/guides/fundamentals/markers/)
+- [Architecture Design](/dart_cpp_bridge/guides/fundamentals/architecture/)

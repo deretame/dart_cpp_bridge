@@ -1,73 +1,73 @@
 ---
-title: 项目目录结构
-description: 一个典型 dart_cpp_bridge 项目的目录布局
+title: Project Directory Structure
+description: The directory layout of a typical dart_cpp_bridge project
 ---
 
-`dcb_gen_tool init` 会生成一个基础项目骨架。了解哪些文件是手写的、哪些是生成的，能避免改错文件。
+`dcb_gen_tool init` generates a basic project skeleton. Knowing which files are hand-written and which are generated will help you avoid editing the wrong files.
 
-## 典型布局
+## Typical Layout
 
 ```text
 my_project/
-├── dart_cpp_bridge.yaml      # codegen 配置
-├── pubspec.yaml              # Dart/Flutter 包配置
+├── dart_cpp_bridge.yaml      # codegen configuration
+├── pubspec.yaml              # Dart/Flutter package configuration
 ├── hook/
 │   └── build.dart            # Native Assets build hook
 ├── native/
 │   ├── api/
-│   │   └── my_api.h          # 手写 C++ API 头文件（BRIDGE_* 标记）
+│   │   └── my_api.h          # hand-written C++ API header (BRIDGE_* markers)
 │   ├── api_impl/
-│   │   └── my_api.cpp        # 手写业务实现
-│   ├── CMakeLists.txt        # 手写/调整的构建配置
+│   │   └── my_api.cpp        # hand-written business implementation
+│   ├── CMakeLists.txt        # hand-written/adjusted build configuration
 │   └── generated/
-│       ├── wire_dispatch.hpp # 生成
-│       └── wire_dispatch.cpp # 生成
+│       ├── wire_dispatch.hpp # generated
+│       └── wire_dispatch.cpp # generated
 └── lib/
     ├── src/
     │   └── native_gen/
-    │       ├── dcb_bindings.dart      # 生成：FFI 函数签名
-    │       ├── dcb_generated.dart     # 生成：内部实现/单例
+    │       ├── dcb_bindings.dart      # generated: FFI function signatures
+    │       ├── dcb_generated.dart     # generated: internal implementation / singleton
     │       └── api/
-    │           └── my_api.dart        # 生成：顶层调用入口
-    └── my_project.dart       # 手写：导出 public API
+    │           └── my_api.dart        # generated: top-level call entry points
+    └── my_project.dart       # hand-written: exports public API
 ```
 
-## 手写 vs 生成
+## Hand-written vs Generated
 
-| 路径 | 类型 | 说明 |
+| Path | Type | Description |
 |---|---|---|
-| `dart_cpp_bridge.yaml` | 手写 | 配置 source dir、生成目录、lib 名等 |
-| `pubspec.yaml` | 手写 | Dart/Flutter 依赖 |
-| `hook/build.dart` | 手写 | Native Assets 构建入口 |
-| `native/api/*.h` | 手写 | 桥接 API 头文件，包含 `BRIDGE_*` 标记 |
-| `native/api_impl/*.cpp` | 手写 | 业务实现 |
-| `native/CMakeLists.txt` | 手写/调整 | 构建 native 库 |
-| `native/generated/*` | 生成 | wire dispatch 路由 |
-| `lib/src/native_gen/*` | 生成 | FFI 绑定、Dart 实现 |
-| `lib/<project>.dart` | 手写 | 导出需要暴露的 Dart API |
+| `dart_cpp_bridge.yaml` | Hand-written | Configures source dir, output directories, library name, etc. |
+| `pubspec.yaml` | Hand-written | Dart/Flutter dependencies |
+| `hook/build.dart` | Hand-written | Native Assets build entry |
+| `native/api/*.h` | Hand-written | Bridge API headers containing `BRIDGE_*` markers |
+| `native/api_impl/*.cpp` | Hand-written | Business implementation |
+| `native/CMakeLists.txt` | Hand-written / adjusted | Builds the native library |
+| `native/generated/*` | Generated | Wire dispatch routing |
+| `lib/src/native_gen/*` | Generated | FFI bindings and Dart implementation |
+| `lib/<project>.dart` | Hand-written | Exports the Dart API you want to expose |
 
-## 生成命令
+## Generation Command
 
-修改 `native/api/*.h` 后，运行：
+After modifying `native/api/*.h`, run:
 
 ```bash
 dcb_gen_tool generate
 ```
 
-或在 `dcb_gen_tool` 源码目录里：
+Or from the `dcb_gen_tool` source directory:
 
 ```bash
 cd dcb_gen_tool
 dart run bin/dcb_gen.dart generate ../path/to/dart_cpp_bridge.yaml
 ```
 
-## 注意事项
+## Notes
 
-- 不要手动修改 `native/generated/` 和 `lib/src/native_gen/` 里的文件，重新生成会覆盖
-- 如果生成输出路径不满意，可以在 `dart_cpp_bridge.yaml` 里调整
-- 业务代码应放在 `native/api_impl/` 或 `native/api/` 中，保持生成层不依赖具体实现
+- Do not manually edit files in `native/generated/` and `lib/src/native_gen/`; they will be overwritten on re-generation.
+- If the generated output paths are not what you want, adjust them in `dart_cpp_bridge.yaml`.
+- Business code should go in `native/api_impl/` or `native/api/` so the generated layer does not depend on the concrete implementation.
 
-## 延伸阅读
+## Further Reading
 
-- [代码生成配置](/dart_cpp_bridge/codegen/configuration/)
-- [代码生成输出](/dart_cpp_bridge/codegen/output/)
+- [Code Generation Configuration](/dart_cpp_bridge/codegen/configuration/)
+- [Code Generation Output](/dart_cpp_bridge/codegen/output/)

@@ -1,57 +1,58 @@
 ---
-title: async-simple 协程入门
-description: dart_cpp_bridge 使用的 async-simple 协程库基础用法：Lazy、Executor、co_await、启动与线程模型
+title: async-simple Coroutines Primer
+description: "Basic usage of the async-simple coroutine library used by dart_cpp_bridge: Lazy, Executor, co_await, starting coroutines, and the threading model"
 ---
 
-`dart_cpp_bridge` 的 C++ 异步层基于 [async-simple](https://alibaba.github.io/async_simple/) 构建。你不需要成为 async-simple 专家就能写业务代码，但这章会介绍“不读官方文档也能上手”的最小必要知识。
+`dart_cpp_bridge`'s C++ async layer is built on [async-simple](https://alibaba.github.io/async_simple/). You don't need to be an async-simple expert to write business code, but this chapter covers the minimum knowledge you need to get started without reading the official docs.
 
-## 核心概念
+## Core Concepts
 
-async-simple 是一个 C++20 协程库，bridge 里主要用到两个概念：
+async-simple is a C++20 coroutine library. The bridge mainly uses two concepts:
 
-- **`async_simple::coro::Lazy<T>`** — 一个懒启动的协程任务。函数返回 `Lazy<T>`，调用时不会立刻执行，只有被 `co_await`、`.start()` 或 `syncAwait()` 时才会启动。
-- **`async_simple::Executor`** — 协程调度器。`dcb::AsioExecutor` 和 `dcb::ForeignExecutor` 都是它的实现。协程挂起后由 executor 决定在哪个线程上恢复。
+- **`async_simple::coro::Lazy<T>`** — A lazily started coroutine task. A function returning `Lazy<T>` does not execute immediately when called; it only starts when awaited with `co_await`, `.start()`, or `syncAwait()`.
+- **`async_simple::Executor`** — The coroutine scheduler. `dcb::AsioExecutor` and `dcb::ForeignExecutor` are both implementations. After a coroutine suspends, the executor decides which thread resumes it.
 
-## 写一个协程
+## Writing a Coroutine
 
-业务 C++ 函数只要返回 `Lazy<T>`，用 `co_await` 等待其他异步操作，用 `co_return` 返回结果：
+A business C++ function just needs to return `Lazy<T>`, use `co_await` to wait for other async operations, and use `co_return` to return results:
 
 ```cpp
 #include "async_simple/coro/Lazy.h"
 
 async_simple::coro::Lazy<std::string> greet(std::string name) {
-  // co_await 其他 Lazy、channel、sleep 等
+  // co_await other Lazy, channel, sleep, etc.
   co_return "Hello, " + name;
 }
 ```
 
 :::caution
 
-- 不要在 `Lazy<T>` 函数里用普通 `return`，必须写 `co_return`
-- 不要把 `Lazy` 函数当作同步函数直接调用：`greet("world")` 只返回一个还没执行的任务
-  :::
+- Do not use a plain `return` inside a `Lazy<T>` function; you must write `co_return`.
+- Do not treat a `Lazy` function as a synchronous call: `greet("world")` only returns a task that has not yet executed.
 
-## 启动协程
+:::
 
-### 绑定 executor 启动（推荐）
+## Starting a Coroutine
+
+### Start with an executor bound (recommended)
 
 ```cpp
 auto* ex = dcb::Runtime::instance().executor();
 
 my_coroutine(args)
-    .via(ex)                              // 指定调度器
-    .start([](async_simple::Try<T>&& t) {  // 异步回调
+    .via(ex)                              // specify the scheduler
+    .start([](async_simple::Try<T>&& t) {  // async callback
       if (t.hasError()) {
-        // 处理异常
+        // handle exception
       } else {
-        // 使用 t.value()
+        // use t.value()
       }
     });
 ```
 
-`.via(ex)` 会返回 `RescheduleLazy<T>`：它不会立即执行，而是把任务投递到 executor 上，稍后由 executor 线程运行。
+`.via(ex)` returns `RescheduleLazy<T>`. It does not execute immediately; instead, it posts the task to the executor and the executor thread will run it later.
 
-### 从非协程上下文同步等待
+### Synchronously wait from a non-coroutine context
 
 ```cpp
 #include "async_simple/coro/SyncAwait.h"
@@ -60,54 +61,54 @@ auto result = async_simple::coro::syncAwait(
     dcb::spawn(my_coroutine()));
 ```
 
-`dcb::spawn(...)` 会把 `Lazy` 绑定到 Runtime 的 executor 并返回 `RescheduleLazy<T>`。`syncAwait` 会阻塞当前线程直到结果返回。
+`dcb::spawn(...)` binds the `Lazy` to the Runtime's executor and returns `RescheduleLazy<T>`. `syncAwait` blocks the current thread until the result is available.
 
 :::danger
-`syncAwait` 不能在 io 线程调用，否则被等待的协程也需要 io 线程恢复，会**自死锁**。
+`syncAwait` cannot be called on the io thread, because the awaited coroutine also needs the io thread to resume, causing a **self-deadlock**.
 :::
 
-### 启动后丢弃结果
+### Fire and forget
 
 ```cpp
 dcb::spawn_detached(my_coroutine());
 ```
 
-等价于 `.via(ex).start([](auto&&){})`，但更安全。不要用 async-simple 原生的 `RescheduleLazy::detach()`，它会在 io 线程上重新抛出异常，导致事件循环崩溃。
+Equivalent to `.via(ex).start([](auto&&){})`, but safer. Do not use async-simple's native `RescheduleLazy::detach()`, because it rethrows exceptions on the io thread and crashes the event loop.
 
-## Executor 会沿 co_await 链传递
+## Does the Executor propagate along the co_await chain?
 
-这是最常见的问题。答案：**会的，但不等于“所有嵌套协程都自动跑在 ex 上”**。
+This is the most common question. The answer: **yes, but that does not mean every nested coroutine automatically runs on `ex`**.
 
 ```cpp
 async_simple::coro::Lazy<std::string> outer() {
-  auto a = co_await inner_a();            // inner_a 会继承当前 executor
-  auto b = co_await co::oneshot::recv();  // channel 恢复时也会调度回当前 executor
+  auto a = co_await inner_a();            // inner_a inherits the current executor
+  auto b = co_await co::oneshot::recv();  // channel resumes on the current executor too
   co_return a + b;
 }
 
-// 启动时绑定 ex
+// bind ex at startup
 outer().via(ex).start([](auto&&) {});
 ```
 
-async-simple 的 `co_await` 会把当前 executor 传给被等待对象的 `coAwait(Executor*)` 方法。`Lazy` 和 bridge 的 `channel` 都实现了这个方法，所以它们会自动使用同一个 executor。
+async-simple's `co_await` passes the current executor to the awaited object's `coAwait(Executor*)` method. Both `Lazy` and the bridge's `channel` implement this method, so they automatically use the same executor.
 
-但如果你手动写：
+But if you write manually:
 
 ```cpp
-inner_a().start([](auto&&){});  // 没有 co_await，不继承 executor
+inner_a().start([](auto&&){});  // no co_await, no executor inheritance
 ```
 
-那就另当别论了。
+That is a different story.
 
-## 常见等待对象
+## Common Awaitables
 
-### 另一个 Lazy
+### Another Lazy
 
 ```cpp
 async_simple::coro::Lazy<int> inner();
 
 async_simple::coro::Lazy<int> outer() {
-  auto v = co_await inner();  // 继承 executor
+  auto v = co_await inner();  // inherits executor
   co_return v + 1;
 }
 ```
@@ -118,10 +119,10 @@ async_simple::coro::Lazy<int> outer() {
 auto [tx, rx] = co::oneshot::channel<std::string>();
 tx.send("hello");
 
-auto value = co_await rx.recv();  // 挂起，收到后恢复
+auto value = co_await rx.recv();  // suspend, resume when received
 ```
 
-### 异步 sleep
+### Async sleep
 
 ```cpp
 #include "async_simple/coro/Sleep.h"
@@ -132,16 +133,16 @@ async_simple::coro::Lazy<> delayed() {
 }
 ```
 
-在 `AsioExecutor` 上，`sleep` 使用 `asio::steady_timer`，不占用线程。
+On `AsioExecutor`, `sleep` uses `asio::steady_timer` and does not occupy a thread.
 
-## 阻塞操作怎么办
+## Blocking Operations
 
-永远不要直接在 io 协程里做阻塞 IO 或长时间计算。用 `dcb::spawn_blocking`：
+Never perform blocking IO or long-running computation directly in an io coroutine. Use `dcb::spawn_blocking`:
 
 ```cpp
 async_simple::coro::Lazy<int> compute() {
   auto result = co_await dcb::spawn_blocking([] {
-    // 在线程池执行，可以阻塞
+    // runs on the thread pool; blocking is OK
     std::this_thread::sleep_for(std::chrono::seconds(1));
     return 42;
   });
@@ -149,17 +150,17 @@ async_simple::coro::Lazy<int> compute() {
 }
 ```
 
-## MSVC 协程 lambda 捕获 bug
+## MSVC Coroutine Lambda Capture Bug
 
-在 MSVC 上，**不要在协程 lambda 里捕获变量**（如 `std::string`、`DartFn`、`shared_ptr`），恢复后捕获值会变成垃圾，导致 `ACCESS_VIOLATION`。
+On MSVC, **do not capture variables in a coroutine lambda** (such as `std::string`, `DartFn`, or `shared_ptr`). After resumption, the captured values become garbage and cause `ACCESS_VIOLATION`.
 
 ```cpp
-// ✗ 崩溃
+// ✗ crash
 auto bad = [cb, input]() -> async_simple::coro::Lazy<> {
   co_await cb(input);
 };
 
-// ✓ 正确
+// ✓ correct
 static async_simple::coro::Lazy<> good(
     dcb::DartFn<std::string(std::string)> cb,
     std::string input) {
@@ -167,20 +168,20 @@ static async_simple::coro::Lazy<> good(
 }
 ```
 
-这个 bug 和 executor 无关，任何 executor 上的协程 lambda 都可能触发。详见 [MSVC 注意事项](/dart_cpp_bridge/guides/advanced/foreign-runtime/#msvc-注意事项)。
+This bug is unrelated to the executor; any coroutine lambda on any executor can trigger it. See [MSVC Notes](/dart_cpp_bridge/guides/advanced/foreign-runtime/#msvc-notes) for details.
 
-## 常见错误
+## Common Mistakes
 
-| 错误                             | 原因                                                   |
-| -------------------------------- | ------------------------------------------------------ |
-| 在 io 线程调用 `syncAwait`       | 会死锁，必须在非 io 线程使用                           |
-| 协程里阻塞 io 线程               | 会卡死整个事件循环                                     |
-| 用 `RescheduleLazy::detach()`    | 异常会抛到 io 线程，导致崩溃；用 `dcb::spawn_detached` |
-| 在协程 lambda 里捕获变量（MSVC） | 恢复后捕获值损坏，崩溃                                 |
-| 把 `Lazy<T>` 函数当普通函数调用  | 只创建任务，不会执行                                   |
+| Mistake | Cause |
+| --- | --- |
+| Calling `syncAwait` on the io thread | Deadlock; must be used on a non-io thread |
+| Blocking the io thread in a coroutine | Freezes the entire event loop |
+| Using `RescheduleLazy::detach()` | Exceptions are thrown on the io thread and crash the process; use `dcb::spawn_detached` |
+| Capturing variables in a coroutine lambda (MSVC) | Captured values are corrupted after resumption, causing a crash |
+| Calling a `Lazy<T>` function like a normal function | Only creates a task; it does not execute |
 
-## 延伸阅读
+## Further Reading
 
-- [async-simple 官方仓库](https://github.com/alibaba/async_simple)
-- [基础运行时](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime、spawn、channel、sleep
-- [外部运行时集成](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — ForeignExecutor、MSVC 注意事项
+- [async-simple official repository](https://github.com/alibaba/async_simple)
+- [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime, spawn, channel, sleep
+- [Foreign Runtime Integration](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — ForeignExecutor, MSVC notes

@@ -1,13 +1,13 @@
 ---
-title: API Reference
-description: Overview of public Dart and C++ APIs
+title: API 参考
+description: Dart 和 C++ 公共 API 概览
 ---
 
 ## Dart API
 
 ### DartCppBridge
 
-One instance per Isolate. Creates a Session and starts the process-wide Runtime on the first `init` call.
+每个 Isolate 一个实例。首次调用 `init` 时创建 Session 并启动进程级 Runtime。
 
 ```dart
 class DartCppBridge implements Finalizable {
@@ -22,7 +22,7 @@ class DartCppBridge implements Finalizable {
   void shutdown();
   void setVerboseErrors(bool enabled);
 
-  // Low-level calls (used by codegen)
+  // 底层调用（codegen 使用）
   Uint8List invokeSyncMethod(int methodId, [Uint8List? payload]);
   Future<Uint8List> invokeAsyncMethod(int methodId, [Uint8List? payload]);
   Future<Uint8List> invokeRawAsync(Uint8List rawBytes, {int? responseId});
@@ -34,7 +34,7 @@ class DartCppBridge implements Finalizable {
     T Function(ByteReader) decodeItem,
   );
 
-  // DartFn registration (used by codegen)
+  // DartFn 注册（codegen 使用）
   int registerDartFn(Future<Uint8List> Function(Uint8List) fn);
   void unregisterDartFn(int id);
 }
@@ -42,7 +42,7 @@ class DartCppBridge implements Finalizable {
 
 ### CppOpaqueInterface
 
-Dart base class for opaque C++ objects, providing `dispose()` and `NativeFinalizer` lifecycle management:
+不透明 C++ 对象的 Dart 基类，提供 `dispose()` 和 `NativeFinalizer` 生命周期管理：
 
 ```dart
 abstract base class CppOpaqueInterface implements Finalizable {
@@ -53,16 +53,16 @@ abstract base class CppOpaqueInterface implements Finalizable {
 }
 ```
 
-### Lifecycle
+### 生命周期
 
-| Method | Description |
+| 方法 | 说明 |
 |---|---|
-| `init()` | Initialize the current Isolate's Session and start the Runtime on demand |
-| `dispose()` | Actively close the current Isolate's Session (optional; GC / Isolate exit will clean up automatically) |
-| `shutdown()` | Close all Sessions and stop the Runtime; **only call from the main Isolate on process exit** |
+| `init()` | 初始化当前 Isolate 的 Session，按需启动 Runtime |
+| `dispose()` | 主动关闭当前 Isolate 的 Session（可选；GC / Isolate 退出时会自动清理） |
+| `shutdown()` | 关闭所有 Session 并停止 Runtime；**只在主 Isolate 进程退出时调用** |
 
 :::caution
-Do not call `shutdown()` in a worker isolate.
+`shutdown()` 不要在 worker isolate 中调用。
 :::
 
 ## C++ API
@@ -80,7 +80,7 @@ class Runtime {
   void stop();
   bool running() const;
 
-  // Must be called before start(); default is 4
+  // 必须在 start() 之前调用，默认 4
   void set_pool_threads(std::uint32_t n);
 
   asio::io_context& io();
@@ -95,25 +95,25 @@ class Runtime {
 ```
 
 :::caution
-`set_pool_threads()` must be called before `start()`. The Runtime thread pool size cannot be changed after it starts.
+`set_pool_threads()` 必须在 `start()` 之前调用。Runtime 启动后线程池大小不可更改。
 :::
 
-| Function | Purpose | Description |
+| 函数 | 用途 | 说明 |
 |---|---|---|
-| `spawn(Lazy<T>)` | Returns `RescheduleLazy<T>` bound to the io executor | Not started; must call `start()` or `syncAwait()` |
-| `spawn_detached(Lazy<T>)` | Fire-and-forget on the io thread | Results and exceptions are ignored |
-| `spawn_blocking(F&&)` | Execute blocking / CPU tasks on the thread pool | Returns `Lazy<T>`; can be `co_await`ed in an io coroutine |
-| `spawn_on_asio(LazyFactory)` | Schedule coroutines on the io_context thread | Used for low-level startup and cross-thread wake-up |
+| `spawn(Lazy<T>)` | 返回绑定到 io executor 的 `RescheduleLazy<T>` | 未启动，需调用 `start()` 或 `syncAwait()` |
+| `spawn_detached(Lazy<T>)` | 在 io 线程 fire-and-forget | 结果和异常都被忽略 |
+| `spawn_blocking(F&&)` | 在线程池执行阻塞/CPU 任务 | 返回 `Lazy<T>`，可在 io 协程中 `co_await` |
+| `spawn_on_asio(LazyFactory)` | 在 io_context 线程调度协程 | 用于底层启动和跨线程唤醒 |
 
-`syncAwait` usage example:
+`syncAwait` 使用示例：
 
 ```cpp
-// Safe: block and wait in the thread pool (BRIDGE_NORMAL) or an ordinary thread
+// 安全：在线程池（BRIDGE_NORMAL）或普通线程中阻塞等待
 auto r = async_simple::coro::syncAwait(dcb::spawn(compute_value()));
 ```
 
 :::danger
-Never call `syncAwait` on the `io_context` thread; it will cause a self-deadlock.
+永远不要在 `io_context` 线程上调用 `syncAwait`，会自死锁。
 :::
 
 ### StreamSink
@@ -132,16 +132,16 @@ class StreamSink {
 }  // namespace dcb
 ```
 
-In `BRIDGE_NORMAL` or `BRIDGE_ASYNC` functions, receive `std::optional<StreamSink<T>>`, send stream data via `add()`, end the stream via `end()`, and report errors via `error()`.
+在 BRIDGE_NORMAL 或 BRIDGE_ASYNC 函数中接收 `std::optional<StreamSink<T>>`，通过 `add()` 发送流数据、`end()` 结束、`error()` 报错。
 
 ### DartFn
 
 ```cpp
 namespace dcb {
 
-// Dart closures with arbitrary signatures
+// 任意签名的 Dart 闭包
 // DartFn<Ret(Args...)>
-// Usage: co_await fn(args...) -> returns Lazy<Ret>
+// 调用方式：co_await fn(args...) → 返回 Lazy<Ret>
 template <typename Ret, typename... Args>
 class DartFn<Ret(Args...)> {
  public:
@@ -155,15 +155,15 @@ using DartFnStringToString = DartFn<std::string(std::string)>;
 }  // namespace dcb
 ```
 
-Blocking context call:
+阻塞上下文调用：
 
 ```cpp
 auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(arg)));
 ```
 
-### Dispatch Registration
+### Dispatch 注册
 
-Hand-written or generated wire dispatch must be registered with the runtime before the first use:
+手写或生成的 wire dispatch 需要在首次调用前注册到 runtime：
 
 ```cpp
 namespace dcb {
@@ -178,4 +178,4 @@ void set_dispatch(DispatchRequestFn async_fn, DispatchSyncFn sync_fn);
 }  // namespace dcb
 ```
 
-Usually done by file-scope static initialization in generated `wire_dispatch.cpp`; no manual call is needed.
+通常由生成的 `wire_dispatch.cpp` 通过文件作用域静态初始化完成，无需手动调用。

@@ -1,13 +1,13 @@
 ---
 title: dart_cpp_bridge
-description: Dart ↔ C++20 互操作桥接库
+description: Dart ↔ C++20 interoperability bridge library
 template: splash
 hero:
-  tagline: 让 C++ 库以优雅的方式暴露给 Dart/Flutter
+  tagline: Expose C++ libraries to Dart/Flutter in an elegant way
   image:
     file: ../../assets/hero.svg
   actions:
-    - text: 快速开始
+    - text: Quick Start
       link: /dart_cpp_bridge/getting-started/
       icon: right-arrow
     - text: GitHub
@@ -17,34 +17,34 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## 特性
+## Features
 
 <CardGrid>
-  <Card title="同步调用" icon="rocket">
-    直接调用 C++ 函数，零开销同步返回。
+  <Card title="Synchronous Calls" icon="rocket">
+    Directly call C++ functions with zero-overhead synchronous returns.
   </Card>
-  <Card title="异步协程" icon="star">
-    基于 async_simple::Lazy 的 C++20 协程支持。
+  <Card title="Asynchronous Coroutines" icon="star">
+    C++20 coroutine support based on async_simple::Lazy.
   </Card>
-  <Card title="Stream 流" icon="list-format">
-    C++ 向 Dart 推送数据流。
+  <Card title="Stream" icon="list-format">
+    Push streams of data from C++ to Dart.
   </Card>
-  <Card title="反向调用" icon="random">
-    C++ 调用 Dart 闭包（DartFn）。
+  <Card title="Reverse Calls" icon="random">
+    Call Dart closures (DartFn) from C++.
   </Card>
-  <Card title="代码生成" icon="puzzle">
-    自动生成 FFI 绑定和序列化代码。
+  <Card title="Code Generation" icon="puzzle">
+    Auto-generate FFI bindings and serialization code.
   </Card>
-  <Card title="跨平台" icon="laptop">
-    Windows、Linux、macOS、iOS、Android 五端支持。
+  <Card title="Cross-Platform" icon="laptop">
+    Support for Windows, Linux, macOS, iOS, and Android.
   </Card>
-  <Card title="纯 C API" icon="document">
-    不依赖 async-simple / asio，C99 兼容的桥接 API。
+  <Card title="Pure C API" icon="document">
+    C99-compatible bridge API with no dependency on async-simple / asio.
   </Card>
-  <Card title="外部运行时集成" icon="server">
-    libuv、glib、自定义事件循环通过 ForeignExecutor 接入。
+  <Card title="Foreign Runtime Integration" icon="server">
+    Integrate libuv, glib, and custom event loops via ForeignExecutor.
   </Card>
-  <Card title="异步非阻塞通道" icon="link">
-    mpsc / oneshot 协程通道，构建跨线程非阻塞流水线。
+  <Card title="Asynchronous Non-blocking Channels" icon="link">
+    mpsc / oneshot coroutine channels for building cross-thread non-blocking pipelines.
   </Card>
 </CardGrid>

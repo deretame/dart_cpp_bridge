@@ -1,31 +1,31 @@
 ---
-title: 快速开始
-description: 环境准备、安装工具并构建第一个 dart_cpp_bridge 项目
+title: Getting Started
+description: Environment setup, install tools, and build your first dart_cpp_bridge project
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-:::tip[还没安装 Dart/Flutter？]
-如果你还没有配置 Dart 或 Flutter 环境，请先参考官方文档：
+:::tip[Haven't installed Dart/Flutter yet?]
+If you haven't set up Dart or Flutter yet, please refer to the official docs first:
 
-- [Dart 安装指南](https://dart.dev/get-dart)
-- [Flutter 安装指南](https://docs.flutter.dev/get-started/install)
+- [Dart installation guide](https://dart.dev/get-dart)
+- [Flutter installation guide](https://docs.flutter.dev/get-started/install)
 
-本指南假设你已经有一个可以正常运行的 Dart 或 Flutter 项目。
+This guide assumes you already have a working Dart or Flutter project.
 :::
 
-## 环境要求
+## Environment requirements
 
-开始之前，请确保你的开发环境满足以下条件：
+Before starting, make sure your development environment meets the following requirements:
 
 - **CMake >= 3.24**
-- **C++ 编译器** 支持 C++20（MSVC 2019+、GCC 10+、Clang 12+）
+- **C++ compiler** that supports C++20 (MSVC 2019+, GCC 10+, Clang 12+)
 - **Dart SDK >= 3.10.0**
-- **Git**（用于拉取 C++ 依赖，如 Asio、async-simple）
+- **Git** (for pulling C++ dependencies such as Asio and async-simple)
 
-## 添加依赖
+## Add dependencies
 
-本指南假设你的项目根目录已经存在一个标准的 `pubspec.yaml`。接下来把 `dart_cpp_bridge` 及其配套包加入项目：
+This guide assumes a standard `pubspec.yaml` already exists at your project root. Add `dart_cpp_bridge` and its companion packages:
 
 <Tabs>
   <TabItem label="Dart">
@@ -40,66 +40,66 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
   </TabItem>
 </Tabs>
 
-## 安装 `dcb_gen_tool`
+## Install `dcb_gen_tool`
 
-`dcb_gen_tool` 是 dart_cpp_bridge 的代码生成工具，用于根据 C++ 头文件生成 FFI 绑定和 Dart API。
+`dcb_gen_tool` is the dart_cpp_bridge code generator. It generates FFI bindings and the Dart API from C++ headers.
 
-### 推荐安装方式（AOT 二进制）
+### Recommended installation (AOT binary)
 
-Dart 3.10 起官方推荐使用 `dart install` 安装可执行工具，它会生成独立的 AOT 二进制文件，启动更快，并支持 Native Assets build hook：
+Starting with Dart 3.10, the official recommendation is to install executable tools with `dart install`, which produces a standalone AOT binary with faster startup and Native Assets build hook support:
 
 ```bash
 dart install dcb_gen_tool
 ```
 
-安装完成后，可执行文件位于 Dart 数据目录的 `install/bin/` 下。例如，在 Windows 上可能是：
+After installation, the executable is located in `install/bin/` under the Dart data directory. On Windows, for example, this might be:
 
 ```text
-C:/Users/<你的用户名>/AppData/Local/Dart/install/bin/dcb_gen_tool
+C:/Users/<your username>/AppData/Local/Dart/install/bin/dcb_gen_tool
 ```
 
-你可以直接调用：
+You can invoke it directly:
 
 ```bash
-C:/Users/<你的用户名>/AppData/Local/Dart/install/bin/dcb_gen_tool --help
+C:/Users/<your username>/AppData/Local/Dart/install/bin/dcb_gen_tool --help
 ```
 
-不过为了方便使用，建议把 `$DART_DATA_HOME/install/bin/`（Windows 上通常是 `%LOCALAPPDATA%/Dart/install/bin`）添加到你的 `PATH` 环境变量中。之后就可以直接用：
+For convenience, add `$DART_DATA_HOME/install/bin/` (on Windows typically `%LOCALAPPDATA%/Dart/install/bin`) to your `PATH`. Then you can use:
 
 ```bash
 dcb_gen_tool --help
 ```
 
-### 旧版安装方式（兼容）
+### Legacy installation (compatibility)
 
-如果你的 Dart 版本较旧，或者偏好传统方式，也可以使用：
+If you are on an older Dart version or prefer the traditional approach, you can also use:
 
 ```bash
 dart pub global activate dcb_gen_tool
 ```
 
-> **注意：** `dart pub global` 已被标记为 legacy 方式。`dart install` 是官方推荐方案，且支持 Native Assets 的 build hook。另外，由于 `dart install` 生成的是原生可执行文件，你不能再在运行时传入 Dart VM 选项。
+> **Note:** `dart pub global` is now marked as legacy. `dart install` is the recommended approach and supports Native Assets build hooks. Also, because `dart install` produces a native executable, you can no longer pass Dart VM options at runtime.
 
-## 初始化项目
+## Initialize project
 
-在项目根目录执行：
+Run in the project root:
 
 ```bash
 dcb_gen_tool init
 ```
 
-这条命令会：
+This command will:
 
-1. 生成 dart_cpp_bridge 所需的基础文件结构；
-2. 自动调用一次代码生成。
+1. Generate the basic file structure required by dart_cpp_bridge;
+2. Automatically run code generation once.
 
-第一次调用代码生成时，工具会从远程下载 libclang 等解析依赖，因此会比较慢，请耐心等待。
+The first time code generation is invoked, the tool downloads libclang parsing dependencies from the network, so it may be slow — please be patient.
 
-## 配置 Native Assets Build Hook
+## Configure the Native Assets build hook
 
-初始化完成后，在项目根目录添加 `hook/build.dart`（如果 `hook` 目录不存在，请手动创建）。
+After initialization, add `hook/build.dart` at the project root (create the `hook` directory manually if it doesn't exist).
 
-这是一个最简示例：
+Here is a minimal example:
 
 ```dart
 import 'package:code_assets/code_assets.dart';
@@ -114,7 +114,7 @@ void main(List<String> args) async {
       OS.macOS => MacosConfig(),
       OS.iOS => IosConfig(),
       OS.android => AndroidConfig(ndkPath: ""),
-      final os => throw UnsupportedError('不支持的目标平台: $os'),
+      final os => throw UnsupportedError('Unsupported target platform: $os'),
     };
     await DcbCMakeBuilder(
       config: config,
@@ -126,43 +126,43 @@ void main(List<String> args) async {
 }
 ```
 
-把它保存为 `hook/build.dart` 即可。
+Save this as `hook/build.dart`.
 
-> **Android 提示：** `AndroidConfig(ndkPath: "")` 中的 `ndkPath` 需要填写你本地 Android NDK 的路径，例如 `C:/Users/<你的用户名>/AppData/Local/Android/Sdk/ndk/<版本>`。
+> **Android tip:** `AndroidConfig(ndkPath: "")` needs the local Android NDK path filled in, e.g. `C:/Users/<your username>/AppData/Local/Android/Sdk/ndk/<version>`.
 
-## 项目目录约定
+## Project directory conventions
 
-初始化并配置好 hook 之后，你的项目目录结构会遵循以下约定：
+After initialization and hook configuration, your project directory will follow these conventions:
 
 ```text
 .
 ├── hook/
-│   └── build.dart          # Native Assets 构建入口
+│   └── build.dart          # Native Assets build entry
 ├── native/
-│   ├── api/                # C++ 业务头文件（手写）
-│   ├── api_impl/           # C++ 业务实现（手写）
-│   └── CMakeLists.txt     # CMake 构建配置
+│   ├── api/                # C++ business headers (hand-written)
+│   ├── api_impl/           # C++ business implementation (hand-written)
+│   └── CMakeLists.txt     # CMake build config
 ├── lib/
 │   └── src/
 │       ├── native_gen/
-│       │   ├── dcb_bindings.dart   # 生成的 FFI 绑定
+│       │   ├── dcb_bindings.dart   # Generated FFI bindings
 │       │   └── api/
-│       │       ├── api_fn.dart     # 顶层函数入口
-│       │       ├── api.dart        # BridgeApi 单例
-│       │       └── api.g.dart      # 实现层
+│       │       ├── api_fn.dart     # Top-level function entry
+│       │       ├── api.dart        # BridgeApi singleton
+│       │       └── api.g.dart      # Implementation layer
 │       └── ...
 └── pubspec.yaml
 ```
 
-- `native/`：存放 C++ 源码和 `CMakeLists.txt`，作为 CMake 的 `sourceDir`。
-- `lib/src/native_gen/`：生成的 Dart 绑定代码。
-- `lib/src/native_gen/api/`：生成的 Dart 业务 API。
+- `native/`: holds C++ source and `CMakeLists.txt`, used as the CMake `sourceDir`.
+- `lib/src/native_gen/`: generated Dart binding code.
+- `lib/src/native_gen/api/`: generated Dart business API.
 
-完成以上步骤后，运行项目时会自动触发 build hook，编译并打包原生库。
+Once these steps are complete, running the project will automatically trigger the build hook to compile and bundle the native library.
 
-## 初始化 bridge
+## Initialize the bridge
 
-在调用任何生成的 C++ 函数之前，必须先初始化 bridge。代码生成工具会暴露一个初始化入口，例如在 `examples/codegen_demo` 中是 `DcbLib.init()`：
+Before calling any generated C++ functions, you must initialize the bridge. The code generator exposes an initialization entry point, for example in `examples/codegen_demo` it is `DcbLib.init()`:
 
 ```dart
 import 'package:my_project/src/native_gen/api/init.dart';
@@ -170,22 +170,22 @@ import 'package:my_project/src/native_gen/api/init.dart';
 Future<void> main() async {
   await DcbLib.init();
 
-  // 现在可以调用生成的函数
+  // Now you can call generated functions
   final version = bridgeVersion();
   print(version);
 }
 ```
 
-要点：
+Key points:
 
-- **每个 Isolate 调用一次**：通常从 main isolate 调用；如果其他 isolate 也需要调用 C++ 函数，它们也要各自 `init()`
-- **`dispose()` 可选**：`DcbLib.dispose()` 会立即关闭当前 isolate 的 session；日常使用中 `NativeFinalizer` 会在 isolate 退出或对象不可达时自动关闭
-- **`shutdown()` 只在进程退出时调用**：它是进程级操作，会停止 Runtime 并关闭所有 session。不要在 worker isolate 中调用
+- **Call once per isolate**: usually from the main isolate; if other isolates also need to call C++ functions, they must each call `init()` too.
+- **`dispose()` is optional**: `DcbLib.dispose()` immediately closes the current isolate's session; in normal use, `NativeFinalizer` will automatically close it when the isolate exits or the object becomes unreachable.
+- **`shutdown()` only on process exit**: it is a process-level operation that stops the Runtime and closes all sessions. Do not call it from worker isolates.
 
-## 接下来
+## Next steps
 
-完成环境配置后，你可以开始编写 C++ API 头文件并运行代码生成。更多细节请参阅：
+After environment setup, you can start writing C++ API headers and run code generation. For more details, see:
 
-- [配置说明](/dart_cpp_bridge/codegen/configuration/)
-- [注解参考](/dart_cpp_bridge/codegen/annotations/)
-- [生成产物说明](/dart_cpp_bridge/codegen/output/)
+- [Configuration](/dart_cpp_bridge/codegen/configuration/)
+- [Annotations reference](/dart_cpp_bridge/codegen/annotations/)
+- [Generated output reference](/dart_cpp_bridge/codegen/output/)

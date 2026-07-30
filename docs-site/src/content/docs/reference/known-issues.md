@@ -1,37 +1,37 @@
 ---
-title: 已知问题
-description: 当前版本已知限制与常见陷阱
+title: Known Issues
+description: Known limitations and common pitfalls in the current version
 ---
 
-## 已知限制
+## Known Limitations
 
-### 无通用取消机制
+### No General Cancellation Mechanism
 
-没有通用的异步取消。Stream 订阅取消只停止新事件的传递；C++ 侧继续运行并静默丢弃后续的 `add()` 调用。
+There is no general async cancellation. Cancelling a `Stream` subscription only stops new events from being delivered; the C++ side continues running and silently drops subsequent `add()` calls.
 
-### codegen 不是构建步骤
+### Codegen Is Not a Build Step
 
-代码生成必须在 API 头文件变更后手动运行。Native Assets hook 只负责编译和链接，不会重新生成代码。
+Code generation must be run manually after API header changes. The Native Assets hook only handles compilation and linking; it does not regenerate code.
 
-### 不支持类型别名
+### Type Aliases Are Not Supported
 
-codegen 无法解析 `using Foo = ...` 或 `typedef ...`。头文件中请直接使用实际类型并写完整命名空间。
+codegen cannot parse `using Foo = ...` or `typedef ...`. Use the actual type directly in headers and write out the full namespace.
 
-### 不透明类限制
+### Opaque Class Limitations
 
-- 不能跨 Isolate 共享
-- 不支持继承、虚函数、方法重载
-- 字段访问需手写 getter/setter
+- Cannot be shared across Isolates
+- Inheritance, virtual functions, and method overloading are not supported
+- Field access requires hand-written getter/setter methods
 
-## 常见陷阱
+## Common Pitfalls
 
 :::danger
-永远不要阻塞 `io_context` 线程。
+Never block the `io_context` thread.
 :::
 
-- 阻塞工作必须使用 `spawn_blocking` 或投递到 `thread_pool`
-- `set_pool_threads()` 必须在 Runtime `start()` 之前调用
-- Runtime 是单线程设计，这是有意为之
-- 生成的代码需要手动运行 `dcb_gen_tool generate` 重新生成
-- 头文件应只放声明，数据类和不透明类必须定义在被扫描的头文件内
-- `DartFn::operator()` 仅异步；阻塞调用需用 `syncAwait(dcb::spawn(...))`，且禁止在 io 线程上执行
+- Blocking work must use `spawn_blocking` or be posted to the `thread_pool`
+- `set_pool_threads()` must be called before `Runtime::start()`
+- The Runtime is single-threaded by design
+- Generated code must be regenerated manually by running `dcb_gen_tool generate`
+- Headers should contain only declarations; data classes and opaque classes must be defined inside the scanned headers
+- `DartFn::operator()` is async only; for blocking calls use `syncAwait(dcb::spawn(...))`, and never do so on the io thread

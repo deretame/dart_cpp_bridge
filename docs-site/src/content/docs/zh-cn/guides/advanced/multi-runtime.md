@@ -1,11 +1,11 @@
 ---
-title: Multi-Runtime
-description: Create independent asio + async-simple runtimes outside the dart_cpp_bridge main Runtime, and communicate with the main Runtime through coroutine channels.
+title: 多运行时
+description: 在 dart_cpp_bridge 主 Runtime 之外创建独立的 asio + async-simple 运行时，并通过协程 channel 与主 Runtime 通信
 ---
 
-`dart_cpp_bridge`'s `dcb::Runtime` is a process-level singleton and cannot be copied. If you need another independent event loop (for example, to isolate heavy computation, independent subsystems, or third-party async libraries in their own thread), you can assemble a **WorkerRuntime** yourself: an `asio::io_context` + `dcb::AsioExecutor` + a `std::thread`.
+`dart_cpp_bridge` 的 `dcb::Runtime` 是进程级单例，不能被复制。如果你需要另一个独立的事件循环（比如把重计算、独立子系统、第三方异步库隔离在自己的线程里），可以自己组装一个 **WorkerRuntime**：一个 `asio::io_context` + `dcb::AsioExecutor` + 一个 `std::thread`。
 
-## Minimal WorkerRuntime
+## 最小 WorkerRuntime
 
 ```cpp
 #pragma once
@@ -33,19 +33,19 @@ class WorkerRuntime {
     if (running_.load(std::memory_order_acquire)) return;
     running_.store(true, std::memory_order_release);
 
-    // Keep io_context alive even when there is no work
+    // 保持 io_context 在没有任务时也不退出
     guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
         ioc_.get_executor());
-    // Create an independent async-simple Executor
+    // 创建独立的 async-simple Executor
     executor_ = std::make_unique<dcb::AsioExecutor>(ioc_);
-    // Start the event loop thread
+    // 启动事件循环线程
     thread_ = std::make_unique<std::thread>([this] { ioc_.run(); });
   }
 
   void stop() {
     if (!running_.load(std::memory_order_acquire)) return;
     running_.store(false, std::memory_order_release);
-    if (guard_) guard_.reset();  // Allow io_context to run out of work
+    if (guard_) guard_.reset();  // 允许 io_context run out of work
     if (thread_ && thread_->joinable()) thread_->join();
     thread_.reset();
     executor_.reset();
@@ -55,7 +55,7 @@ class WorkerRuntime {
   dcb::AsioExecutor* executor() { return executor_.get(); }
   asio::io_context& io() { return ioc_; }
 
-  // Post a Lazy factory onto this Worker's event loop to start
+  // 把一个 Lazy 工厂投递到本 Worker 的事件循环上启动
   template <class LazyFactory>
   void spawn(LazyFactory&& factory) {
     auto* ex = executor_.get();
@@ -76,17 +76,17 @@ class WorkerRuntime {
 };
 ```
 
-Key points:
+关键点：
 
-- `asio::executor_work_guard` keeps the `io_context` from exiting immediately when there is no work.
-- `dcb::AsioExecutor` lets `async_simple::coro::Lazy<T>` be scheduled on the `io_context`.
-- `spawn()` uses `asio::post` to dispatch the coroutine to the Worker thread and uses a `shared_ptr` to keep the lambda factory alive until the coroutine ends.
+- `asio::executor_work_guard` 防止 `io_context` 因为没有任务而立即退出
+- `dcb::AsioExecutor` 让 `async_simple::coro::Lazy<T>` 可以调度到 `io_context`
+- `spawn()` 用 `asio::post` 把协程丢到 Worker 线程，并通过 `shared_ptr` 保持 lambda 工厂存活到协程结束
 
-## Communicating with the Main Runtime
+## 与主 Runtime 通信
 
-Runtimes **do not share threads or memory**; communication can only go through `co::oneshot` / `co::mpsc` channels.
+不同运行时之间**不共享线程、不共享内存**，通信只能通过 `co::oneshot` / `co::mpsc` channel。
 
-### oneshot: single request/reply
+### oneshot：单次请求/回复
 
 ```cpp
 #include "dart_cpp_bridge/channel.hpp"
@@ -96,20 +96,20 @@ async_simple::coro::Lazy<std::string> process_on_worker(
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
   worker->spawn([tx = std::move(tx), input = std::move(input)]() mutable -> async_simple::coro::Lazy<> {
-    // Run on the Worker thread
+    // 在 Worker 线程上执行
     std::string result = "processed: " + input;
     tx.send(std::move(result));
     co_return;
   });
 
-  // The main Runtime coroutine suspends to wait, without blocking the io thread
+  // 主 Runtime 协程挂起等待，不阻塞 io 线程
   auto reply = co_await rx.recv();
   if (!reply) throw std::runtime_error("worker dropped");
   co_return *reply;
 }
 ```
 
-### mpsc: Worker continuously produces data
+### mpsc：Worker 持续产生数据
 
 ```cpp
 async_simple::coro::Lazy<> consume_worker_stream(
@@ -122,7 +122,7 @@ async_simple::coro::Lazy<> consume_worker_stream(
       tx.send("item_" + std::to_string(i));
       co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
     }
-    // tx is destroyed → channel closes
+    // tx 析构 → channel 关闭
     co_return;
   });
 
@@ -133,7 +133,7 @@ async_simple::coro::Lazy<> consume_worker_stream(
 }
 ```
 
-### Pipeline: Worker A → Worker B
+### Pipeline：Worker A → Worker B
 
 ```cpp
 async_simple::coro::Lazy<std::string> pipeline(
@@ -157,7 +157,7 @@ async_simple::coro::Lazy<std::string> pipeline(
 }
 ```
 
-### Fan-out: send in parallel to multiple Workers
+### Fan-out：并行发到多个 Worker
 
 ```cpp
 async_simple::coro::Lazy<std::pair<std::string, std::string>> fan_out(
@@ -180,9 +180,9 @@ async_simple::coro::Lazy<std::pair<std::string, std::string>> fan_out(
 }
 ```
 
-## Calling Dart Functions from a Worker
+## 在 Worker 里调用 Dart 函数
 
-The Worker's `AsioExecutor` fully implements `async_simple::Executor`, so inside a coroutine you can directly `co_await` a `DartFn`; when Dart replies, it is automatically scheduled back to the Worker thread.
+Worker 的 `AsioExecutor` 已经完整实现了 `async_simple::Executor`，所以协程里可以直接 `co_await` DartFn，Dart 回复时会自动调度回 Worker 线程。
 
 ```cpp
 #include "dart_cpp_bridge/dart_fn.hpp"
@@ -195,7 +195,7 @@ async_simple::coro::Lazy<std::string> call_dart_from_worker(
 
   worker->spawn([tx = std::move(tx), cb = std::move(callback),
                  input = std::move(input)]() mutable -> async_simple::coro::Lazy<> {
-    // Await the Dart callback on the Worker thread without blocking
+    // 在 Worker 线程上非阻塞等待 Dart 回调
     auto result = co_await cb(input);
     tx.send(std::move(result));
     co_return;
@@ -206,30 +206,30 @@ async_simple::coro::Lazy<std::string> call_dart_from_worker(
 }
 ```
 
-How it works:
+原理：
 
-- `DartFn::operator()` internally creates an oneshot channel and `co_await`s `rx.recv()`.
-- The channel's `coAwait(ex)` captures the current coroutine's executor (the Worker's `AsioExecutor`).
-- When Dart replies, `wake_waiter(h, ex)` resumes the coroutine and posts it back to the Worker thread.
+- `DartFn::operator()` 内部创建 oneshot channel 并 `co_await rx.recv()`
+- channel 的 `coAwait(ex)` 捕获当前协程的 executor（即 Worker 的 `AsioExecutor`）
+- Dart 回复时，`wake_waiter(h, ex)` 把协程恢复投递回 Worker 线程
 
-## Notes
+## 注意事项
 
-- **The Worker's `executor()` must outlive the coroutines running on it**: do not wait for coroutines on the Worker to complete after `stop()`.
-- **Do not block the Worker thread**: like the main Runtime, the `io_context` thread must not block; use `dcb::spawn_blocking` for blocking tasks.
-- **Do not call `syncAwait` on the Worker thread**: it will deadlock.
-- **Do not share state directly between Workers**: all cross-Worker communication goes through channels; if you must share data, protect it with `std::mutex` yourself, but this is not the recommended pattern.
-- **Multiple Workers can share the same Dart bridge**: `DartFn` is routed through the main Runtime's `Session`, so any Worker can call it.
+- **Worker 的 `executor()` 必须比上面运行的协程活得更长**：不要在 `stop()` 之后还在等待 Worker 上的协程完成
+- **不要阻塞 Worker 线程**：和主 Runtime 一样，`io_context` 线程不能阻塞；阻塞任务用 `dcb::spawn_blocking`
+- **不要在 Worker 线程上 `syncAwait`**：会死锁
+- **Worker 之间不要直接共享状态**：所有跨 Worker 通信都走 channel；如果必须共享数据，用 `std::mutex` 自己保护，但这不是推荐模式
+- **多 Worker 可以共享同一个 Dart 桥接**：DartFn 通过主 Runtime 的 Session 路由，任何 Worker 都能调用
 
-## Full Example
+## 完整示例
 
-See `examples/multi_runtime_demo/`:
+参考 `examples/multi_runtime_demo/`：
 
-- `worker_runtime.hpp` — the `WorkerRuntime` class shown above
-- `native/api/multi_runtime_api.h` — bridge API declarations
-- `native/api_impl/multi_runtime_api.cpp` — oneshot / mpsc / pipeline / fan-out / DartFn implementations
+- `worker_runtime.hpp` — 上面的 `WorkerRuntime` 类
+- `native/api/multi_runtime_api.h` — 桥接 API 声明
+- `native/api_impl/multi_runtime_api.cpp` — oneshot / mpsc / pipeline / fan-out / DartFn 的实现
 
-## Further Reading
+## 延伸阅读
 
-- [Fundamentals: Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) — `spawn`, `spawn_blocking`, channel, sleep
-- [async-simple Coroutine Basics](/dart_cpp_bridge/guides/fundamentals/async-simple/) — `Lazy`, `Executor`, `co_await` behavior
-- [Foreign Runtime Integration](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — integrating non-asio event loops (libuv, glib) with the bridge
+- [基础运行时](/dart_cpp_bridge/guides/fundamentals/runtime/) — `spawn`、`spawn_blocking`、channel、sleep
+- [async-simple 协程入门](/dart_cpp_bridge/guides/fundamentals/async-simple/) — `Lazy`、`Executor`、co_await 行为
+- [外部运行时集成](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — 把非 asio 事件循环（libuv、glib）接入 bridge

@@ -1,13 +1,13 @@
 ---
-title: 配置
-description: dart_cpp_bridge.yaml 配置文件说明
+title: Configuration
+description: dart_cpp_bridge.yaml configuration file reference
 sidebar:
   order: 1
 ---
 
-## 配置文件
+## Configuration File
 
-每个需要代码生成的项目需要一个 `dart_cpp_bridge.yaml`，放在项目根目录：
+Every project that needs code generation requires a `dart_cpp_bridge.yaml` in the project root:
 
 ```yaml
 # dart_cpp_bridge.yaml
@@ -18,8 +18,8 @@ cpp_root: native/
 scan:
   - native/api/
 
-# 项目自身的 include 路径即可，dart_cpp_bridge 的 native/include 目录会在 codegen 时
-# 从 .dart_tool/package_config.json 自动解析，不需要写在这里。
+# Only include paths for the project itself. dart_cpp_bridge's native/include directory is
+# resolved automatically from .dart_tool/package_config.json during codegen, so it does not need to be listed here.
 include_paths:
   - native
   - native/api
@@ -27,8 +27,8 @@ include_paths:
 dart_output: lib/src/native_gen/
 cpp_wire_output: native/generated/
 
-# 可选：clang-format 候选路径（从上到下尝试，最后回退到 PATH）。
-# 可以是可执行文件路径，也可以是包含可执行文件的目录。
+# Optional: candidate paths for clang-format (tried in order, falling back to PATH last).
+# May be an executable path or a directory containing the executable.
 # clang_format:
 #   - C:\Program Files\LLVM\bin
 
@@ -38,53 +38,53 @@ defines:
   - DART_CPP_BRIDGE_CODEGEN
 ```
 
-## 字段说明
+## Field Reference
 
-| 字段 | 必填 | 默认值 | 说明 |
-|------|------|--------|------|
-| `cpp_root` | ✅ | `native/` | C++ 源码根目录，`scan` 路径相对于它解析 |
-| `scan` | ✅ | - | 扫描注解头文件的目录列表（相对于 `cpp_root`） |
-| `include_paths` | ✅ | `[]` | 传给 clang 的项目相对 include 路径 |
-| `dart_output` | ✅ | `lib/src/native_gen/` | 生成的 Dart 代码输出目录 |
-| `cpp_wire_output` | ✅ | `native/generated/` | 生成的 C++ wire dispatch 输出目录 |
-| `dart_package` | ❌ | 从 `pubspec.yaml` 自动读取 | Dart 包名，用于生成 `assetId` 和 import 路径；手动写时必须与 `pubspec.yaml` 的 `name` 一致 |
-| `clang_format` | ❌ | 无 | `clang-format` 候选路径列表，用于格式化生成的 C++ 代码 |
-| `std` | ❌ | `c++20` | 解析 C++ 头文件时使用的 C++ 标准 |
-| `defines` | ❌ | `BRIDGE_CODEGEN`、`DART_CPP_BRIDGE_CODEGEN` | 传给 clang 的预处理宏列表 |
-| `dart_code` | ❌ | 无 | 向生成的数据类中注入自定义 Dart 代码，可替换自动生成的 `toString()` |
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `cpp_root` | ✅ | `native/` | C++ source root directory; `scan` paths are resolved relative to it |
+| `scan` | ✅ | - | List of directories to scan for annotated header files (relative to `cpp_root`) |
+| `include_paths` | ✅ | `[]` | Project-relative include paths passed to clang |
+| `dart_output` | ✅ | `lib/src/native_gen/` | Output directory for generated Dart code |
+| `cpp_wire_output` | ✅ | `native/generated/` | Output directory for generated C++ wire dispatch code |
+| `dart_package` | ❌ | Auto-read from `pubspec.yaml` | Dart package name, used for `assetId` and import paths; if set manually, it must match the `name` field in `pubspec.yaml` |
+| `clang_format` | ❌ | None | Candidate path list for `clang-format`, used to format generated C++ code |
+| `std` | ❌ | `c++20` | C++ standard used when parsing C++ headers |
+| `defines` | ❌ | `BRIDGE_CODEGEN`, `DART_CPP_BRIDGE_CODEGEN` | Preprocessor macros passed to clang |
+| `dart_code` | ❌ | None | Inject custom Dart code into generated data classes; can replace the auto-generated `toString()` |
 
-## 运行代码生成
+## Running Code Generation
 
 ```bash
-# 推荐：安装到 $DART_DATA_HOME/install/bin/ 后使用
+# Recommended: install to $DART_DATA_HOME/install/bin/ and use
 dart install dcb_gen_tool
 dcb_gen_tool generate dart_cpp_bridge.yaml
 
-# 旧版全局激活方式（仍可用）
+# Legacy global activate method (still works)
 dart pub global activate dcb_gen_tool
 dcb_gen_tool generate dart_cpp_bridge.yaml
 ```
 
-首次运行会自动下载并缓存 Python + libclang 工具链。
+The first run automatically downloads and caches the Python + libclang toolchain.
 
-## include_paths 注意事项
+## include_paths Notes
 
 :::tip
-`include_paths` 只需要写项目自身的头文件目录。`dart_cpp_bridge` 的运行时头文件和 `dcb_gen_tool` 的 stub 头文件会在 codegen 时自动解析，不需要手动添加。
+`include_paths` only needs to list the project's own header directories. `dart_cpp_bridge` runtime headers and `dcb_gen_tool` stub headers are resolved automatically during codegen; do not add them manually.
 :::
 
-## 头文件组织建议
+## Header Organization Recommendations
 
-- 被 `scan` 扫描到的头文件应只放**声明**，不要写函数实现（不要把 `.cpp` 内容贴进头文件）。
-- **数据类**和**不透明类**必须直接定义在头文件内；codegen 只解析被扫描的头文件，不会解析头文件外部定义的类。
-- 自由函数、静态方法、构造函数等实现请放在对应的 `.cpp` 文件中。
-- **不要写类型别名**（`using Foo = ...` 或 `typedef ...`），codegen 目前无法解析别名，直接展开为实际类型。
-- **不要写 `using namespace`**，所有类型和函数调用都应写完整命名空间（如 `std::int32_t`、`async_simple::coro::Lazy`）。
-- 函数/方法参数和返回值类型请使用完整限定名，确保 codegen 能正确识别。
+- Headers scanned by `scan` should contain **declarations only**; do not put function implementations in them (do not paste `.cpp` content into the header).
+- **Data classes** and **opaque classes** must be defined directly in the header; codegen only parses scanned headers and will not see classes defined elsewhere.
+- Free functions, static methods, constructors, and other implementations should go in the corresponding `.cpp` files.
+- **Do not write type aliases** (`using Foo = ...` or `typedef ...`); codegen currently cannot parse aliases, so expand them to the actual type.
+- **Do not write `using namespace`**; always use fully qualified names for types and function calls (e.g. `std::int32_t`, `async_simple::coro::Lazy`).
+- Function/method parameter and return types should use fully qualified names so codegen can identify them correctly.
 
-## 自定义数据类 `toString()` {#dart_code}
+## Custom Data Class `toString()` {#dart_code}
 
-对于数据类，codegen 默认生成 `hashCode`、`operator ==` 和 `toString()`。如果你希望某个数据类使用自定义的 `toString()`，可以通过 `dart_code` 注入：
+For data classes, codegen generates `hashCode`, `operator ==`, and `toString()` by default. If you want a data class to use a custom `toString()`, use `dart_code` to inject it:
 
 ```yaml
 dart_code:
@@ -93,9 +93,9 @@ dart_code:
     String toString() => 'Rect[$topLeft -> $bottomRight]';
 ```
 
-规则：
-- 键为数据类类名（必须与 C++ 中 `BRIDGE_DATA_CLASS` 的类名一致）
-- 注入的代码会原样写入生成的 Dart 类 body 中
-- 当某个类存在 `dart_code` 时，会**替换**自动生成的 `toString()`，但 `hashCode` 和 `operator ==` 仍然保留
+Rules:
+- The key is the data class name (must match the C++ class name marked with `BRIDGE_DATA_CLASS`).
+- The injected code is written into the generated Dart class body as-is.
+- When a class has `dart_code`, it **replaces** the auto-generated `toString()`, but `hashCode` and `operator ==` are still kept.
 
-更多关于数据类字段类型限制，参见 [类型映射 → 数据类](../type-mapping/#数据类-data-class)。
+For more about data class field type restrictions, see [Type Mapping → Data Class](../type-mapping/#data-class).
