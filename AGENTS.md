@@ -28,15 +28,15 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 
 ## Technology stack
 
-| Layer | Technology | Notes |
-|-------|------------|-------|
-| C++ standard | C++20 minimum | Coroutines, concepts. Requires recent MSVC/GCC/Clang. |
-| Event loop | [Asio](https://think-async.com/Asio/) standalone | `asio::io_context` single-threaded; timers, post, completion. |
-| Coroutines | [async-simple](https://github.com/alibaba/async-simple) | `Lazy`, `Executor`. Header-only use for `coro`. |
-| Dart side | Dart 3 + `package:ffi` | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`. |
-| Dart SDK | `>= 3.10.0` | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+. |
-| Codegen | Pinned Python 3.13.13 + libclang-ng 22.1.4.2 | Downloaded from remote, cached, hash-verified. No host Python/LLVM. |
-| Build | CMake 3.24+ | FetchContent pulls Asio/async-simple. Native Assets hook is not yet wired. |
+| Layer        | Technology                                              | Notes                                                                             |
+| ------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| C++ standard | C++20 minimum                                           | Coroutines, concepts. Requires recent MSVC/GCC/Clang.                             |
+| Event loop   | [Asio](https://think-async.com/Asio/) standalone        | `asio::io_context` single-threaded; timers, post, completion.                     |
+| Coroutines   | [async-simple](https://github.com/alibaba/async_simple) | `Lazy`, `Executor`. Header-only use for `coro`.                                   |
+| Dart side    | Dart 3 + `package:ffi`                                  | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                |
+| Dart SDK     | `>= 3.10.0`                                             | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+. |
+| Codegen      | Pinned Python 3.13.13 + libclang-ng 22.1.4.2            | Downloaded from remote, cached, hash-verified. No host Python/LLVM.               |
+| Build        | CMake 3.24+                                             | FetchContent pulls Asio/async-simple. Native Assets hook is not yet wired.        |
 
 ## Directory structure
 
@@ -289,14 +289,14 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ## Where to find more
 
-| Doc | Content |
-|-----|---------|
-| `README.md` | English project overview, quick start, status. |
-| `README.zh-CN.md` | Chinese overview. |
-| `docs/frb_and_cpp_bridge_design.md` | Full design, FRB comparison, codegen model (Chinese). |
-| `docs/progress.md` | Landed checklist, current phase, next steps. |
-| `docs/known_issues.md` | Resolved issues (DartFn oneshot, etc.) and accepted trade-offs. |
-| `dcb_gen_tool/README.md` | Codegen toolchain, `dart_cpp_bridge.yaml`, generated layers. |
-| `examples/codegen_demo/README.md` | Phase 2 fixture end-to-end instructions. |
-| `dart/README.md` | Dart package status and minimal usage. |
-| `dart/CHANGELOG.md` | Pub package changelog. |
+| Doc                                 | Content                                                         |
+| ----------------------------------- | --------------------------------------------------------------- |
+| `README.md`                         | English project overview, quick start, status.                  |
+| `README.zh-CN.md`                   | Chinese overview.                                               |
+| `docs/frb_and_cpp_bridge_design.md` | Full design, FRB comparison, codegen model (Chinese).           |
+| `docs/progress.md`                  | Landed checklist, current phase, next steps.                    |
+| `docs/known_issues.md`              | Resolved issues (DartFn oneshot, etc.) and accepted trade-offs. |
+| `dcb_gen_tool/README.md`            | Codegen toolchain, `dart_cpp_bridge.yaml`, generated layers.    |
+| `examples/codegen_demo/README.md`   | Phase 2 fixture end-to-end instructions.                        |
+| `dart/README.md`                    | Dart package status and minimal usage.                          |
+| `dart/CHANGELOG.md`                 | Pub package changelog.                                          |

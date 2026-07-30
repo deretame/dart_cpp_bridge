@@ -65,7 +65,7 @@ void main() async {
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考
 - [Asio](https://think-async.com/Asio/) — 事件循环与异步 I/O
-- [async-simple](https://github.com/alibaba/async-simple) — C++20 协程运行时
+- [async-simple](https://github.com/alibaba/async_simple) — C++20 协程运行时
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue) — 无锁并发队列
 - Dart / Flutter 团队 — FFI、Isolate、NativeFinalizer 等 Dart 原生能力
 
