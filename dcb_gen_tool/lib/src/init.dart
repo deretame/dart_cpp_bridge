@@ -129,6 +129,7 @@ Future<int> cmdInit(
     [configPath],
     force: force,
     quiet: quiet,
+    skipVersionCheck: false,
   );
   if (exitCode != 0) return exitCode;
 

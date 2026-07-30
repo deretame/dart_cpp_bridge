@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "config": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/dart_cpp_bridge.yaml",
+  "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\dart_cpp_bridge.yaml",
   "headers": [
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
   ],
   "clang_args": [
     "-std=c++20",
@@ -11,19 +11,13 @@
     "-ferror-limit=0",
     "-DBRIDGE_CODEGEN",
     "-DDART_CPP_BRIDGE_CODEGEN",
-    "-I/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native",
-    "-I/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api",
-    "-I/Users/z4/pack/dart_cpp_bridge/dart/native/include",
-    "-I/Users/z4/pack/dart_cpp_bridge/dcb_gen_tool/stubs",
-    "-nostdinc",
-    "-nostdinc++",
-    "-I/usr/local/include",
-    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
-    "-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include",
-    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include",
-    "-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include",
-    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks (framework directory)",
-    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/SubFrameworks (framework directory)"
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\build\\_deps\\async_simple-src",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\build\\_deps\\asio-src\\asio\\include",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
   ],
   "enums": [],
   "classes": [],
@@ -40,7 +34,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "call_dart_from_uv",
@@ -78,7 +72,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_cbridge_invoke",
@@ -116,7 +110,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "uv_compute",
@@ -138,7 +132,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_channel_service_concurrent",
@@ -152,7 +146,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "uv_stream",
@@ -189,7 +183,7 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_cbridge_async_fail",
@@ -203,7 +197,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_channel_service",
@@ -217,7 +211,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_cbridge_async",
@@ -231,7 +225,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "ask_uv",
@@ -253,7 +247,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "stop_uv_worker",
@@ -267,7 +261,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_cbridge_async_cancel",
@@ -281,36 +275,36 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h"
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     }
   ],
   "diagnostics": [
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: unknown type name 'Context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: unknown type name 'Context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: unknown type name 'Context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no matching function for call to 'post'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: expected member name or ';' after declaration specifiers",
-    "/Users/z4/pack/dart_cpp_bridge/examples/foreign_runtime_demo/native/api/foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
   ]
 }

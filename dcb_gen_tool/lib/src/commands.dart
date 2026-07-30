@@ -9,7 +9,7 @@ import 'lock_file.dart';
 import 'package_root.dart';
 import 'platform.dart';
 
-const _version = '0.1.0';
+const _version = '0.1.0-dev.2';
 
 const _usage = '''
 dcb_gen — dart_cpp_bridge code generation tool ($_version)
@@ -26,6 +26,7 @@ Commands:
 Options:
   --force                  Force re-download even if cached toolchain is valid.
   --quiet                  Suppress non-error output.
+  --skip-version-check     Skip dart_cpp_bridge version consistency check.
   --version                Print version and exit.
   --help, -h               Show this message.
 
@@ -51,6 +52,7 @@ Future<int> runCli(List<String> arguments) async {
   // --- Global flags ---
   var force = false;
   var quiet = false;
+  var skipVersionCheck = false;
   final positional = <String>[];
 
   for (final arg in arguments) {
@@ -66,6 +68,8 @@ Future<int> runCli(List<String> arguments) async {
         force = true;
       case '--quiet':
         quiet = true;
+      case '--skip-version-check':
+        skipVersionCheck = true;
       default:
         positional.add(arg);
     }
@@ -82,7 +86,8 @@ Future<int> runCli(List<String> arguments) async {
   try {
     switch (command) {
       case 'generate':
-        return await runGenerate(args, force: force, quiet: quiet);
+        return await runGenerate(args,
+            force: force, quiet: quiet, skipVersionCheck: skipVersionCheck);
       case 'init':
         return await cmdInit(args, force: force, quiet: quiet);
       case 'bootstrap':
@@ -109,6 +114,7 @@ Future<int> runGenerate(
   List<String> args, {
   required bool force,
   required bool quiet,
+  required bool skipVersionCheck,
 }) async {
   if (args.isEmpty) {
     stderr.writeln('error: missing <config.yaml> argument.');
@@ -121,6 +127,20 @@ Future<int> runGenerate(
   if (!configFile.existsSync()) {
     stderr.writeln('error: config file not found: $configPath');
     return 1;
+  }
+
+  // --- Version consistency check ---
+  if (!skipVersionCheck) {
+    final versionError =
+        _checkRuntimeVersion(p.dirname(p.absolute(configPath)));
+    if (versionError != null) {
+      stderr.writeln(versionError);
+      return 1;
+    }
+  } else {
+    stderr.writeln(
+        '[dcb_gen] WARNING: --skip-version-check is set; '
+        'generated code may be incompatible with the runtime.');
   }
 
   final log = CliLogger(quiet: quiet);
@@ -412,6 +432,43 @@ Future<int> _cmdDoctor({required bool quiet}) async {
 // ===========================================================================
 // Helpers
 // ===========================================================================
+
+/// Checks that the target project's resolved `dart_cpp_bridge` version matches
+/// this tool's version. Returns an error message string on mismatch, or `null`
+/// when the check passes.
+String? _checkRuntimeVersion(String projectDir) {
+  final lockPath = p.join(projectDir, 'pubspec.lock');
+  final lockFile = File(lockPath);
+  if (!lockFile.existsSync()) {
+    return 'error: pubspec.lock not found in $projectDir\n'
+        'Run "dart pub get" (or "flutter pub get") first.';
+  }
+
+  final content = lockFile.readAsStringSync();
+  final lock = loadYaml(content) as YamlMap;
+  final packages = lock['packages'] as YamlMap?;
+  if (packages == null || !packages.containsKey('dart_cpp_bridge')) {
+    return 'error: dart_cpp_bridge not found in pubspec.lock\n'
+        'The target project does not depend on package:dart_cpp_bridge.';
+  }
+
+  final entry = packages['dart_cpp_bridge'] as YamlMap;
+  final resolved = entry['version'] as String?;
+  if (resolved == null) {
+    return 'error: could not read dart_cpp_bridge version from pubspec.lock';
+  }
+
+  if (resolved != _version) {
+    return 'error: dart_cpp_bridge version mismatch.\n'
+        '  dcb_gen_tool expects: $_version\n'
+        '  project resolved:     $resolved\n'
+        '\n'
+        'Run "dart pub upgrade dart_cpp_bridge" to align versions,\n'
+        'or pass --skip-version-check to bypass (not recommended).';
+  }
+
+  return null;
+}
 
 /// Simple CLI logger that writes to stderr.
 class CliLogger {
