@@ -1899,61 +1899,117 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
     ::demo::api::Counter &source =
         *static_cast<::demo::api::Counter *>(sourceObj.get());
     const auto offset = r.i32();
-    ByteWriter w;
-    {
-      auto out = ::demo::api::cloneWithOffset(source, offset);
+    try {
+      ByteWriter w;
       {
-        auto __obj = std::make_shared<::demo::api::Counter>(std::move(out));
-        g_Counter_alive_count.increment(session_id);
-        const auto __handle = dcb::ObjectHandleRegistry::instance().insert(
-            session_id, __obj, [session_id](std::shared_ptr<void> &) {
-              g_Counter_alive_count.decrement(session_id);
-            });
-        w.u64(__handle);
+        auto out = ::demo::api::cloneWithOffset(source, offset);
+        {
+          auto __obj = std::make_shared<::demo::api::Counter>(std::move(out));
+          g_Counter_alive_count.increment(session_id);
+          const auto __handle = dcb::ObjectHandleRegistry::instance().insert(
+              session_id, __obj, [session_id](std::shared_ptr<void> &) {
+                g_Counter_alive_count.decrement(session_id);
+              });
+          w.u64(__handle);
+        }
       }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("cloneWithOffset", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("cloneWithOffset", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 513280939u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
 
-    ByteWriter w;
-    {
-      auto out = ::demo::api::bridge_version();
-      w.i32(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::bridge_version();
+        w.i32(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("bridge_version", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("bridge_version", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1225502033u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto msg = r.str();
-    ByteWriter w;
-    {
-      auto out = ::demo::api::fail_sync(msg);
-      w.i32(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::fail_sync(msg);
+        w.i32(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("fail_sync", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("fail_sync", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1426479656u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto value = std::chrono::system_clock::time_point{
         std::chrono::microseconds{r.i64()}};
-    ByteWriter w;
-    {
-      auto out = ::demo::api::echo_time_sync(value);
-      w.i64(static_cast<std::int64_t>(
-          std::chrono::duration_cast<std::chrono::microseconds>(
-              (out).time_since_epoch())
-              .count()));
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::echo_time_sync(value);
+        w.i64(static_cast<std::int64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                (out).time_since_epoch())
+                .count()));
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("echo_time_sync", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("echo_time_sync", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1702006080u) {
@@ -1967,29 +2023,57 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
           ByteReader r(d, n);
           return r.str();
         });
-    ByteWriter w;
-    {
-      auto out = ::demo::api::register_dart_fn(callback);
-      w.u8(out ? 1 : 0);
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::register_dart_fn(callback);
+        w.u8(out ? 1 : 0);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("register_dart_fn", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("register_dart_fn", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1812101563u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto n = r.i32();
-    ByteWriter w;
-    {
-      auto out = ::demo::api::nested_cube(n);
-      w.vec(out, [&](const auto &v) {
-        w.vec(v, [&](const auto &v) {
-          w.vec(v, [&](const auto &v) { w.i32(v); });
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::nested_cube(n);
+        w.vec(out, [&](const auto &v) {
+          w.vec(v, [&](const auto &v) {
+            w.vec(v, [&](const auto &v) { w.i32(v); });
+          });
         });
-      });
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("nested_cube", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("nested_cube", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 2026522337u) {
@@ -2004,43 +2088,85 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
           return r.str();
         });
     const auto input = r.str();
-    ByteWriter w;
-    {
-      auto out = ::demo::api::sync_dart_fn_blocking_us(callback, input);
-      w.i64(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::sync_dart_fn_blocking_us(callback, input);
+        w.i64(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("sync_dart_fn_blocking_us", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("sync_dart_fn_blocking_us", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 546811180u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto initialValue = r.i32();
-    auto obj = std::make_shared<::demo::api::Counter>(initialValue);
-    g_Counter_alive_count.increment(session_id);
-    const auto handle = dcb::ObjectHandleRegistry::instance().insert(
-        session_id, obj, [session_id](std::shared_ptr<void> &) {
-          g_Counter_alive_count.decrement(session_id);
-        });
-    ByteWriter w;
-    w.u64(handle);
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
+    try {
+      auto obj = std::make_shared<::demo::api::Counter>(initialValue);
+      g_Counter_alive_count.increment(session_id);
+      const auto handle = dcb::ObjectHandleRegistry::instance().insert(
+          session_id, obj, [session_id](std::shared_ptr<void> &) {
+            g_Counter_alive_count.decrement(session_id);
+          });
+      ByteWriter w;
+      w.u64(handle);
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::Counter", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::Counter", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    }
   }
 
   if (frame.method_id == 1174608690u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
 
-    auto obj = std::make_shared<::demo::api::Counter>();
-    g_Counter_alive_count.increment(session_id);
-    const auto handle = dcb::ObjectHandleRegistry::instance().insert(
-        session_id, obj, [session_id](std::shared_ptr<void> &) {
-          g_Counter_alive_count.decrement(session_id);
-        });
-    ByteWriter w;
-    w.u64(handle);
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
+    try {
+      auto obj = std::make_shared<::demo::api::Counter>();
+      g_Counter_alive_count.increment(session_id);
+      const auto handle = dcb::ObjectHandleRegistry::instance().insert(
+          session_id, obj, [session_id](std::shared_ptr<void> &) {
+            g_Counter_alive_count.decrement(session_id);
+          });
+      ByteWriter w;
+      w.u64(handle);
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::Counter", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::Counter", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    }
   }
 
   if (frame.method_id == 190346512u) {
@@ -2050,18 +2176,33 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
     if (!obj) {
       ByteWriter ew;
       ew.i32(1);
-      ew.str("Counter handle not found or already dropped");
+      ew.str(dcb::error::format("Counter::valueSync",
+                                "Counter handle not found or already dropped"));
       return make_frame(MsgType::kResponseErr, frame.request_id,
                         frame.method_id, ew.raw());
     }
 
-    ByteWriter w;
-    {
-      auto out = static_cast<::demo::api::Counter *>(obj.get())->valueSync();
-      w.i32(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = static_cast<::demo::api::Counter *>(obj.get())->valueSync();
+        w.i32(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::valueSync", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::valueSync", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1826397364u) {
@@ -2071,43 +2212,86 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
     if (!obj) {
       ByteWriter ew;
       ew.i32(1);
-      ew.str("Counter handle not found or already dropped");
+      ew.str(dcb::error::format("Counter::toString",
+                                "Counter handle not found or already dropped"));
       return make_frame(MsgType::kResponseErr, frame.request_id,
                         frame.method_id, ew.raw());
     }
 
-    ByteWriter w;
-    {
-      auto out = static_cast<::demo::api::Counter *>(obj.get())->toString();
-      w.str(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = static_cast<::demo::api::Counter *>(obj.get())->toString();
+        w.str(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::toString", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::toString", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1521970656u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto a = r.i32();
     const auto b = r.i32();
-    ByteWriter w;
-    {
-      auto out = ::demo::api::Counter::sum(a, b);
-      w.i32(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::Counter::sum(a, b);
+        w.i32(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::sum", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::sum", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
 
   if (frame.method_id == 1338263248u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
 
-    ByteWriter w;
-    {
-      auto out = g_Counter_alive_count.load(session_id);
-      w.i32(out);
+    try {
+      ByteWriter w;
+      {
+        auto out = g_Counter_alive_count.load(session_id);
+        w.i32(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::aliveCount", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("Counter::aliveCount", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
     }
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
-                      w.raw());
   }
   throw std::runtime_error("sync: method not sync-capable");
 }

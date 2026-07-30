@@ -19,7 +19,8 @@
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\async_simple-src",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include"
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include",
+    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
   ],
   "enums": [
     {

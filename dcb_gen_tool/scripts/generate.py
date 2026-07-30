@@ -537,14 +537,26 @@ def _cpp_class_method_cases(
   if (frame.method_id == {mid}u) {{
     ByteReader r(frame.payload.data(), frame.payload.size());
     {arg_reads}
-    auto obj = {ctor_call};
-    {counter_var}.increment(session_id);
-    const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {{
-      {counter_var}.decrement(session_id);
-    }});
-    ByteWriter w;
-    w.u64(handle);
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+    try {{
+      auto obj = {ctor_call};
+      {counter_var}.increment(session_id);
+      const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {{
+        {counter_var}.decrement(session_id);
+      }});
+      ByteWriter w;
+      w.u64(handle);
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+    }} catch (const std::exception& e) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{class_name}::{class_name}", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    }} catch (...) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{class_name}::{class_name}", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    }}
   }}"""
                 cases.append(body)
                 sync_cases.append(sync_body)
@@ -574,7 +586,7 @@ def _cpp_class_method_cases(
         if (!obj) {{
           ByteWriter ew;
           ew.i32(1);
-          ew.str("{err_msg}");
+          ew.str(dcb::error::format("{fn_label}", "{err_msg}"));
           return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
         }}
         {sync_arg_reads}"""
@@ -599,12 +611,24 @@ def _cpp_class_method_cases(
   if (frame.method_id == {mid}u) {{
     ByteReader r(frame.payload.data(), frame.payload.size());
     {sync_handle_block}
-    ByteWriter w;
-    {{
-      auto out = {call};
-      {write}
+    try {{
+      ByteWriter w;
+      {{
+        auto out = {call};
+        {write}
+      }}
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+    }} catch (const std::exception& e) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{fn_label}", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    }} catch (...) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{fn_label}", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
     }}
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }}"""
                 cases.append(body)
                 sync_cases.append(sync_body)
@@ -1503,12 +1527,24 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
   if (frame.method_id == {mid}u) {{{session_lookup}
     ByteReader r(frame.payload.data(), frame.payload.size());
     {sync_reads}
-    ByteWriter w;
-    {{
-      auto out = {call};
-      {write}
+    try {{
+      ByteWriter w;
+      {{
+        auto out = {call};
+        {write}
+      }}
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+    }} catch (const std::exception& e) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{fn['name']}", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    }} catch (...) {{
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("{fn['name']}", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
     }}
-    return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
   }}"""
             sync_cases.append(sync_body)
 

@@ -413,7 +413,13 @@ final class DcbBuildOptions {
   /// (`/MDd` vs `/MD`, `/MTd` vs `/MT`).
   final bool? debug;
 
-  const DcbBuildOptions({this.debug});
+  /// Whether to enable parallel (multi-threaded) compilation.
+  ///
+  /// Defaults to `true`. When enabled, passes `--parallel` to `cmake --build`,
+  /// allowing CMake to compile multiple source files concurrently.
+  final bool parallel;
+
+  const DcbBuildOptions({this.debug, this.parallel = true});
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +608,7 @@ final class DcbCMakeBuilder {
       buildDir.toFilePath(),
       '--config',
       buildType,
+      if (buildOptions.parallel) '--parallel',
     ], environment: processEnvironment);
 
     // 3. Locate the produced library.
