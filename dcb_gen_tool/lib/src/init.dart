@@ -5,7 +5,7 @@ import 'package:yaml/yaml.dart';
 
 import 'commands.dart';
 
-/// `dcb_gen init --name <lib_name>`
+/// `dcb_gen_tool init --name <lib_name>`
 ///
 /// Scaffolds a minimal dart_cpp_bridge project in the current directory:
 ///   - dart_cpp_bridge.yaml
@@ -43,7 +43,7 @@ Future<int> cmdInit(
       log.info('Using package name from pubspec.yaml: $libName');
     } else {
       stderr.writeln('error: --name is required (no pubspec.yaml found).');
-      stderr.writeln('Usage: dcb_gen init --name <library_name>');
+      stderr.writeln('Usage: dcb_gen_tool init --name <library_name>');
       return 1;
     }
   } else if (pubspecName != null && pubspecName != libName) {
@@ -136,7 +136,7 @@ Future<int> cmdInit(
   log.info('Done! Next steps:');
   log.info('  1. Ensure dart_cpp_bridge is in pubspec.yaml && run "dart pub get"');
   log.info('  2. Edit native/api/bridge_api.h + native/api_impl/bridge_api.cpp');
-  log.info('  3. Run "dcb_gen generate dart_cpp_bridge.yaml" after API changes');
+  log.info('  3. Run "dcb_gen_tool generate dart_cpp_bridge.yaml" after API changes');
   log.info('  4. Run "dart run" or "flutter run" (hook builds native lib)');
   if (hasCmake) {
     log.info('  note: existing native/CMakeLists.txt was kept — make sure it');
@@ -233,7 +233,7 @@ add_subdirectory(\${DCB_ROOT} \${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 set(GEN_WIRE "\${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "\${GEN_WIRE}")
   message(FATAL_ERROR
-    "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
+    "Missing generated wire. Run: dcb_gen_tool generate dart_cpp_bridge.yaml")
 endif()
 
 # --- Library target ---

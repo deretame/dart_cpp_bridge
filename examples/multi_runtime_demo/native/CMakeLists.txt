@@ -10,7 +10,7 @@
 # asio / async-simple versions are pinned and propagated by the base library; no need to declare them here.
 #
 # Run codegen before building:
-#   dcb_gen generate dart_cpp_bridge.yaml
+#   dcb_gen_tool generate dart_cpp_bridge.yaml
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.24)
@@ -29,7 +29,7 @@ add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
-    "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
+    "Missing generated wire. Run: dcb_gen_tool generate dart_cpp_bridge.yaml")
 endif()
 
 # --- Shared / static library ---

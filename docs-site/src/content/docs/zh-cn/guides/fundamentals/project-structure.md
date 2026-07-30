@@ -58,7 +58,7 @@ dcb_gen_tool generate
 
 ```bash
 cd dcb_gen_tool
-dart run bin/dcb_gen.dart generate ../path/to/dart_cpp_bridge.yaml
+dart run bin/dcb_gen_tool.dart generate ../path/to/dart_cpp_bridge.yaml
 ```
 
 ## 注意事项

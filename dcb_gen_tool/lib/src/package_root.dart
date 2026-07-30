@@ -6,7 +6,7 @@ import 'package:path/path.dart' as p;
 /// Resolve the absolute path to the dcb_gen_tool package root directory.
 ///
 /// Works in all execution modes:
-///   - `dart run bin/dcb_gen.dart` (development)
+///   - `dart run bin/dcb_gen_tool.dart` (development)
 ///   - `dart pub global activate dcb_gen_tool` (global activation)
 ///   - `dart pub global activate --source path ./dcb_gen_tool` (path override)
 ///

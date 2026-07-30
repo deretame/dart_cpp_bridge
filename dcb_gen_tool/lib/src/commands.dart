@@ -12,10 +12,10 @@ import 'platform.dart';
 const _version = '1.0.0';
 
 const _usage = '''
-dcb_gen — dart_cpp_bridge code generation tool ($_version)
+dcb_gen_tool — dart_cpp_bridge code generation tool ($_version)
 
 Usage:
-  dcb_gen <command> [options]
+  dcb_gen_tool <command> [options]
 
 Commands:
   generate <config.yaml>   Run the full codegen pipeline (parse + generate).
@@ -32,19 +32,19 @@ Options:
 
 Examples:
   # First-time setup (downloads ~100 MB toolchain)
-  dcb_gen bootstrap
+  dcb_gen_tool bootstrap
 
   # Initialize a new bridge project
-  dcb_gen init --name my_bridge
+  dcb_gen_tool init --name my_bridge
 
   # Generate bridge code for a project
-  dcb_gen generate dart_cpp_bridge.yaml
+  dcb_gen_tool generate dart_cpp_bridge.yaml
 
   # Force re-download toolchain
-  dcb_gen bootstrap --force
+  dcb_gen_tool bootstrap --force
 
   # Check environment health
-  dcb_gen doctor
+  dcb_gen_tool doctor
 ''';
 
 /// Main CLI dispatcher. Returns the process exit code.
@@ -58,7 +58,7 @@ Future<int> runCli(List<String> arguments) async {
   for (final arg in arguments) {
     switch (arg) {
       case '--version':
-        stdout.writeln('dcb_gen $_version');
+        stdout.writeln('dcb_gen_tool $_version');
         return 0;
       case '--help':
       case '-h':
@@ -96,7 +96,7 @@ Future<int> runCli(List<String> arguments) async {
         return await _cmdDoctor(quiet: quiet);
       default:
         stderr.writeln('error: unknown command "$command"');
-        stderr.writeln('Run "dcb_gen --help" for usage.');
+        stderr.writeln('Run "dcb_gen_tool --help" for usage.');
         return 1;
     }
   } catch (e) {
@@ -109,7 +109,7 @@ Future<int> runCli(List<String> arguments) async {
 // Commands
 // ===========================================================================
 
-/// `dcb_gen generate <config.yaml>`
+/// `dcb_gen_tool generate <config.yaml>`
 Future<int> runGenerate(
   List<String> args, {
   required bool force,
@@ -118,7 +118,7 @@ Future<int> runGenerate(
 }) async {
   if (args.isEmpty) {
     stderr.writeln('error: missing <config.yaml> argument.');
-    stderr.writeln('Usage: dcb_gen generate <path/to/dart_cpp_bridge.yaml>');
+    stderr.writeln('Usage: dcb_gen_tool generate <path/to/dart_cpp_bridge.yaml>');
     return 1;
   }
 
@@ -139,7 +139,7 @@ Future<int> runGenerate(
     }
   } else {
     stderr.writeln(
-        '[dcb_gen] WARNING: --skip-version-check is set; '
+        '[dcb_gen_tool] WARNING: --skip-version-check is set; '
         'generated code may be incompatible with the runtime.');
   }
 
@@ -334,7 +334,7 @@ String? _findDotClangFormat(String dir) {
   }
 }
 
-/// `dcb_gen bootstrap`
+/// `dcb_gen_tool bootstrap`
 Future<int> _cmdBootstrap({
   required bool force,
   required bool quiet,
@@ -368,7 +368,7 @@ Future<int> _cmdBootstrap({
   return 0;
 }
 
-/// `dcb_gen doctor`
+/// `dcb_gen_tool doctor`
 Future<int> _cmdDoctor({required bool quiet}) async {
   final log = CliLogger(quiet: false); // doctor always prints
   var ok = true;
@@ -409,7 +409,7 @@ Future<int> _cmdDoctor({required bool quiet}) async {
   if (lastEnv.existsSync()) {
     log.info('Cached toolchain: yes');
   } else {
-    log.info('Cached toolchain: no (run "dcb_gen bootstrap")');
+    log.info('Cached toolchain: no (run "dcb_gen_tool bootstrap")');
   }
 
   // CMake (optional)
@@ -476,11 +476,11 @@ class CliLogger {
   CliLogger({required this.quiet});
 
   void info(String msg) {
-    if (!quiet) stderr.writeln('[dcb_gen] $msg');
+    if (!quiet) stderr.writeln('[dcb_gen_tool] $msg');
   }
 
   void warn(String msg) {
-    stderr.writeln('[dcb_gen] WARNING: $msg');
+    stderr.writeln('[dcb_gen_tool] WARNING: $msg');
   }
 }
 

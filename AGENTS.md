@@ -76,7 +76,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 │   └── example/example.dart
 ├── dcb_gen_tool/              # Codegen CLI (pub global activate dcb_gen_tool)
 │   ├── pubspec.yaml           # dcb_gen_tool pub package
-│   ├── bin/dcb_gen.dart       # CLI entry: generate / bootstrap / doctor
+│   ├── bin/dcb_gen_tool.dart       # CLI entry: generate / bootstrap / doctor
 │   ├── lib/src/               # platform detection, lock parsing, bootstrap logic
 │   ├── versions.lock          # Pinned Python + libclang-ng URLs/hashes
 │   ├── scripts/               # parse/generate Python scripts
@@ -154,7 +154,7 @@ cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
 # 2. Run codegen for the demo fixture
 cd examples/codegen_demo
-dcb_gen generate dart_cpp_bridge.yaml
+dcb_gen_tool generate dart_cpp_bridge.yaml
 
 # 3. Build the demo library
 cmake -S . -B build

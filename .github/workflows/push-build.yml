@@ -48,7 +48,7 @@ jobs:
         run: |
           cd dcb_gen_tool
           dart pub get
-          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           flutter pub get
           xvfb-run -a flutter test integration_test/ -d linux
@@ -97,7 +97,7 @@ jobs:
         run: |
           cd dcb_gen_tool
           dart pub get
-          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           flutter pub get
           flutter test integration_test/ -d windows
@@ -139,7 +139,7 @@ jobs:
         run: |
           cd dcb_gen_tool
           dart pub get
-          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
           cd ../examples/codegen_demo
           flutter pub get
           flutter test integration_test/ -d macos
@@ -166,7 +166,7 @@ jobs:
         run: |
           cd dcb_gen_tool
           dart pub get
-          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
 
       - name: 下载 iOS 模拟器运行时
         run: |
@@ -222,7 +222,7 @@ jobs:
         run: |
           cd dcb_gen_tool
           dart pub get
-          dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+          dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
 
       - name: 运行集成测试（x86_64 模拟器）
         uses: reactivecircus/android-emulator-runner@v2.38.0

@@ -243,7 +243,7 @@ Visual Studio 安装器默认不会把 CMake 添加到系统 `PATH`。只有单�
 
 ### 9.1 现象
 
-CI（GitHub Actions）上运行 `dcb_gen generate` 后，生成的 `wire_dispatch.cpp` 编译失败：
+CI（GitHub Actions）上运行 `dcb_gen_tool generate` 后，生成的 `wire_dispatch.cpp` 编译失败：
 
 ```text
 error C2664: 'async_simple::coro::Lazy<int32_t> demo::api::sum_scores(std::unordered_map<...>)':
@@ -263,7 +263,7 @@ cannot convert argument 1 from 'async_simple::coro::Lazy<int32_t>' to 'int32_t'
 # .github/workflows/push-build.yml
 - name: codegen 生成 + 构建 + 测试
   run: |
-    dart run bin/dcb_gen.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+    dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
     cmake -S . -B build  # <-- codegen 时 build/_deps 还不存在！
 ```
 

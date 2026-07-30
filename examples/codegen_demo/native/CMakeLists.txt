@@ -76,7 +76,7 @@ FetchContent_MakeAvailable(libuv)
 set(GEN_WIRE "${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "${GEN_WIRE}")
   message(FATAL_ERROR
-    "Missing generated wire. Run: dcb_gen generate dart_cpp_bridge.yaml")
+    "Missing generated wire. Run: dcb_gen_tool generate dart_cpp_bridge.yaml")
 endif()
 
 # --- Library target ---

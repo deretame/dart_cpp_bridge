@@ -3,7 +3,7 @@
 
 Run with the pinned Python:
   cd dcb_gen_tool
-  dart run bin/dcb_gen.dart run tests/run_tests.py
+  dart run bin/dcb_gen_tool.dart run tests/run_tests.py
 
 Or directly:
   <pinned-python> dcb_gen_tool/tests/run_tests.py
