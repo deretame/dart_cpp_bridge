@@ -1,11 +1,16 @@
 import 'dart:async';
 
 import 'package:codegen_demo/codegen_demo.dart';
+import 'package:codegen_demo/main.dart' as app;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  // integration test 的标准做法：显式重新启动 app，让当前 binding 拥有合法的
+  // widget tree 和 FocusManager，避免旧 FocusManager dispose 后继续收到事件。
+  app.main();
 
   setUpAll(() async {
     await DcbLib.init();

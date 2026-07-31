@@ -496,8 +496,8 @@ class Sender {
       h = std::exchange(state_->waiter, {});
       ex = std::exchange(state_->waiter_ex, nullptr);
     }
-    state_.reset();
     detail::wake_waiter(h, ex);
+    state_.reset();
     return true;
   }
 
