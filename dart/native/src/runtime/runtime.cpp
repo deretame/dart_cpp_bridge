@@ -4,6 +4,7 @@
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/object_handle.hpp"
 
+#include <iostream>
 #include <utility>
 
 namespace dcb {
@@ -17,6 +18,7 @@ Runtime::Runtime() = default;
 Runtime::~Runtime() { stop(); }
 
 void Runtime::start() {
+  std::lock_guard<std::mutex> lock(start_stop_mu_);
   bool expected = false;
   if (!started_.compare_exchange_strong(expected, true)) {
     return;
@@ -33,6 +35,7 @@ void Runtime::start() {
 }
 
 void Runtime::stop() {
+  std::lock_guard<std::mutex> lock(start_stop_mu_);
   if (!started_.exchange(false)) {
     return;
   }
@@ -66,8 +69,15 @@ void Session::dispose() {
   r.ok = false;
   r.error = "session disposed";
   for (auto& fn : abandoned) {
-    if (fn) {
+    if (!fn) {
+      continue;
+    }
+    try {
       fn(r);
+    } catch (const std::exception& e) {
+      std::cerr << "[dcb] Session::dispose() callback failed: " << e.what() << std::endl;
+    } catch (...) {
+      std::cerr << "[dcb] Session::dispose() callback failed: unknown exception" << std::endl;
     }
   }
 }

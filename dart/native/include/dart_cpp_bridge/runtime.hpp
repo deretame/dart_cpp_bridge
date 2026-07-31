@@ -99,6 +99,7 @@ class Runtime {
   std::uint32_t pool_threads_{4};
   DartPostFn post_fn_{nullptr};
   void* post_userdata_{nullptr};
+  std::mutex start_stop_mu_;
 };
 
 // Launch a Lazy on the runtime's io executor from a NON-coroutine context.

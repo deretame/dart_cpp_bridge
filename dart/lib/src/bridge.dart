@@ -36,15 +36,15 @@ final class DartCppBridge implements Finalizable {
     required NativeBindings bindings,
     required int sessionId,
     required ReceivePort receivePort,
-    required Pointer<Uint64> finalizerToken,
   })  : _b = bindings,
         _sessionId = sessionId,
-        _rp = receivePort,
-        _finalizerToken = finalizerToken {
+        _rp = receivePort {
     _sub = _rp.listen(_onMessage);
+    // Encode the session id as the token pointer value itself; the native
+    // finalizer extracts it without any cross-module heap allocation.
     _nativeFinalizer.attach(
       this,
-      finalizerToken.cast(),
+      Pointer.fromAddress(_sessionId).cast(),
       detach: this,
       externalSize: 64,
     );
@@ -53,7 +53,6 @@ final class DartCppBridge implements Finalizable {
   final NativeBindings _b;
   final int _sessionId;
   final ReceivePort _rp;
-  final Pointer<Uint64> _finalizerToken;
   final Map<int, Completer<Uint8List>> _pending = {};
   final Map<int, _StreamSubscription<dynamic>> _streams = {};
   /// FRB-style: callbacks passed into C++ calls, keyed by fn_id for this session.
@@ -102,15 +101,10 @@ final class DartCppBridge implements Finalizable {
       throw StateError('dcb_session_open failed');
     }
 
-    // Token owned by NativeFinalizer (freed in dcb_session_finalizer),
-    // unless dispose() detaches and frees it manually.
-    final token = malloc<Uint64>()..value = sessionId;
-
     final bridge = DartCppBridge._(
       bindings: b,
       sessionId: sessionId,
       receivePort: rp,
-      finalizerToken: token,
     );
     _instance = bridge;
     return bridge;
@@ -126,7 +120,6 @@ final class DartCppBridge implements Finalizable {
     if (_finalizerDetached) return;
     _finalizerDetached = true;
     _nativeFinalizer.detach(this);
-    malloc.free(_finalizerToken);
   }
 
   /// Promptly close this isolate's session.

@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <atomic>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -53,16 +54,34 @@ DispatchSyncFn dispatch_sync_fn() {
 
 namespace {
 
+void free_posted_data(void* /*isolate_callback_data*/, void* peer) { std::free(peer); }
+
 void dart_post_impl(std::int64_t port, const std::uint8_t* data, std::size_t len, void*) {
   if (port == 0 || data == nullptr) {
     return;
   }
+  // Copy the frame so callers do not have to keep local vectors alive while
+  // Dart processes the message. Use external typed data so Dart owns and frees
+  // the copy via the finalizer.
+  auto* copy = static_cast<uint8_t*>(std::malloc(len ? len : 1));
+  if (!copy) {
+    return;
+  }
+  if (len > 0) {
+    std::memcpy(copy, data, len);
+  }
+
   Dart_CObject obj{};
-  obj.type = Dart_CObject_kTypedData;
-  obj.value.as_typed_data.type = Dart_TypedData_kUint8;
-  obj.value.as_typed_data.length = static_cast<intptr_t>(len);
-  obj.value.as_typed_data.values = const_cast<uint8_t*>(data);
-  Dart_PostCObject_DL(static_cast<Dart_Port_DL>(port), &obj);
+  obj.type = Dart_CObject_kExternalTypedData;
+  obj.value.as_external_typed_data.type = Dart_TypedData_kUint8;
+  obj.value.as_external_typed_data.length = static_cast<intptr_t>(len);
+  obj.value.as_external_typed_data.data = copy;
+  obj.value.as_external_typed_data.peer = copy;
+  obj.value.as_external_typed_data.callback = free_posted_data;
+  if (!Dart_PostCObject_DL(static_cast<Dart_Port_DL>(port), &obj)) {
+    // Port closed / message dropped; free the copy ourselves.
+    std::free(copy);
+  }
 }
 
 char* dup_err(const std::string& s) {
@@ -114,12 +133,19 @@ DCB_API void dcb_session_close(uint64_t session_id) {
 }
 
 DCB_API void dcb_session_finalizer(void* token) {
-  if (token == nullptr) {
-    return;
+  try {
+    if (token == nullptr) {
+      return;
+    }
+    // The token is the session id encoded as a pointer value; no heap allocation
+    // is involved, avoiding cross-module malloc/free mismatches on hot restart.
+    const auto id = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(token));
+    dcb::SessionRegistry::instance().close(id);
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_session_finalizer failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_session_finalizer failed: unknown exception" << std::endl;
   }
-  const auto id = *static_cast<uint64_t*>(token);
-  std::free(token);
-  dcb::SessionRegistry::instance().close(id);
 }
 
 DCB_API void dcb_shutdown(void) {
@@ -188,7 +214,13 @@ DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t o
 }
 
 DCB_API void dcb_drop_object(uint64_t handle) {
-  dcb::ObjectHandleRegistry::instance().drop(handle);
+  try {
+    dcb::ObjectHandleRegistry::instance().drop(handle);
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_drop_object failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_drop_object failed: unknown exception" << std::endl;
+  }
 }
 
 DCB_API void dcb_free(void* p) { std::free(p); }

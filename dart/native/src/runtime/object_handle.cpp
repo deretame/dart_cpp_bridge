@@ -1,6 +1,7 @@
 #include "dart_cpp_bridge/object_handle.hpp"
 
 #include <cassert>
+#include <iostream>
 
 namespace dcb {
 
@@ -52,8 +53,15 @@ void ObjectHandleRegistry::drop(Handle handle) {
     entry = std::move(it->second);
     store->objects.erase(it);
   }
-  if (entry.second) {
+  if (!entry.second) {
+    return;
+  }
+  try {
     entry.second(entry.first);
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] ObjectHandleRegistry::drop() failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] ObjectHandleRegistry::drop() failed: unknown exception" << std::endl;
   }
 }
 
@@ -77,8 +85,15 @@ void ObjectHandleRegistry::drop_all(std::uint64_t session_id) {
     objects = std::move(store->objects);
   }
   for (auto& kv : objects) {
-    if (kv.second.second) {
+    if (!kv.second.second) {
+      continue;
+    }
+    try {
       kv.second.second(kv.second.first);
+    } catch (const std::exception& e) {
+      std::cerr << "[dcb] ObjectHandleRegistry::drop_all() failed: " << e.what() << std::endl;
+    } catch (...) {
+      std::cerr << "[dcb] ObjectHandleRegistry::drop_all() failed: unknown exception" << std::endl;
     }
   }
 }
