@@ -12,7 +12,7 @@ void main(List<String> args) async {
     final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
     final config = switch (input.config.code.targetOS) {
       OS.windows => WindowsConfig(
-        vsInstallPath: r'C:\Program Files\Microsoft Visual Studio\18\Community',
+        // vswhere.exe auto-detection is used when vsInstallPath is null.
         cmake: cmake,
         generator: CmakeGenerator.ninja,
       ),

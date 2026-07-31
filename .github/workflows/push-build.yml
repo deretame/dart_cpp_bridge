@@ -64,18 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: 设置 MSVC 环境
-        run: |
-          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
-            -latest -property installationPath
-          Write-Host "VS install: $vsPath"
-          $envLines = cmd /c "`"$vsPath\VC\Auxiliary\Build\vcvarsall.bat`" x64 >nul 2>&1 && set"
-          foreach ($line in $envLines) {
-            if ($line -match '^([^=]+)=(.*)$') {
-              "$($Matches[1])=$($Matches[2])" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
-            }
-          }
-
       - name: 设置 Flutter
         uses: subosito/flutter-action@v2.23.0
         with:
