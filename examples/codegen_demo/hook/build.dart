@@ -12,6 +12,7 @@ void main(List<String> args) async {
     final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
     final config = switch (input.config.code.targetOS) {
       OS.windows => WindowsConfig(
+        vsInstallPath: r'C:\Program Files\Microsoft Visual Studio\18\Community',
         cmake: cmake,
         generator: CmakeGenerator.ninja,
       ),
@@ -25,13 +26,6 @@ void main(List<String> args) async {
             r'C:\Users\windy\AppData\Local\Android\Sdk\ndk\29.0.14206865',
         // libuv v1.48.0 requires API 24+ (pthread_barrier_*, getifaddrs, preadv)
         androidPlatform: 24,
-        abi: switch (input.config.code.targetArchitecture) {
-          Architecture.arm64 => 'arm64-v8a',
-          Architecture.arm => 'armeabi-v7a',
-          Architecture.x64 => 'x86_64',
-          Architecture.ia32 => 'x86',
-          final a => throw UnsupportedError('Unsupported Android arch: $a'),
-        },
       ),
       final os => throw UnsupportedError('codegen_demo does not support: $os'),
     };
@@ -39,7 +33,11 @@ void main(List<String> args) async {
       config: config,
       sourceDir: 'native',
       assetName: 'src/native_gen/dcb_bindings.dart',
-      libName: 'dcb_codegen_demo',
+      libName: 'my_fancy_bridge',
+      buildOptions: const DcbBuildOptions(
+        copyCompileCommands: true,
+        compileCommandsPath: 'build/compile_commands.json',
+      ),
     ).run(input: input, output: output);
   });
 }

@@ -24,12 +24,12 @@
 #   WHOLE_ARCHIVE forces all objects to be linked, keeping dcb_* FFI exports (requires CMake 3.24+).
 #
 # Customization checklist:
-#   - Change the target name (dcb_codegen_demo → your library name)
+#   - Change the target name (my_fancy_bridge → your library name)
 #   - Change the source file list (api_impl/*.cpp)
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.24)
-project(dcb_codegen_demo LANGUAGES C CXX)
+project(my_fancy_bridge LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,7 +83,7 @@ endif()
 # Sources = generated wire + user business implementation. Base runtime is propagated via linking.
 # BUILD_SHARED_LIBS is passed in by the hook (ON=shared, OFF=static, default ON).
 option(BUILD_SHARED_LIBS "Build shared library" ON)
-add_library(dcb_codegen_demo
+add_library(my_fancy_bridge
   generated/wire_dispatch.cpp
   api_impl/bridge_api.cpp
   api_impl/counter.cpp
@@ -92,16 +92,16 @@ add_library(dcb_codegen_demo
 )
 
 # --- Include paths ---
-target_include_directories(dcb_codegen_demo
+target_include_directories(my_fancy_bridge
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/api
     ${CMAKE_CURRENT_SOURCE_DIR}/generated
 )
 
-target_link_libraries(dcb_codegen_demo PRIVATE
+target_link_libraries(my_fancy_bridge PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> uv_a)
 
 if(WIN32)
-  target_compile_options(dcb_codegen_demo PRIVATE /utf-8)
+  target_compile_options(my_fancy_bridge PRIVATE /utf-8)
 endif()

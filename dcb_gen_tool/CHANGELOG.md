@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0
+
+- Stable release aligned with `dart_cpp_bridge` 1.1.0.
+- `dcb_gen_tool init --name <native_lib_name>`: `--name` now controls the native
+  library / CMake target name and may differ from the Dart package name.
+- `dcb_gen_tool init`: skip logic is now per-file, so existing empty `native/api/`
+  or `native/api_impl/` directories still get starter files.
+- `dcb_gen_tool`: tool version is now read from `pubspec.yaml` instead of a
+  hard-coded constant.
+- Updated CLI help text and usage examples.
+
 ## 1.0.0
 
 - Stable release aligned with `dart_cpp_bridge` 1.0.0.

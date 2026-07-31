@@ -9,9 +9,9 @@ import 'lock_file.dart';
 import 'package_root.dart';
 import 'platform.dart';
 
-const _version = '1.0.0';
+final String _version = _readPackageVersion();
 
-const _usage = '''
+String get _usage => '''
 dcb_gen_tool — dart_cpp_bridge code generation tool ($_version)
 
 Usage:
@@ -19,7 +19,10 @@ Usage:
 
 Commands:
   generate <config.yaml>   Run the full codegen pipeline (parse + generate).
-  init --name <lib_name>   Scaffold a new dart_cpp_bridge project.
+  init [--name <native_lib_name>]
+                           Scaffold a new dart_cpp_bridge project.
+                           --name sets the native library / CMake target name
+                           and defaults to the pubspec.yaml package name.
   bootstrap                Download and verify the pinned Python toolchain.
   doctor                   Check environment (Dart SDK, toolchain, CMake).
 
@@ -34,7 +37,10 @@ Examples:
   # First-time setup (downloads ~100 MB toolchain)
   dcb_gen_tool bootstrap
 
-  # Initialize a new bridge project
+  # Initialize a new bridge project (native lib name defaults to pubspec name)
+  dcb_gen_tool init
+
+  # Use a different native library / CMake target name
   dcb_gen_tool init --name my_bridge
 
   # Generate bridge code for a project
@@ -46,6 +52,53 @@ Examples:
   # Check environment health
   dcb_gen_tool doctor
 ''';
+
+/// Reads this package's version from `pubspec.yaml`.
+///
+/// Tries to locate `pubspec.yaml` by walking up from [Platform.script],
+/// then falls back to the current working directory. Keeping the version in
+/// `pubspec.yaml` avoids having to update a hard-coded constant on every
+/// release.
+String _readPackageVersion() {
+  // Strategy 1: walk up from the running script (works for `dart run`,
+  // global activation, and path overrides).
+  try {
+    var dir = p.dirname(Platform.script.toFilePath());
+    for (var i = 0; i < 6; i++) {
+      final pubspecFile = File(p.join(dir, 'pubspec.yaml'));
+      if (pubspecFile.existsSync()) {
+        final content = loadYaml(pubspecFile.readAsStringSync());
+        if (content is YamlMap &&
+            content['name'] == 'dcb_gen_tool' &&
+            content['version'] is String) {
+          return content['version'] as String;
+        }
+      }
+      final parent = p.dirname(dir);
+      if (parent == dir) break;
+      dir = parent;
+    }
+  } catch (_) {
+    // Fall through.
+  }
+
+  // Strategy 2: current working directory (last resort).
+  try {
+    final pubspecFile = File(p.join(Directory.current.path, 'pubspec.yaml'));
+    if (pubspecFile.existsSync()) {
+      final content = loadYaml(pubspecFile.readAsStringSync());
+      if (content is YamlMap &&
+          content['name'] == 'dcb_gen_tool' &&
+          content['version'] is String) {
+        return content['version'] as String;
+      }
+    }
+  } catch (_) {
+    // Fall through.
+  }
+
+  return 'unknown';
+}
 
 /// Main CLI dispatcher. Returns the process exit code.
 Future<int> runCli(List<String> arguments) async {

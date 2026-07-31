@@ -92,7 +92,7 @@ dart pub global activate dcb_gen_tool
 
 ## 初始化项目
 
-在项目根目录执行：
+在项目根目录（`pubspec.yaml` 所在目录）执行：
 
 ```bash
 dcb_gen_tool init
@@ -100,16 +100,39 @@ dcb_gen_tool init
 
 这条命令会：
 
-1. 生成 dart_cpp_bridge 所需的基础文件结构；
-2. 自动调用一次代码生成。
+1. 从 `pubspec.yaml` 读取包名；
+2. 生成 dart_cpp_bridge 所需的基础文件结构，包括 `hook/build.dart`；
+3. 自动调用一次代码生成。
 
 第一次调用代码生成时，工具会从远程下载 libclang 等解析依赖，因此会比较慢，请耐心等待。
 
+### 自定义 native 库名
+
+默认情况下，native 库 / CMake target 名与 Dart 包名相同。如果你想用不同名字，可传 `--name`：
+
+```bash
+dcb_gen_tool init --name my_bridge
+```
+
+这会影响：
+
+- `native/CMakeLists.txt` 里的 `project(my_bridge)` 和 `add_library(my_bridge ...)`；
+- `hook/build.dart` 里的 `libName: 'my_bridge'`；
+- `dart_cpp_bridge.yaml` 里的 `dart_package` 仍然使用 pubspec 包名（Native Assets 要求如此）。
+
+修改后请保持这三个名字一致：
+
+| 文件 | 字段 | 应与谁一致 |
+|---|---|---|
+| `pubspec.yaml` | `name` | Dart/Flutter 包名 |
+| `dart_cpp_bridge.yaml` | `dart_package` | `pubspec.yaml` 的 `name` |
+| `native/CMakeLists.txt` | `add_library(...)` | `hook/build.dart` 的 `libName` |
+
 ## 配置 Native Assets Build Hook
 
-初始化完成后，在项目根目录添加 `hook/build.dart`（如果 `hook` 目录不存在，请手动创建）。
+`dcb_gen_tool init` 已经会生成一个最简的 `hook/build.dart`，覆盖 Windows、Linux、macOS。如果你需要支持 Android / iOS 或调整构建选项，直接编辑生成的文件即可，不需要从零新建。
 
-这是一个最简示例：
+下面是一个更完整的参考示例：
 
 ```dart
 import 'package:code_assets/code_assets.dart';
@@ -130,13 +153,11 @@ void main(List<String> args) async {
       config: config,
       sourceDir: 'native',
       assetName: 'src/native_gen/dcb_bindings.dart',
-      libName: 'dcb_codegen_demo',
+      libName: 'my_project', // 必须与 native/CMakeLists.txt 里的 add_library() 一致
     ).run(input: input, output: output);
   });
 }
 ```
-
-把它保存为 `hook/build.dart` 即可。
 
 > **Android 提示：** `AndroidConfig(ndkPath: "")` 中的 `ndkPath` 需要填写你本地 Android NDK 的路径，例如 `C:/Users/<你的用户名>/AppData/Local/Android/Sdk/ndk/<版本>`。
 
@@ -176,13 +197,14 @@ void main(List<String> args) async {
 
 ```dart
 import 'package:my_project/src/native_gen/api/init.dart';
+import 'package:my_project/src/native_gen/api/bridge_api.dart';
 
 Future<void> main() async {
   await DcbLib.init();
 
   // 现在可以调用生成的函数
-  final version = bridgeVersion();
-  print(version);
+  final greeting = await fetchGreeting(name: "dcb");
+  print(greeting);
 }
 ```
 

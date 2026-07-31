@@ -57,10 +57,6 @@ void main() async {
 - Quickstart: <https://deretame.github.io/dart_cpp_bridge/getting-started/>
 - GitHub: <https://github.com/deretame/dart_cpp_bridge>
 
-## Status
-
-Experimental / `0.1.0-dev`. API and wire format may change.
-
 ## Acknowledgments
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — architecture and product shape inspiration

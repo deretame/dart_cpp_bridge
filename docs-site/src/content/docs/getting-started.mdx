@@ -92,7 +92,7 @@ dart pub global activate dcb_gen_tool
 
 ## Initialize project
 
-Run in the project root:
+Run in the project root (where `pubspec.yaml` lives):
 
 ```bash
 dcb_gen_tool init
@@ -100,16 +100,39 @@ dcb_gen_tool init
 
 This command will:
 
-1. Generate the basic file structure required by dart_cpp_bridge;
-2. Automatically run code generation once.
+1. Read the package name from `pubspec.yaml`;
+2. Generate the basic file structure required by dart_cpp_bridge, including `hook/build.dart`;
+3. Automatically run code generation once.
 
 The first time code generation is invoked, the tool downloads libclang parsing dependencies from the network, so it may be slow — please be patient.
 
+### Customizing the native library name
+
+By default, the native library / CMake target name is the same as your Dart package name. If you want a different name, pass `--name`:
+
+```bash
+dcb_gen_tool init --name my_bridge
+```
+
+This sets:
+
+- `project(my_bridge)` and `add_library(my_bridge ...)` in `native/CMakeLists.txt`;
+- `libName: 'my_bridge'` in `hook/build.dart`;
+- `dart_package` in `dart_cpp_bridge.yaml` still uses your pubspec package name (required by Native Assets).
+
+Make sure these three names stay consistent after you edit them:
+
+| File | Field | Should match |
+|---|---|---|
+| `pubspec.yaml` | `name` | Your Dart/Flutter package name |
+| `dart_cpp_bridge.yaml` | `dart_package` | `pubspec.yaml` `name` |
+| `native/CMakeLists.txt` | `add_library(...)` | `hook/build.dart` `libName` |
+
 ## Configure the Native Assets build hook
 
-After initialization, add `hook/build.dart` at the project root (create the `hook` directory manually if it doesn't exist).
+`dcb_gen_tool init` already creates a minimal `hook/build.dart` for Windows, Linux, and macOS. If you need to support Android / iOS or adjust build options, edit the generated file instead of creating one from scratch.
 
-Here is a minimal example:
+Here is a more complete minimal example:
 
 ```dart
 import 'package:code_assets/code_assets.dart';
@@ -130,13 +153,11 @@ void main(List<String> args) async {
       config: config,
       sourceDir: 'native',
       assetName: 'src/native_gen/dcb_bindings.dart',
-      libName: 'dcb_codegen_demo',
+      libName: 'my_project', // must match add_library() in native/CMakeLists.txt
     ).run(input: input, output: output);
   });
 }
 ```
-
-Save this as `hook/build.dart`.
 
 > **Android tip:** `AndroidConfig(ndkPath: "")` needs the local Android NDK path filled in, e.g. `C:/Users/<your username>/AppData/Local/Android/Sdk/ndk/<version>`.
 
@@ -176,13 +197,14 @@ Before calling any generated C++ functions, you must initialize the bridge. The 
 
 ```dart
 import 'package:my_project/src/native_gen/api/init.dart';
+import 'package:my_project/src/native_gen/api/bridge_api.dart';
 
 Future<void> main() async {
   await DcbLib.init();
 
   // Now you can call generated functions
-  final version = bridgeVersion();
-  print(version);
+  final greeting = await fetchGreeting(name: "dcb");
+  print(greeting);
 }
 ```
 

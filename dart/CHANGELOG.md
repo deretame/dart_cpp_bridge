@@ -1,3 +1,10 @@
+## 1.1.0
+
+- `DcbBuildOptions.compileCommandsPath`: configurable destination for `compile_commands.json` (relative to package root).
+- `AndroidConfig.abi`: when omitted, the ABI is auto-derived from `input.config.code.targetArchitecture`.
+- `WindowsConfig`: improved Visual Studio detection and automatic `vcvarsall.bat` environment initialization for Ninja builds.
+- Update package description to reflect ready Native Assets build hooks.
+
 ## 1.0.0
 
 - First stable release.

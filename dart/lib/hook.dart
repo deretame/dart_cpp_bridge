@@ -233,9 +233,16 @@ final class AndroidConfig extends DcbPlatformConfig {
 
   /// Target ABI (Android Binary Interface).
   ///
-  /// Supported values: `'arm64-v8a'` (default), `'armeabi-v7a'`, `'x86_64'`,
-  /// `'x86'`. Passed as `-DANDROID_ABI=<abi>`.
-  final String abi;
+  /// Supported values: `'arm64-v8a'`, `'armeabi-v7a'`, `'x86_64'`, `'x86'`.
+  /// Passed as `-DANDROID_ABI=<abi>`.
+  ///
+  /// When `null` (default), the ABI is derived automatically from
+  /// `input.config.code.targetArchitecture`:
+  /// - `arm64` → `'arm64-v8a'`
+  /// - `arm` → `'armeabi-v7a'`
+  /// - `x64` → `'x86_64'`
+  /// - `ia32` → `'x86'`
+  final String? abi;
 
   /// Minimum Android API level.
   ///
@@ -267,7 +274,7 @@ final class AndroidConfig extends DcbPlatformConfig {
   const AndroidConfig({
     this.cmake = 'cmake',
     required this.ndkPath,
-    this.abi = 'arm64-v8a',
+    this.abi,
     this.androidPlatform = 21,
     this.staticStl = true,
     this.generator = CmakeGenerator.ninja,
@@ -425,16 +432,27 @@ final class DcbBuildOptions {
   /// - `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` is passed to the CMake configure
   ///   step (for generators that support it, e.g. Ninja / Makefiles).
   /// - After a successful build, the generated `compile_commands.json` is
-  ///   copied next to `pubspec.yaml` (the package root) if it exists.
+  ///   copied to [compileCommandsPath] under the package root if it exists.
   ///
   /// This makes LSP / clangd tooling work out of the box without manual
   /// symlinks. Set to `false` to disable generation and copying.
   final bool copyCompileCommands;
 
+  /// Relative path under the package root where `compile_commands.json` is
+  /// copied.
+  ///
+  /// Defaults to `'compile_commands.json'` (i.e. directly next to
+  /// `pubspec.yaml`). Use a relative path like `'build/compile_commands.json'`
+  /// or `'.vscode/compile_commands.json'` to keep the package root tidy.
+  ///
+  /// Ignored when [copyCompileCommands] is `false`.
+  final String compileCommandsPath;
+
   const DcbBuildOptions({
     this.debug,
     this.parallel = true,
     this.copyCompileCommands = true,
+    this.compileCommandsPath = 'compile_commands.json',
   });
 }
 
@@ -579,8 +597,12 @@ final class DcbCMakeBuilder {
         cmake = cfg.cmake;
         configureArgs.addAll(_resolveLinuxArgs(cfg, buildType));
       case AndroidConfig cfg:
+        final abi = _resolveAndroidAbi(
+          input.config.code.targetArchitecture,
+          cfg.abi,
+        );
         cmake = _resolveAndroidCmake(cfg);
-        configureArgs.addAll(_resolveAndroidArgs(cfg, buildType));
+        configureArgs.addAll(_resolveAndroidArgs(cfg, buildType, abi));
         // Ninja generator needs ninja.exe on PATH; inject VS Ninja dir.
         if (cfg.generator == CmakeGenerator.ninja && Platform.isWindows) {
           processEnvironment = _ensureNinjaOnPath(cmake);
@@ -628,12 +650,13 @@ final class DcbCMakeBuilder {
       if (buildOptions.parallel) '--parallel',
     ], environment: processEnvironment);
 
-    // 3. Copy compile_commands.json to the package root for LSP / clangd.
+    // 3. Copy compile_commands.json for LSP / clangd.
     if (buildOptions.copyCompileCommands) {
       _copyCompileCommandsIfPresent(
         buildDir: buildDir,
         buildType: buildType,
         packageRoot: input.packageRoot,
+        relativeDest: buildOptions.compileCommandsPath,
       );
     }
 
@@ -667,7 +690,11 @@ final class DcbCMakeBuilder {
     //    automatically, but Native Assets hooks bypass AGP's native build
     //    system, so we must register the dependency explicitly.
     if (config case AndroidConfig cfg when !cfg.staticStl) {
-      _bundleAndroidSharedStl(cfg, effectiveAssetPackage, output);
+      final abi = _resolveAndroidAbi(
+        input.config.code.targetArchitecture,
+        cfg.abi,
+      );
+      _bundleAndroidSharedStl(cfg, effectiveAssetPackage, output, abi);
     }
   }
 
@@ -986,8 +1013,25 @@ final class DcbCMakeBuilder {
     return env;
   }
 
+  /// Resolves the Android ABI from an explicit override or the hooks-provided
+  /// target architecture.
+  static String _resolveAndroidAbi(Architecture? arch, String? override) {
+    if (override != null) return override;
+    return switch (arch) {
+      Architecture.arm64 => 'arm64-v8a',
+      Architecture.arm => 'armeabi-v7a',
+      Architecture.x64 => 'x86_64',
+      Architecture.ia32 => 'x86',
+      _ => 'arm64-v8a',
+    };
+  }
+
   /// Resolves Android-specific configure arguments using the NDK toolchain.
-  List<String> _resolveAndroidArgs(AndroidConfig cfg, String buildType) {
+  List<String> _resolveAndroidArgs(
+    AndroidConfig cfg,
+    String buildType,
+    String abi,
+  ) {
     final args = <String>[];
 
     // NDK toolchain file (the core of Android cross-compilation).
@@ -1001,7 +1045,7 @@ final class DcbCMakeBuilder {
     args.add('-DCMAKE_TOOLCHAIN_FILE=$toolchainFile');
 
     // Target ABI and platform level.
-    args.add('-DANDROID_ABI=${cfg.abi}');
+    args.add('-DANDROID_ABI=$abi');
     args.add('-DANDROID_PLATFORM=android-${cfg.androidPlatform}');
 
     // C++ STL linkage.
@@ -1043,15 +1087,16 @@ final class DcbCMakeBuilder {
     AndroidConfig cfg,
     String packageName,
     BuildOutputBuilder output,
+    String abi,
   ) {
     // Map ABI to the NDK's target triple directory name.
-    final abiDir = switch (cfg.abi) {
+    final abiDir = switch (abi) {
       'arm64-v8a' => 'aarch64-linux-android',
       'armeabi-v7a' => 'arm-linux-androideabi',
       'x86_64' => 'x86_64-linux-android',
       'x86' => 'i686-linux-android',
       _ => throw DcbCMakeException(
-        'Unknown Android ABI: ${cfg.abi}. '
+        'Unknown Android ABI: $abi. '
         'Supported: arm64-v8a, armeabi-v7a, x86_64, x86.',
       ),
     };
@@ -1474,8 +1519,8 @@ final class DcbCMakeBuilder {
     );
   }
 
-  /// Copies `compile_commands.json` from the CMake build directory to the
-  /// package root (where `pubspec.yaml` lives) if it exists.
+  /// Copies `compile_commands.json` from the CMake build directory to
+  /// [relativeDest] under the package root if it exists.
   ///
   /// Searches the single-config root and the multi-config subdirectories
   /// (`Release/`, `Debug/`). Copy failures are logged as warnings and do not
@@ -1484,6 +1529,7 @@ final class DcbCMakeBuilder {
     required Uri buildDir,
     required String buildType,
     required Uri packageRoot,
+    required String relativeDest,
   }) {
     final candidates = <Uri>[
       buildDir.resolve('compile_commands.json'),
@@ -1493,8 +1539,9 @@ final class DcbCMakeBuilder {
       final source = File.fromUri(candidate);
       if (!source.existsSync()) continue;
 
-      final dest = File.fromUri(packageRoot.resolve('compile_commands.json'));
+      final dest = File.fromUri(packageRoot.resolve(relativeDest));
       try {
+        dest.parent.createSync(recursive: true);
         source.copySync(dest.path);
         _log('copied compile_commands.json to ${dest.path}');
       } on FileSystemException catch (e) {
