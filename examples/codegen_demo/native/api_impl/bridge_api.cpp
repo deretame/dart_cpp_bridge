@@ -81,6 +81,11 @@ async_simple::coro::Lazy<std::vector<std::int32_t>> echo_list(
   co_return values;
 }
 
+async_simple::coro::Lazy<std::vector<bool>> echo_bool_list(
+    std::vector<bool> values) {
+  co_return values;
+}
+
 async_simple::coro::Lazy<std::int32_t> sum_array(
     std::array<std::int32_t, 4> values) {
   std::int32_t total = 0;

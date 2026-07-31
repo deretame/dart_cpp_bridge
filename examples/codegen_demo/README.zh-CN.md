@@ -203,8 +203,8 @@ flutter test integration_test
 | `BRIDGE_SYNC` | `bridge_version` | `bridgeVersion()` | `42` |
 | `BRIDGE_ASYNC` | `add` | `await add(2, 3)` | `5` |
 | `BRIDGE_NORMAL` | `sleep_greeting` | `await sleepGreeting('Ada')` | `hello, Ada` |
-| `BRIDGE_EXPORT` 数据类 | `distance(Point, Point)` | `await distance(...)` | `double` |
-| `BRIDGE_EXPORT` Opaque 类 | `Counter` | `Counter.withInitialValue(...)` | 实例方法 |
+| `BRIDGE_DATA_CLASS` | `distance(Point, Point)` | `await distance(...)` | `double` |
+| `BRIDGE_OPAQUE` | `Counter` | `Counter.withInitialValue(...)` | 实例方法 |
 
 无标记的 `internal_helper` **不会**出现在生成物中。
 

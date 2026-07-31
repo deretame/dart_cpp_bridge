@@ -1096,6 +1096,34 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "echo_bool_list",
+      "qualified": "demo::api::echo_bool_list",
+      "kind": "async",
+      "method_id": 608718626,
+      "args": [
+        {
+          "name": "values",
+          "type": {
+            "kind": "vector",
+            "inner": {
+              "kind": "bool"
+            }
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "vector",
+        "inner": {
+          "kind": "bool"
+        }
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "ping_worker",
       "qualified": "demo::api::ping_worker",
       "kind": "async",

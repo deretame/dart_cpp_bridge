@@ -78,6 +78,12 @@ void main() {
     expect(await echoList(values: [-1, 0, 42]), [-1, 0, 42]);
   });
 
+  testWidgets('BRIDGE_ASYNC vector<bool> echo_bool_list', (tester) async {
+    expect(await echoBoolList(values: []), <bool>[]);
+    expect(await echoBoolList(values: [true, false, true]), [true, false, true]);
+    expect(await echoBoolList(values: [false]), [false]);
+  });
+
   testWidgets('BRIDGE_ASYNC array<int, 4> sum_array', (tester) async {
     expect(await sumArray(values: [1, 2, 3, 4]), 10);
     expect(await sumArray(values: [-1, 1, -1, 1]), 0);

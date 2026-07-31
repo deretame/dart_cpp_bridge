@@ -34,7 +34,7 @@ Codegen 校验分两个阶段：
 | 规则 ID | 触发条件 | 状态 | 错误信息模板 |
 |---------|----------|------|--------------|
 | **F01** | 参数或返回值的类型不在白名单内（如 `std::filesystem::path`、`FILE*`、`void*`、`std::mutex`） | ✅ | `function \`{qname}\`, arg \`{arg}\`: unsupported type \`{spelling}\` at {loc}` |
-| **F02** | 参数或返回值引用了未标记 `BRIDGE_EXPORT` 的类（既不是 data_class 也不是 opaque_class） | ✅ | 同 F01（当前落入 `unsupported`），Hint 中提示"该类未标记导出" |
+| **F02** | 参数或返回值引用了未标记 `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE` 的类（既不是 data_class 也不是 opaque_class） | ✅ | 同 F01（当前落入 `unsupported`），Hint 中提示"该类未标记导出" |
 | **F03** | 容器泛型参数含不支持类型（如 `vector<std::filesystem::path>`、`optional<FILE*>`） | ✅ | 递归报出内层 unsupported 类型 |
 
 **修复建议模板**：
@@ -44,17 +44,18 @@ containers, std::optional, std::pair/tuple, enums, data classes, DartFn,
 Int128/UInt128). See docs/codegen_type_mapping.md for the full whitelist.
 ```
 
-**F02 增强（⏳ 待实现）**：当 `unsupported` 的 spelling 对应一个在扫描头文件中存在但未标记 `BRIDGE_EXPORT` 的 class/struct 时，Hint 应改为：
+**F02 增强（⏳ 待实现）**：当 `unsupported` 的 spelling 对应一个在扫描头文件中存在但未标记 `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE` 的 class/struct 时，Hint 应改为：
 ```
-Hint: class `{name}` is not marked with BRIDGE_EXPORT. Add BRIDGE_EXPORT
-to the class declaration, or remove it from the exported API surface.
+Hint: class `{name}` is not marked with BRIDGE_DATA_CLASS or BRIDGE_OPAQUE.
+Add the appropriate marker to the class declaration, or remove it from the
+exported API surface.
 ```
 
 ---
 
 ### 2.2 类级校验（C 系列）
 
-适用于所有带 `BRIDGE_EXPORT` / `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE`（或对应 `DCB_*`）标记的 class/struct。
+适用于所有带 `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE`（或对应 `DCB_*`）标记的 class/struct。
 
 | 规则 ID | 触发条件 | 状态 | 错误信息模板 |
 |---------|----------|------|--------------|
@@ -355,7 +356,7 @@ async_simple::coro::Lazy<std::string> read_file(std::string path);
 
 **反例**：
 ```cpp
-// 注意：InternalConfig 没有 BRIDGE_EXPORT
+// 注意：InternalConfig 没有 BRIDGE_DATA_CLASS / BRIDGE_OPAQUE
 struct InternalConfig {
     int timeout;
     std::string name;
@@ -364,19 +365,19 @@ struct InternalConfig {
 BRIDGE_SYNC
 InternalConfig get_config();
 // 期望报错: unsupported type `InternalConfig`
-// 增强 Hint: class `InternalConfig` is not marked with BRIDGE_EXPORT
+// 增强 Hint: class `InternalConfig` is not marked with BRIDGE_DATA_CLASS or BRIDGE_OPAQUE
 ```
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT PublicConfig {
+struct BRIDGE_DATA_CLASS PublicConfig {
     std::int32_t timeout;
     std::string name;
 };
 
 BRIDGE_SYNC
 PublicConfig get_config();
-// 通过：PublicConfig 已标记导出，是 data_class
+// 通过：PublicConfig 已标记为 data_class
 ```
 
 #### F03: 容器内含不支持类型
@@ -403,7 +404,7 @@ async_simple::coro::Lazy<std::vector<std::string>> list_files();
 
 **反例**：
 ```cpp
-class BRIDGE_EXPORT Shape {
+class BRIDGE_OPAQUE Shape {
 public:
     virtual double area() const = 0;  // 纯虚函数
     virtual ~Shape() = default;       // 虚析构
@@ -414,7 +415,7 @@ public:
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT Circle {
+struct BRIDGE_DATA_CLASS Circle {
     double radius;
 };
 // 通过：无虚函数
@@ -426,7 +427,7 @@ struct BRIDGE_EXPORT Circle {
 ```cpp
 struct Base { int x; };
 
-struct BRIDGE_EXPORT Derived : public Base {
+struct BRIDGE_DATA_CLASS Derived : public Base {
     int y;
 };
 // 期望报错: exported class has base class `Base`
@@ -434,7 +435,7 @@ struct BRIDGE_EXPORT Derived : public Base {
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT Standalone {
+struct BRIDGE_DATA_CLASS Standalone {
     std::int32_t x;
     std::int32_t y;
 };
@@ -446,7 +447,7 @@ struct BRIDGE_EXPORT Standalone {
 **反例**：
 ```cpp
 template <typename T>
-struct BRIDGE_EXPORT Container {
+struct BRIDGE_DATA_CLASS Container {
     T value;
 };
 // 期望报错: exported class is a template
@@ -454,7 +455,7 @@ struct BRIDGE_EXPORT Container {
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT IntContainer {
+struct BRIDGE_DATA_CLASS IntContainer {
     std::int32_t value;
 };
 // 通过：非模板
@@ -464,7 +465,7 @@ struct BRIDGE_EXPORT IntContainer {
 
 **反例**：
 ```cpp
-struct BRIDGE_EXPORT BadData {
+struct BRIDGE_DATA_CLASS BadData {
     std::mutex mtx;           // 不支持
     std::filesystem::path p;  // 不支持
 };
@@ -474,7 +475,7 @@ struct BRIDGE_EXPORT BadData {
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT GoodData {
+struct BRIDGE_DATA_CLASS GoodData {
     std::int32_t id;
     std::string name;
     std::vector<double> values;
@@ -487,7 +488,7 @@ struct BRIDGE_EXPORT GoodData {
 
 **反例**：
 ```cpp
-class BRIDGE_EXPORT Engine {
+class BRIDGE_OPAQUE Engine {
 public:
     BRIDGE_CONSTRUCTOR
     Engine();
@@ -495,7 +496,7 @@ public:
     async_simple::coro::Lazy<void> start();
 };
 
-struct BRIDGE_EXPORT Car {
+struct BRIDGE_DATA_CLASS Car {
     Engine engine;  // 错误：opaque 类不能按值嵌入
     std::string model;
 };
@@ -504,7 +505,7 @@ struct BRIDGE_EXPORT Car {
 
 **正例**：
 ```cpp
-struct BRIDGE_EXPORT CarInfo {
+struct BRIDGE_DATA_CLASS CarInfo {
     std::string model;
     std::int32_t horsepower;
 };

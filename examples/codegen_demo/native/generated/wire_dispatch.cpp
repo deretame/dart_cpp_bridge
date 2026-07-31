@@ -623,6 +623,27 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 608718626: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto values =
+          r.vec<bool>([&]() { return static_cast<bool>(r.u8()); });
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method, values]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::echo_bool_list(values);
+              ByteWriter w;
+              w.vec(out, [&](const auto &v) { w.u8(v ? 1 : 0); });
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "echo_bool_list", e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "echo_bool_list", "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
     case 686903527: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto payload = r.str();

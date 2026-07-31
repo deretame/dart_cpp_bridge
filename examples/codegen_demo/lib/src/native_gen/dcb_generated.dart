@@ -83,6 +83,7 @@ final class BridgeApiImpl {
   static const int testCbridgeInvokeId = 541474998;
   static const int testCbridgeAsyncId = 577957429;
   static const int invokeRegisteredId = 594957055;
+  static const int echoBoolListId = 608718626;
   static const int pingWorkerId = 686903527;
   static const int pipelineId = 764074457;
   static const int incrementI64Id = 826193512;
@@ -421,6 +422,28 @@ final class BridgeApiImpl {
       _payloadBytes,
     );
     return ByteReader(_bytes).str();
+  }
+
+  Future<List<bool>> echoBoolList(List<bool> values) async {
+    final _payload = ByteWriter();
+    _payload.u32(values.length);
+    for (final _v in values) {
+      _payload.u8(_v ? 1 : 0);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      echoBoolListId,
+      _payloadBytes,
+    );
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _n = _r.u32();
+      final _result = <bool>[];
+      for (var _i = 0; _i < _n; _i++) {
+        _result.add(_r.u8() != 0);
+      }
+      return _result;
+    })();
   }
 
   Future<String> pingWorker(String payload) async {

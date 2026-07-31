@@ -102,10 +102,6 @@ Constraints:
 - No arguments
 - Returns `std::string`
 
-### BRIDGE_EXPORT (Legacy)
-
-Auto-detect: has exported methods → opaque, otherwise → data class.
-
 ## Aliases
 
 All `BRIDGE_*` macros have `DCB_*` aliases:

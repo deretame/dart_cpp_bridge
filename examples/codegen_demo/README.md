@@ -203,8 +203,8 @@ Coverage:
 | `BRIDGE_SYNC` | `bridge_version` | `bridgeVersion()` | `42` |
 | `BRIDGE_ASYNC` | `add` | `await add(2, 3)` | `5` |
 | `BRIDGE_NORMAL` | `sleep_greeting` | `await sleepGreeting('Ada')` | `hello, Ada` |
-| `BRIDGE_EXPORT` data class | `distance(Point, Point)` | `await distance(...)` | `double` |
-| `BRIDGE_EXPORT` opaque class | `Counter` | `Counter.withInitialValue(...)` | instance methods |
+| `BRIDGE_DATA_CLASS` | `distance(Point, Point)` | `await distance(...)` | `double` |
+| `BRIDGE_OPAQUE` | `Counter` | `Counter.withInitialValue(...)` | instance methods |
 
 Unmarked `internal_helper` does **not** appear in generated output.
 

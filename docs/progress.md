@@ -241,10 +241,10 @@ dart test
     - 运行时已提供 `dcb::ObjectHandleRegistry`（per-Session）和 `dcb_drop_object`；codegen 只需调用。
     - 实现点：
       - `parse_api.py`：
-        - 识别带 `BRIDGE_EXPORT` / `BRIDGE_OPAQUE` / `BRIDGE_DATA_CLASS` 的 `class` / `struct`。
+        - 识别带 `BRIDGE_OPAQUE` / `BRIDGE_DATA_CLASS` 的 `class` / `struct`。
         - 扫描类内 public 方法，按 `BRIDGE_SYNC/ASYNC/NORMAL` 分类。
         - 识别 `BRIDGE_CONSTRUCTOR` / `BRIDGE_DESTRUCTOR`（约定兜底）。
-        - **显式标记优先**：`BRIDGE_DATA_CLASS` → data_class；`BRIDGE_OPAQUE` → opaque_class（忽略公开字段）；`BRIDGE_EXPORT`（旧）→ 自动检测。
+        - **显式标记**：`BRIDGE_DATA_CLASS` → data_class；`BRIDGE_OPAQUE` → opaque_class（忽略公开字段）。
         - 自动为每个 opaque class 注入 `aliveCount()` 诊断方法到 IR（标记 `"generated": true`）。
       - IR：每个 opaque_class 记录 `name`、`qualified`、`fields`（可选，当前阶段不导出字段）、`methods`。
       - `_type_ir`：opaque 类作为参数/返回值时统一按 `"kind": "opaque_handle"` 处理。
@@ -261,7 +261,6 @@ dart test
     - **显式类标记（对齐 FRB）**：
       - `BRIDGE_DATA_CLASS`：显式标记纯数据类，校验不能有导出方法。
       - `BRIDGE_OPAQUE`：显式标记 opaque 类，公开字段被忽略，只生成标注的方法。若需访问字段，手写 `BRIDGE_SYNC` getter/setter。
-      - `BRIDGE_EXPORT`（旧）：保持向后兼容，自动检测（有导出方法→opaque，否则→data_class）。
     - Fixture：在 `examples/codegen_demo/native/api/counter.h` 新增生成版 `Counter`（使用 `BRIDGE_OPAQUE`），覆盖默认构造、带参构造、sync/async/static/DartFn/Normal/Stream 实例方法、独立句柄、dispose/跨 Isolate 拒绝、`BRIDGE_DESTRUCTOR` 析构标记等场景。`Point`/`Rect` 使用 `BRIDGE_DATA_CLASS`。
     - 测试：`examples/codegen_demo` 47 例 demo 测试全绿（含 Counter 16 例，其中析构相关 3 例）；`dart/` 主包 82 例全绿。
     - 限制：当前阶段不导出 Opaque 类字段、不支持方法重载、不支持多态继承。

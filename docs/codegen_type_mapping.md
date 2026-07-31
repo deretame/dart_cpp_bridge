@@ -75,7 +75,7 @@
 | `std::vector<int64_t>` / `std::array<int64_t, N>` | `Int64List` | 优先使用 typed list |
 | `std::vector<float>` / `std::array<float, N>` | `Float32List` | 优先使用 typed list |
 | `std::vector<double>` / `std::array<double, N>` | `Float64List` | 优先使用 typed list |
-| `std::vector<bool>` | `List<bool>` | 无 `BoolList`，回退到 `List<bool>` |
+| `std::vector<bool>` / `std::array<bool, N>` | `List<bool>` | 无 `BoolList`，回退到 `List<bool>` |
 
 - 规则：`std::vector` 和 `std::array` 都映射为 Dart 的 `List`（或 typed list），长度由 payload 决定或数组大小固定。
 - **优先使用 typed list**：当元素类型是固定宽度整数或浮点数时，Dart 侧生成 `Uint8List`、`Int32List` 等 typed list，避免装箱。
@@ -189,13 +189,12 @@ encodeOpt(name, (v) => w.str(v));
 
 ### 5.1 总体分类
 
-导出 `class` / `struct` 支持三种标记方式：
+导出 `class` / `struct` 支持两种显式标记：
 
 | 标记 | 语义 | 判定结果 |
 |------|------|----------|
 | `BRIDGE_DATA_CLASS` / `DCB_DATA_CLASS` | 显式纯数据类 | 只有字段，不能有导出方法 |
 | `BRIDGE_OPAQUE` / `DCB_OPAQUE` | 显式 opaque 类（对齐 FRB `RustAutoOpaque`） | 只生成方法，公开字段被忽略 |
-| `BRIDGE_EXPORT` / `DCB_EXPORT`（旧） | 自动检测 | 有导出方法→opaque，否则→data_class |
 
 Codegen 根据标记和类体内容把它分成两类，**两类不能混用**：
 
@@ -213,7 +212,7 @@ Codegen 根据标记和类体内容把它分成两类，**两类不能混用**�
 
 #### 5.2.1 导出与字段规则
 
-- 标记方式：`BRIDGE_DATA_CLASS`（显式）或 `BRIDGE_EXPORT`（旧，自动检测）。
+- 标记方式：`BRIDGE_DATA_CLASS`（显式）。
 - 只导出 `public` 的**非静态数据成员**。
 - 不导出 `private` / `protected` 成员、友元声明、静态成员变量、成员函数。
 - 字段类型必须是本白名单支持的类型：基础类型、枚举、容器、`std::optional<T>`、`std::pair` / `std::tuple`、另一个数据类。
@@ -319,7 +318,7 @@ inline Point decode_Point(ByteReader& r) {
 
 #### 5.3.1 导出规则
 
-- 类本身必须带 `BRIDGE_OPAQUE`（显式）或 `BRIDGE_EXPORT`（旧，自动检测）。
+- 类本身必须带 `BRIDGE_OPAQUE`（显式）。
 - **`BRIDGE_OPAQUE` 语义**：对齐 FRB `RustAutoOpaque`，只生成标注的方法，公开字段被忽略。若需访问字段，手写 `BRIDGE_SYNC` getter/setter。
 - 导出的方法必须带通道标记：`BRIDGE_SYNC`、`BRIDGE_ASYNC`、`BRIDGE_NORMAL`。
 - 构造函数和析构函数使用特殊标记：

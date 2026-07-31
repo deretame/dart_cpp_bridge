@@ -51,13 +51,20 @@ enum OrderStatus { created, paid, shipped }
 
 | C++ 类型 | Dart 类型 |
 |----------|-----------|
-| `std::vector<uint8_t>` | `Uint8List` |
-| `std::vector<int32_t>` | `Int32List` |
-| `std::vector<float>` | `Float32List` |
-| `std::vector<double>` | `Float64List` |
-| `std::vector<T>`（其他） | `List<T>` |
+| `std::vector<uint8_t>` / `std::array<uint8_t, N>` | `Uint8List` |
+| `std::vector<int8_t>` / `std::array<int8_t, N>` | `Int8List` |
+| `std::vector<int16_t>` / `std::array<int16_t, N>` | `Int16List` |
+| `std::vector<int32_t>` / `std::array<int32_t, N>` | `Int32List` |
+| `std::vector<int64_t>` / `std::array<int64_t, N>` | `Int64List` |
+| `std::vector<uint16_t>` / `std::array<uint16_t, N>` | `Uint16List` |
+| `std::vector<uint32_t>` / `std::array<uint32_t, N>` | `Uint32List` |
+| `std::vector<uint64_t>` / `std::array<uint64_t, N>` | `Uint64List` |
+| `std::vector<float>` / `std::array<float, N>` | `Float32List` |
+| `std::vector<double>` / `std::array<double, N>` | `Float64List` |
+| `std::vector<T>` / `std::array<T, N>`（其他） | `List<T>` |
+| `std::vector<bool>` / `std::array<bool, N>` | `List<bool>` |
 
-固定宽度整数/浮点元素**优先使用 typed list**（`Uint8List`、`Int32List` 等），避免装箱。`std::vector<bool>` 回退为 `List<bool>`。
+固定宽度整数/浮点元素**优先使用 typed list**（`Uint8List`、`Int32List` 等），避免装箱。Dart 没有 `BoolList`；`std::vector<bool>` 与 `std::array<bool, N>` 均回退为 `List<bool>`。
 
 ### std::optional → 可空类型
 

@@ -230,7 +230,6 @@ Errors are always encoded as frames with `msg_type=responseErr` and payload `cod
   - `BRIDGE_OPAQUE`: marks an opaque class (methods only, public fields ignored). Aligns with FRB `RustAutoOpaque`. For field access, hand-write `BRIDGE_SYNC` getter/setter methods.
   - `BRIDGE_TO_STRING`: marks an opaque-class method as the source of the Dart `toString()` override. Must be a sync instance method returning `std::string` with no args (validated); generates a wire-call `toString()` on the wrapper.
   - `BRIDGE_PERSIST`: marks a function with DartFn params as a persistent callback registration. Dart side will NOT auto-unregister the closure after the call returns, allowing C++ to store and invoke it later. Typically combined with `BRIDGE_SYNC` (register) + a separate `BRIDGE_NORMAL` function (invoke).
-  - `BRIDGE_EXPORT` (legacy): auto-detects — has exported methods → opaque, otherwise → data_class.
 
 ## Testing instructions
 

@@ -88,6 +88,11 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::vector<std::int32_t>> echo_list(
     std::vector<std::int32_t> values);
 
+// async → Dart: Future<List<bool>> echoBoolList(List<bool> values)
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::vector<bool>> echo_bool_list(
+    std::vector<bool> values);
+
 // async → Dart: Future<int> sumArray(List<int> values)
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::int32_t> sum_array(

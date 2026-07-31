@@ -654,15 +654,19 @@ payload:     bytes
 
 #if defined(BRIDGE_CODEGEN)
 // libclang 可见：annotate 会保留在 AST（ANNOTATE_ATTR）
-#  define BRIDGE_SYNC   __attribute__((annotate("bridge::sync")))
-#  define BRIDGE_ASYNC  __attribute__((annotate("bridge::async")))
-#  define BRIDGE_NORMAL __attribute__((annotate("bridge::normal")))
-#  define BRIDGE_EXPORT __attribute__((annotate("bridge::export")))
+#  define BRIDGE_SYNC        __attribute__((annotate("bridge::sync")))
+#  define BRIDGE_ASYNC       __attribute__((annotate("bridge::async")))
+#  define BRIDGE_NORMAL      __attribute__((annotate("bridge::normal")))
+#  define BRIDGE_EXPORT      __attribute__((annotate("bridge::export")))
+#  define BRIDGE_DATA_CLASS  __attribute__((annotate("bridge::data_class")))
+#  define BRIDGE_OPAQUE      __attribute__((annotate("bridge::opaque")))
 #else
 #  define BRIDGE_SYNC
 #  define BRIDGE_ASYNC
 #  define BRIDGE_NORMAL
 #  define BRIDGE_EXPORT
+#  define BRIDGE_DATA_CLASS
+#  define BRIDGE_OPAQUE
 #endif
 ```
 
@@ -679,7 +683,10 @@ payload:     bytes
 | 参数含 `StreamSink<T>` | 导出为 Dart `Stream<T>`（可与上列宏并存；以 stream 规则为准） |
 
 - **无上述标记的自由函数：不生成。**
-- **类型：** `struct` / `class` 带 `BRIDGE_EXPORT` 则作为可编解码导出类型；若仅被已导出函数的签名引用、自身无 `BRIDGE_EXPORT`，实现可选择「自动拉入依赖类型」或「要求显式 `BRIDGE_EXPORT`」——**推荐显式 `BRIDGE_EXPORT`**，避免误导出内部结构。
+- **类型：** `struct` / `class` 必须使用显式类标记：
+  - `BRIDGE_DATA_CLASS`：纯数据类，只导出 public 字段。
+  - `BRIDGE_OPAQUE`：不透明类，只导出标注的方法，公开字段被忽略。
+  - `BRIDGE_EXPORT` 仍可用于枚举导出；类导出已不推荐使用自动检测。
 
 #### 6.1.2 用户工程配置（`dart_cpp_bridge.yaml`）
 
@@ -767,17 +774,17 @@ C++ 侧另生成 `wire_dispatch.cpp`（dispatch + 调度），与用户 `api_imp
 
 namespace demo::api {
 
-struct BRIDGE_EXPORT FetchRequest {
+struct BRIDGE_DATA_CLASS FetchRequest {
   std::string url;
   int32_t timeout_ms;
 };
 
-struct BRIDGE_EXPORT FetchResponse {
+struct BRIDGE_DATA_CLASS FetchResponse {
   int32_t status;
   std::vector<uint8_t> body;
 };
 
-struct BRIDGE_EXPORT Progress {
+struct BRIDGE_DATA_CLASS Progress {
   int64_t received;
   int64_t total;
 };

@@ -99,10 +99,6 @@ class BRIDGE_OPAQUE Widget {
 - 无参数
 - 返回 `std::string`
 
-### BRIDGE_EXPORT (遗留)
-
-自动检测：有导出方法 → opaque，否则 → data_class。
-
 ## 别名
 
 所有 `BRIDGE_*` 宏都有 `DCB_*` 别名：

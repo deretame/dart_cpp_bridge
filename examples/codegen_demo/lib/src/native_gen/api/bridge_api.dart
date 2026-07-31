@@ -96,6 +96,9 @@ Future<int> sumArray({required List<int> values}) =>
 Future<String> invokeRegistered({required String input}) =>
     BridgeApiImpl.instance.invokeRegistered(input);
 
+Future<List<bool>> echoBoolList({required List<bool> values}) =>
+    BridgeApiImpl.instance.echoBoolList(values);
+
 Future<int> incrementI64({required int value}) =>
     BridgeApiImpl.instance.incrementI64(value);
 
