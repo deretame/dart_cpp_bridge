@@ -11,26 +11,29 @@ void main(List<String> args) async {
     }
     final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
     final config = switch (input.config.code.targetOS) {
-      OS.windows => WindowsConfig(cmake: cmake),
+      OS.windows => WindowsConfig(
+        cmake: cmake,
+        generator: CmakeGenerator.ninja,
+      ),
       OS.linux => LinuxConfig(cmake: cmake),
       OS.macOS => MacosConfig(cmake: cmake),
       OS.iOS => IosConfig(cmake: cmake),
       OS.android => AndroidConfig(
-          cmake: cmake,
-          ndkPath: Platform.environment['ANDROID_NDK_HOME'] ??
-              r'C:\Users\windy\AppData\Local\Android\Sdk\ndk\29.0.14206865',
-          // libuv v1.48.0 requires API 24+ (pthread_barrier_*, getifaddrs, preadv)
-          androidPlatform: 24,
-          abi: switch (input.config.code.targetArchitecture) {
-            Architecture.arm64 => 'arm64-v8a',
-            Architecture.arm => 'armeabi-v7a',
-            Architecture.x64 => 'x86_64',
-            Architecture.ia32 => 'x86',
-            final a => throw UnsupportedError('Unsupported Android arch: $a'),
-          },
-        ),
-      final os => throw UnsupportedError(
-          'codegen_demo does not support: $os'),
+        cmake: cmake,
+        ndkPath:
+            Platform.environment['ANDROID_NDK_HOME'] ??
+            r'C:\Users\windy\AppData\Local\Android\Sdk\ndk\29.0.14206865',
+        // libuv v1.48.0 requires API 24+ (pthread_barrier_*, getifaddrs, preadv)
+        androidPlatform: 24,
+        abi: switch (input.config.code.targetArchitecture) {
+          Architecture.arm64 => 'arm64-v8a',
+          Architecture.arm => 'armeabi-v7a',
+          Architecture.x64 => 'x86_64',
+          Architecture.ia32 => 'x86',
+          final a => throw UnsupportedError('Unsupported Android arch: $a'),
+        },
+      ),
+      final os => throw UnsupportedError('codegen_demo does not support: $os'),
     };
     await DcbCMakeBuilder(
       config: config,

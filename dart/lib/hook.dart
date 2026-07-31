@@ -419,7 +419,23 @@ final class DcbBuildOptions {
   /// allowing CMake to compile multiple source files concurrently.
   final bool parallel;
 
-  const DcbBuildOptions({this.debug, this.parallel = true});
+  /// Whether to generate and copy `compile_commands.json` to the package root.
+  ///
+  /// Defaults to `true`. When enabled:
+  /// - `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` is passed to the CMake configure
+  ///   step (for generators that support it, e.g. Ninja / Makefiles).
+  /// - After a successful build, the generated `compile_commands.json` is
+  ///   copied next to `pubspec.yaml` (the package root) if it exists.
+  ///
+  /// This makes LSP / clangd tooling work out of the box without manual
+  /// symlinks. Set to `false` to disable generation and copying.
+  final bool copyCompileCommands;
+
+  const DcbBuildOptions({
+    this.debug,
+    this.parallel = true,
+    this.copyCompileCommands = true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +605,8 @@ final class DcbCMakeBuilder {
     // (e.g. switching between c++_static and c++_shared on Android).
     final allConfigureArgs = [
       '-DBUILD_SHARED_LIBS=${isDynamic ? 'ON' : 'OFF'}',
+      if (buildOptions.copyCompileCommands)
+        '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON',
       ...configureArgs,
       ...extraDefines,
     ];
@@ -606,12 +624,20 @@ final class DcbCMakeBuilder {
     await _runProcess(cmake, [
       '--build',
       buildDir.toFilePath(),
-      '--config',
-      buildType,
+      if (!_isSingleConfigGenerator(config)) ...['--config', buildType],
       if (buildOptions.parallel) '--parallel',
     ], environment: processEnvironment);
 
-    // 3. Locate the produced library.
+    // 3. Copy compile_commands.json to the package root for LSP / clangd.
+    if (buildOptions.copyCompileCommands) {
+      _copyCompileCommandsIfPresent(
+        buildDir: buildDir,
+        buildType: buildType,
+        packageRoot: input.packageRoot,
+      );
+    }
+
+    // 4. Locate the produced library.
     final libFileName = targetOS.libraryFileName(libBaseName, linkMode);
     final libFile = _locateArtifact(buildDir, libFileName, buildType);
 
@@ -643,6 +669,18 @@ final class DcbCMakeBuilder {
     if (config case AndroidConfig cfg when !cfg.staticStl) {
       _bundleAndroidSharedStl(cfg, effectiveAssetPackage, output);
     }
+  }
+
+  /// Whether the configured CMake generator is single-config.
+  ///
+  /// On Windows, only [CmakeGenerator.ninja] is single-config; the Visual
+  /// Studio / MSBuild generator is multi-config. All other supported
+  /// platforms (Linux, macOS, iOS, Android) use single-config generators.
+  bool _isSingleConfigGenerator(DcbPlatformConfig cfg) {
+    if (cfg is WindowsConfig) {
+      return cfg.generator == CmakeGenerator.ninja;
+    }
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -912,8 +950,8 @@ final class DcbCMakeBuilder {
     }
   }
 
-  /// Returns an environment map with the Ninja directory added to PATH,
-  /// or `null` if no adjustment is needed.
+  /// Returns the directory containing a VS-bundled `ninja.exe`, or `null` if
+  /// `ninja.exe` is already on PATH or no bundled copy is found.
   ///
   /// When CMake is resolved from a Visual Studio installation, the bundled
   /// `ninja.exe` lives in a sibling directory:
@@ -921,23 +959,31 @@ final class DcbCMakeBuilder {
   /// ...\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe
   /// ...\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe
   /// ```
-  /// CMake's `-G Ninja` requires ninja on PATH, so we inject it.
-  Map<String, String>? _ensureNinjaOnPath(String cmakePath) {
+  /// CMake's `-G Ninja` requires ninja on PATH.
+  String? _findNinjaDir(String cmakePath) {
     if (_isOnPath('ninja.exe')) return null;
 
     // Derive the Ninja directory from the VS CMake layout.
     final binDir = File(cmakePath).parent; // ...\CMake\bin
     final cmakePkgDir = binDir.parent; // ...\CMake
     final extensionsDir = cmakePkgDir.parent; // ...\Microsoft\CMake
-    final ninjaExe = '${extensionsDir.path}\\Ninja\\ninja.exe';
-    if (File(ninjaExe).existsSync()) {
-      final ninjaDir = '${extensionsDir.path}\\Ninja';
-      final env = Map<String, String>.from(Platform.environment);
-      env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
-      _log('added Ninja to PATH: $ninjaDir');
-      return env;
+    final ninjaDir = '${extensionsDir.path}\\Ninja';
+    if (File('$ninjaDir\\ninja.exe').existsSync()) {
+      return ninjaDir;
     }
     return null;
+  }
+
+  /// Returns an environment map with the Ninja directory added to PATH,
+  /// or `null` if no adjustment is needed.
+  Map<String, String>? _ensureNinjaOnPath(String cmakePath) {
+    final ninjaDir = _findNinjaDir(cmakePath);
+    if (ninjaDir == null) return null;
+
+    final env = Map<String, String>.from(Platform.environment);
+    env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
+    _log('added Ninja to PATH: $ninjaDir');
+    return env;
   }
 
   /// Resolves Android-specific configure arguments using the NDK toolchain.
@@ -1067,7 +1113,13 @@ final class DcbCMakeBuilder {
         args.addAll(['-G', 'Ninja']);
         args.add('-DCMAKE_BUILD_TYPE=$buildType');
         // Ninja requires the MSVC environment (cl.exe on PATH).
-        env = _initVcEnvironment(cfg, vsRoot);
+        final vcEnv = _initVcEnvironment(cfg, vsRoot);
+        env = Map<String, String>.from(vcEnv);
+        final ninjaDir = _findNinjaDir(cmakePath);
+        if (ninjaDir != null) {
+          env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
+          _log('added Ninja to PATH: $ninjaDir');
+        }
 
       case CmakeGenerator.makefiles:
         throw DcbCMakeException(
@@ -1190,7 +1242,24 @@ final class DcbCMakeBuilder {
 
   /// Initializes the MSVC environment by invoking `vcvarsall.bat` and
   /// capturing the resulting environment variables.
+  ///
+  /// Runs the batch file from its own directory so that we never have to pass
+  /// a quoted path to `cmd.exe /C`. `cmd.exe` strips the first and last quote
+  /// from a `/C` command line when the text between those quotes contains
+  /// shell metacharacters, which breaks paths that contain spaces (e.g.
+  /// `C:\Program Files\Microsoft Visual Studio\...`). Keeping the unquoted
+  /// filename `vcvarsall.bat` and changing the working directory avoids that.
+  ///
+  /// If the caller already ran `vcvarsall.bat` (detected via `VSCMD_VER` or
+  /// via `LIB`/`PATH` containing Windows SDK / MSVC paths), the existing
+  /// environment is used as-is. This is useful in CI pipelines that set the
+  /// environment once and do not want the hook to re-select a VS installation.
   Map<String, String> _initVcEnvironment(WindowsConfig cfg, String? vsRoot) {
+    if (_hasVcEnvironment()) {
+      _log('MSVC environment already present; skipping vcvarsall.bat');
+      return Platform.environment;
+    }
+
     final vcvarsall = _findVcvarsall(vsRoot);
     if (vcvarsall == null) {
       _log('WARNING: vcvarsall.bat not found; Ninja may fail to locate cl.exe');
@@ -1200,11 +1269,14 @@ final class DcbCMakeBuilder {
     final arch = cfg.architecture == 'arm64' ? 'x64_arm64' : 'x64';
     _log('initializing MSVC env: $vcvarsall $arch');
 
-    // Run vcvarsall.bat and dump the resulting environment.
-    final result = Process.runSync('cmd.exe', [
-      '/C',
-      '"$vcvarsall" $arch >nul 2>&1 && set',
-    ]);
+    // Run vcvarsall.bat from its own directory to avoid the cmd.exe /C quote-
+    // stripping behavior that breaks paths containing spaces.
+    final vcvarsDir = File(vcvarsall).parent.path;
+    final result = Process.runSync(
+      'cmd.exe',
+      ['/C', 'vcvarsall.bat $arch >nul 2>&1 && set'],
+      workingDirectory: vcvarsDir,
+    );
     if (result.exitCode != 0) {
       _log('WARNING: vcvarsall.bat failed (exit ${result.exitCode})');
       return Platform.environment;
@@ -1217,7 +1289,25 @@ final class DcbCMakeBuilder {
         env[line.substring(0, eq)] = line.substring(eq + 1);
       }
     }
+    if (!env.containsKey('LIB')) {
+      _log('WARNING: vcvarsall.bat did not set LIB; linker may fail');
+    }
     return env;
+  }
+
+  /// Whether the current process already has a VS developer environment.
+  ///
+  /// Detects:
+  /// - `VSCMD_VER` set by `vcvarsall.bat` / `vcvars64.bat`.
+  /// - `LIB` containing the Windows SDK / MSVC library path.
+  /// - `PATH` containing the MSVC `VC\Tools\MSVC` compiler directory.
+  bool _hasVcEnvironment() {
+    final env = Platform.environment;
+    if (env['VSCMD_VER']?.isNotEmpty ?? false) return true;
+
+    final lib = (env['LIB'] ?? '').toLowerCase();
+    final path = (env['PATH'] ?? '').toLowerCase();
+    return lib.contains(r'windows kits') && path.contains(r'vc\tools\msvc');
   }
 
   /// Locates `vcvarsall.bat` under the VS installation root.
@@ -1382,6 +1472,36 @@ final class DcbCMakeBuilder {
       '"${buildDir.toFilePath()}". Searched:\n'
       '${candidates.map((c) => '  - ${c.toFilePath()}').join('\n')}',
     );
+  }
+
+  /// Copies `compile_commands.json` from the CMake build directory to the
+  /// package root (where `pubspec.yaml` lives) if it exists.
+  ///
+  /// Searches the single-config root and the multi-config subdirectories
+  /// (`Release/`, `Debug/`). Copy failures are logged as warnings and do not
+  /// fail the build.
+  void _copyCompileCommandsIfPresent({
+    required Uri buildDir,
+    required String buildType,
+    required Uri packageRoot,
+  }) {
+    final candidates = <Uri>[
+      buildDir.resolve('compile_commands.json'),
+      buildDir.resolve('$buildType/compile_commands.json'),
+    ];
+    for (final candidate in candidates) {
+      final source = File.fromUri(candidate);
+      if (!source.existsSync()) continue;
+
+      final dest = File.fromUri(packageRoot.resolve('compile_commands.json'));
+      try {
+        source.copySync(dest.path);
+        _log('copied compile_commands.json to ${dest.path}');
+      } on FileSystemException catch (e) {
+        _log('WARNING: failed to copy compile_commands.json: $e');
+      }
+      return;
+    }
   }
 
   /// Declares the native sources and CMake scripts under [sourceRoot] as hook
