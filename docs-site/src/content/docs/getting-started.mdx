@@ -40,6 +40,16 @@ This guide assumes a standard `pubspec.yaml` already exists at your project root
   </TabItem>
 </Tabs>
 
+:::caution[Meta version conflict]
+`hooks: ^2.1.0` depends on `meta: ^1.19.0`, but some Flutter versions still ship with an older `meta`.
+Before running `flutter pub add ...`, add this override to `pubspec.yaml`:
+
+```yaml
+dependency_overrides:
+  meta: ^1.19.0
+```
+:::
+
 ## Install `dcb_gen_tool`
 
 `dcb_gen_tool` is the dart_cpp_bridge code generator. It generates FFI bindings and the Dart API from C++ headers.

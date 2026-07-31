@@ -40,6 +40,16 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
   </TabItem>
 </Tabs>
 
+:::caution[注意 meta 版本冲突]
+`hooks: ^2.1.0` 依赖 `meta: ^1.19.0`，而当前部分 Flutter 版本自带的 `meta` 版本较旧。
+在运行 `flutter pub add ...` 之前，建议先在 `pubspec.yaml` 里添加：
+
+```yaml
+dependency_overrides:
+  meta: ^1.19.0
+```
+:::
+
 ## 安装 `dcb_gen_tool`
 
 `dcb_gen_tool` 是 dart_cpp_bridge 的代码生成工具，用于根据 C++ 头文件生成 FFI 绑定和 Dart API。
