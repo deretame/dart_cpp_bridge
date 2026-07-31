@@ -7,6 +7,8 @@ sidebar:
 
 ## C++ 侧
 
+默认输出到 `native/generated/`（由 `dart_cpp_bridge.yaml` 的 `cpp_wire_output` 配置）：
+
 ```text
 native/generated/
 ├── wire_dispatch.hpp   # 分发函数声明
@@ -26,32 +28,53 @@ native/generated/
 
 ## Dart 侧
 
+默认输出到 `lib/src/native_gen/`（由 `dart_cpp_bridge.yaml` 的 `dart_output` 配置）：
+
 ```text
-lib/src/generated/
-├── api_fn.dart    # 顶层函数（推荐调用入口）
-├── api.dart       # BridgeApi 单例
-└── api.g.dart     # BridgeApiImpl（方法 ID、编解码）
+lib/src/native_gen/
+├── api/
+│   ├── init.dart              # 初始化 / dispose / BridgeApi 单例
+│   ├── bridge_api.dart        # 对应 native/api/bridge_api.h
+│   ├── counter.dart           # 对应 native/api/counter.h
+│   ├── foreign_api.dart       # 对应 native/api/foreign_api.h
+│   └── multi_runtime_api.dart # 对应 native/api/multi_runtime_api.h
+├── dcb_bindings.dart          # FFI 原生符号绑定
+└── dcb_generated.dart           # 方法 ID、通用编解码、内部实现
 ```
+
+即：`native/api/{name}.h` 会生成 `lib/src/native_gen/api/{name}.dart`。
+
+### 入口文件
+
+推荐通过包根目录的导出文件使用：
+
+```dart
+import 'package:codegen_demo/codegen_demo.dart';
+```
+
+`lib/codegen_demo.dart` 会把 `api/` 下的文件统一 export 出来。
 
 ### 三层结构
 
-| 层 | 文件 | 用途 |
+每个 API 头文件生成的 Dart 文件内部仍保持三层：
+
+| 层 | 位置 | 用途 |
 |---|---|---|
-| 顶层函数 | `api_fn.dart` | `initBridge()`, `add()`, ... |
-| 单例 | `api.dart` | `BridgeApi.instance` |
-| 实现 | `api.g.dart` | 方法 ID、编解码逻辑 |
+| 顶层函数 | `api/{name}.dart` | `initBridge()`, `add()`, ... |
+| 单例 | `api/init.dart` 等 | `BridgeApi.instance` |
+| 实现 | `dcb_generated.dart` | 方法 ID、编解码逻辑 |
 
 ### 使用示例
 
 ```dart
-import 'package:my_app/src/generated/api_fn.dart';
+import 'package:my_app/codegen_demo.dart';
 
 void main() async {
   await initBridge();
-  
+
   final result = await add(1, 2);
   print(result); // 3
-  
+
   disposeBridge();
 }
 ```
