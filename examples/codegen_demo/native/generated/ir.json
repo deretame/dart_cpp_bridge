@@ -1,11 +1,11 @@
 {
   "version": 2,
-  "config": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
+  "config": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\dart_cpp_bridge.yaml",
   "headers": [
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
   ],
   "clang_args": [
     "-std=c++20",
@@ -14,13 +14,13 @@
     "-ferror-limit=0",
     "-DBRIDGE_CODEGEN",
     "-DDART_CPP_BRIDGE_CODEGEN",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\async_simple-src",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs"
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\async_simple-src",
+    "-ID:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include",
+    "-IC:\\Users\\windy\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\dcb_gen_tool-1.0.0\\stubs"
   ],
   "enums": [
     {
@@ -44,7 +44,7 @@
           "value": 2
         }
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
   "classes": [
@@ -430,7 +430,7 @@
           "generated": true
         }
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
     },
     {
       "name": "Point",
@@ -460,7 +460,7 @@
         }
       ],
       "methods": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "Rect",
@@ -487,7 +487,7 @@
         }
       ],
       "methods": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
   "functions": [
@@ -522,7 +522,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
     },
     {
       "name": "call_dart_from_worker_a",
@@ -560,7 +560,21 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "collect_all_demo",
+      "qualified": "demo::api::collect_all_demo",
+      "kind": "async",
+      "method_id": 38208963,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "sum_scores",
@@ -588,7 +602,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "distance",
@@ -621,7 +635,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "fail_normal",
@@ -643,7 +657,7 @@
       "attrs": [
         "bridge::normal"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "pair_echo",
@@ -681,7 +695,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "tuple_echo",
@@ -725,7 +739,21 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "test_foreign_sleep",
+      "qualified": "demo::api::test_foreign_sleep",
+      "kind": "async",
+      "method_id": 286391769,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "fan_out",
@@ -755,7 +783,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "stop_workers",
@@ -769,7 +797,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "call_dart_from_uv",
@@ -807,7 +835,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "stop_uv_worker",
@@ -821,7 +849,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "fail_async",
@@ -843,7 +871,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "fail_stream",
@@ -873,7 +901,7 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "download_with_progress",
@@ -908,7 +936,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "start_uv_worker",
@@ -922,7 +950,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "maybe_double",
@@ -950,7 +978,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "add",
@@ -979,7 +1007,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "bridge_version",
@@ -993,7 +1021,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "sum_array",
@@ -1019,7 +1047,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "test_cbridge_invoke",
@@ -1057,7 +1085,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_cbridge_async",
@@ -1071,7 +1099,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "invoke_registered",
@@ -1093,7 +1121,7 @@
       "attrs": [
         "bridge::normal"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "echo_bool_list",
@@ -1121,7 +1149,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "ping_worker",
@@ -1143,7 +1171,57 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "collect_any_cancel_demo",
+      "qualified": "demo::api::collect_any_cancel_demo",
+      "kind": "async",
+      "method_id": 727741271,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "test_foreign_sleep_long",
+      "qualified": "demo::api::test_foreign_sleep_long",
+      "kind": "async",
+      "method_id": 738309320,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "cancel_task",
+      "qualified": "demo::api::cancel_task",
+      "kind": "sync",
+      "method_id": 741187792,
+      "args": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "bool"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "pipeline",
@@ -1165,7 +1243,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "increment_i64",
@@ -1187,7 +1265,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "test_channel_service_concurrent",
@@ -1201,7 +1279,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "echo_time",
@@ -1223,7 +1301,21 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "collect_all_para_demo",
+      "qualified": "demo::api::collect_all_para_demo",
+      "kind": "async",
+      "method_id": 888212641,
+      "args": [],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "start_workers",
@@ -1237,7 +1329,43 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+    },
+    {
+      "name": "cancellable_task",
+      "qualified": "demo::api::cancellable_task",
+      "kind": "async",
+      "method_id": 917187185,
+      "args": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        },
+        {
+          "name": "steps",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "100"
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": "20"
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "optional_status",
@@ -1269,7 +1397,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "echo_list",
@@ -1297,7 +1425,21 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "collect_all_error_demo",
+      "qualified": "demo::api::collect_all_error_demo",
+      "kind": "async",
+      "method_id": 984657024,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "invoke_registered_async",
@@ -1319,7 +1461,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "concat_dart_fn",
@@ -1367,7 +1509,7 @@
       "attrs": [
         "bridge::normal"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "test_cbridge_invoke_pure_c",
@@ -1405,7 +1547,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "scale",
@@ -1438,7 +1580,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "negate_bool",
@@ -1460,7 +1602,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "fail_sync",
@@ -1482,7 +1624,29 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "is_task_running",
+      "qualified": "demo::api::is_task_running",
+      "kind": "sync",
+      "method_id": 1229894954,
+      "args": [
+        {
+          "name": "task_id",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "bool"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "test_cbridge_async_fail",
@@ -1496,7 +1660,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "sleep_greeting",
@@ -1518,7 +1682,7 @@
       "attrs": [
         "bridge::normal"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "echo_u128",
@@ -1540,7 +1704,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "echo_time_sync",
@@ -1562,7 +1726,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "call_dart_from_worker_b",
@@ -1600,7 +1764,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "uv_compute",
@@ -1622,7 +1786,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "worker_stream",
@@ -1659,7 +1823,7 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "fail_non_std",
@@ -1673,7 +1837,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "addCounters",
@@ -1706,7 +1870,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
     },
     {
       "name": "increment_u32",
@@ -1728,7 +1892,35 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "test_foreign_sleep_cancel",
+      "qualified": "demo::api::test_foreign_sleep_cancel",
+      "kind": "async",
+      "method_id": 1614762534,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+    },
+    {
+      "name": "collect_all_cancel_demo",
+      "qualified": "demo::api::collect_all_cancel_demo",
+      "kind": "async",
+      "method_id": 1616407596,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "tick_stream",
@@ -1765,7 +1957,7 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "register_dart_fn",
@@ -1797,7 +1989,21 @@
         "bridge::persist",
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "collect_any_demo",
+      "qualified": "demo::api::collect_any_demo",
+      "kind": "async",
+      "method_id": 1731712822,
+      "args": [],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "ask_uv",
@@ -1819,7 +2025,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "greet_dart_fn",
@@ -1857,7 +2063,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "nested_cube",
@@ -1888,7 +2094,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "sum_set",
@@ -1913,7 +2119,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "process_message",
@@ -1935,7 +2141,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
       "name": "test_cbridge_async_cancel",
@@ -1949,7 +2155,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "bounding_box",
@@ -1978,7 +2184,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "test_cbridge_pure_c_cancel",
@@ -1992,7 +2198,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "uv_stream",
@@ -2029,7 +2235,7 @@
         "kind": "void"
       },
       "attrs": [],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "test_channel_service",
@@ -2043,7 +2249,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {
       "name": "sync_dart_fn_blocking_us",
@@ -2081,7 +2287,7 @@
       "attrs": [
         "bridge::sync"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "echo_i128",
@@ -2103,7 +2309,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "optional_string",
@@ -2131,7 +2337,7 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
       "name": "next_status",
@@ -2157,117 +2363,201 @@
       "attrs": [
         "bridge::async"
       ],
-      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     }
   ],
   "diagnostics": [
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
-    "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: redefinition of 'Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'emplace' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'clear' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'canceled' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'hasTriggered' in 'async_simple::Slot'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: unknown type name 'Context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no matching function for call to 'post'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'cancel' in 'asio::steady_timer'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'coroutine_handle' in namespace 'std'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_work_guard' in namespace 'asio'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no member named 'executor_type' in 'asio::io_context'",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: expected member name or ';' after declaration specifiers",
+    "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h: no template named 'RescheduleLazy' in namespace 'async_simple::coro'"
   ]
 }

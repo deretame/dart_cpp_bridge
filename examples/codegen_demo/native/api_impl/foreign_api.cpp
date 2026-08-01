@@ -14,6 +14,9 @@
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
+#include <async_simple/Signal.h>
+#include <async_simple/coro/Sleep.h>
+
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -189,6 +192,107 @@ async_simple::coro::Lazy<std::string> call_dart_from_uv(
   }
 
   // Wait for the result on the bridge main runtime
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("uv worker dropped");
+  }
+  co_return *reply;
+}
+
+// --- ForeignExecutor sleep (thread-based fallback with cancellation) ---
+
+static async_simple::coro::Lazy<> uv_sleep_coro(
+    std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
+    std::shared_ptr<async_simple::Signal> signal, bool cancel,
+    std::chrono::milliseconds normal_dur) {
+  try {
+    if (cancel) {
+      co_await async_simple::coro::sleep(std::chrono::seconds(10))
+          .setLazyLocal(signal.get());
+      tx_ptr->send("not-cancelled");
+    } else {
+      co_await async_simple::coro::sleep(normal_dur);
+      tx_ptr->send("slept");
+    }
+  } catch (const async_simple::SignalException& e) {
+    tx_ptr->send(std::string("cancelled:") + e.what());
+  }
+  co_return;
+}
+
+async_simple::coro::Lazy<std::string> test_foreign_sleep() {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_uv_worker || !g_uv_worker->running()) {
+      throw std::runtime_error("uv worker not running");
+    }
+    auto* ex = g_uv_worker->executor();
+    auto tx_ptr =
+        std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
+    ex->schedule([tx_ptr, ex]() mutable {
+      uv_sleep_coro(std::move(tx_ptr), nullptr, false,
+                    std::chrono::milliseconds(50))
+          .via(ex)
+          .start([](auto&&) {});
+    });
+  }
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("uv worker dropped");
+  }
+  co_return *reply;
+}
+
+async_simple::coro::Lazy<std::string> test_foreign_sleep_long() {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_uv_worker || !g_uv_worker->running()) {
+      throw std::runtime_error("uv worker not running");
+    }
+    auto* ex = g_uv_worker->executor();
+    auto tx_ptr =
+        std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
+    ex->schedule([tx_ptr, ex]() mutable {
+      uv_sleep_coro(std::move(tx_ptr), nullptr, false,
+                    std::chrono::seconds(10))
+          .via(ex)
+          .start([](auto&&) {});
+    });
+  }
+  auto reply = co_await rx.recv();
+  if (!reply) {
+    throw std::runtime_error("uv worker dropped");
+  }
+  co_return *reply;
+}
+
+async_simple::coro::Lazy<std::string> test_foreign_sleep_cancel() {
+  auto [tx, rx] = co::oneshot::channel<std::string>();
+  auto signal = async_simple::Signal::create();
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_uv_worker || !g_uv_worker->running()) {
+      throw std::runtime_error("uv worker not running");
+    }
+    auto* ex = g_uv_worker->executor();
+    auto tx_ptr =
+        std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
+    ex->schedule([tx_ptr, signal, ex]() mutable {
+      uv_sleep_coro(std::move(tx_ptr), std::move(signal), true,
+                    std::chrono::milliseconds(50))
+          .via(ex)
+          .start([](auto&&) {});
+    });
+  }
+  // Cancel the sleep from a separate thread after ~50ms.
+  std::thread canceller([signal] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    signal->emits(async_simple::SignalType::Terminate);
+  });
+  canceller.detach();
+
   auto reply = co_await rx.recv();
   if (!reply) {
     throw std::runtime_error("uv worker dropped");

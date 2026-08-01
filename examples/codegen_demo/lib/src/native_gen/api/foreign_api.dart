@@ -9,6 +9,8 @@ import '../dcb_generated.dart';
 // Functions
 // ═════════════════════════════════════════════
 
+Future<String> testForeignSleep() => BridgeApiImpl.instance.testForeignSleep();
+
 Future<String> callDartFromUv({
   required Future<String> Function(String) callback,
   required String input,
@@ -25,6 +27,9 @@ Future<String> testCbridgeInvoke({
 
 Future<String> testCbridgeAsync() => BridgeApiImpl.instance.testCbridgeAsync();
 
+Future<String> testForeignSleepLong() =>
+    BridgeApiImpl.instance.testForeignSleepLong();
+
 Future<String> testChannelServiceConcurrent() =>
     BridgeApiImpl.instance.testChannelServiceConcurrent();
 
@@ -37,6 +42,9 @@ Future<String> testCbridgeAsyncFail() =>
     BridgeApiImpl.instance.testCbridgeAsyncFail();
 
 Future<int> uvCompute({required int n}) => BridgeApiImpl.instance.uvCompute(n);
+
+Future<String> testForeignSleepCancel() =>
+    BridgeApiImpl.instance.testForeignSleepCancel();
 
 Future<String> askUv({required String message}) =>
     BridgeApiImpl.instance.askUv(message);

@@ -215,4 +215,59 @@ BRIDGE_SYNC
 std::chrono::system_clock::time_point echo_time_sync(
     std::chrono::system_clock::time_point value);
 
+// --- async-simple Signal/Slot cancellation (C01-C06) ---
+//
+// Dart cannot forcibly cancel a Future that is already mapped to a running
+// Lazy coroutine. The bridge instead exposes cooperative cancellation:
+// each task registers an async_simple::Signal in a global task_id → Signal
+// map, and cancelTask(taskId) emits SignalType::Terminate on it. The
+// coroutine observes the signal through its own Slot and throws
+// async_simple::SignalException, which surfaces as a StateError in Dart.
+
+// async → Dart: Future<String> cancellableTask({required String taskId, int steps = 100, int intervalMs = 20})
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> cancellable_task(
+    std::string task_id, std::int32_t steps = 100,
+    std::int32_t interval_ms = 20);
+
+// sync → Dart: bool cancelTask(String taskId)
+BRIDGE_SYNC
+bool cancel_task(std::string task_id);
+
+// sync → Dart: bool isTaskRunning(String taskId)
+BRIDGE_SYNC
+bool is_task_running(std::string task_id);
+
+// --- async-simple collectAll / collectAny (D01-D06) ---
+//
+// collectAll waits for every task and collects all results into
+// Try<T> values (exceptions are captured, not thrown). collectAny returns as
+// soon as the first task completes. Both accept a SignalType template
+// parameter so the remaining tasks can be cancelled (SignalType::Terminate)
+// once one task finishes.
+
+// async → Dart: Future<String> collectAllDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> collect_all_demo();
+
+// async → Dart: Future<int> collectAllParaDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::int32_t> collect_all_para_demo();
+
+// async → Dart: Future<String> collectAllErrorDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> collect_all_error_demo();
+
+// async → Dart: Future<String> collectAllCancelDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> collect_all_cancel_demo();
+
+// async → Dart: Future<String> collectAnyDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> collect_any_demo();
+
+// async → Dart: Future<String> collectAnyCancelDemo()
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> collect_any_cancel_demo();
+
 }  // namespace demo::api

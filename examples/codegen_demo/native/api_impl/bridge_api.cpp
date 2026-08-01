@@ -3,13 +3,21 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
+#include <async_simple/Signal.h>
+
 #include <asio/post.hpp>
+#include <async_simple/coro/Collect.h>
+#include <async_simple/coro/Sleep.h>
 #include <async_simple/coro/SyncAwait.h>
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <variant>
 
 namespace demo::api {
 
@@ -287,6 +295,212 @@ async_simple::coro::Lazy<std::chrono::system_clock::time_point> echo_time(
 std::chrono::system_clock::time_point echo_time_sync(
     std::chrono::system_clock::time_point value) {
   return value;
+}
+
+// --- async-simple Signal/Slot cancellation ---
+
+namespace {
+
+// Global task registry: task_id → cancellation signal.
+//
+// cancel_task() is called from the Dart caller thread while the coroutine
+// runs on the io thread, so the map is mutex-protected. Signal::emits() is
+// thread-safe; the Slot itself is only touched by the coroutine that owns it.
+std::mutex g_task_signal_mutex;
+std::unordered_map<std::string, std::shared_ptr<async_simple::Signal>>
+    g_task_signals;
+
+// Removes the map entry when the coroutine exits, whether it completed
+// normally, was cancelled, or failed.
+struct TaskSignalGuard {
+  std::string task_id;
+  ~TaskSignalGuard() {
+    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
+    g_task_signals.erase(task_id);
+  }
+};
+
+}  // namespace
+
+// The task body. The signal is bound to this coroutine chain via
+// Lazy::setLazyLocal in cancellable_task(), so co_await
+// async_simple::coro::sleep(...) inherits the Slot and is interrupted by
+// SignalType::Terminate (the library's AsioExecutor cancels the underlying
+// asio timer). SignalException is rethrown with a stable demo message.
+async_simple::coro::Lazy<std::string> cancellable_task_impl(
+    std::string task_id, std::int32_t steps, std::int32_t interval_ms) {
+  try {
+    for (std::int32_t i = 0; i < steps; ++i) {
+      co_await async_simple::coro::sleep(
+          std::chrono::milliseconds(interval_ms));
+    }
+  } catch (const async_simple::SignalException&) {
+    throw async_simple::SignalException(
+        async_simple::SignalType::Terminate,
+        "task cancelled by signal: " + task_id);
+  }
+  co_return std::string("done:") + task_id;
+}
+
+async_simple::coro::Lazy<std::string> cancellable_task(
+    std::string task_id, std::int32_t steps, std::int32_t interval_ms) {
+  auto signal = async_simple::Signal::create();
+  {
+    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
+    g_task_signals[task_id] = signal;
+  }
+  TaskSignalGuard guard{task_id};
+  co_return co_await std::move(
+      cancellable_task_impl(task_id, steps, interval_ms))
+      .setLazyLocal(signal.get());
+}
+
+bool cancel_task(std::string task_id) {
+  std::shared_ptr<async_simple::Signal> signal;
+  {
+    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
+    auto it = g_task_signals.find(task_id);
+    if (it == g_task_signals.end()) {
+      return false;
+    }
+    signal = it->second;
+  }
+  return signal->emits(async_simple::SignalType::Terminate) !=
+         async_simple::SignalType::None;
+}
+
+bool is_task_running(std::string task_id) {
+  std::lock_guard<std::mutex> lock(g_task_signal_mutex);
+  return g_task_signals.find(task_id) != g_task_signals.end();
+}
+
+// --- async-simple collectAll / collectAny ---
+
+namespace {
+
+// Set when a collect* sub-task observes the Terminate signal and unwinds
+// with SignalException. Used to verify that collectAny<Terminate> /
+// collectAll<Terminate> really forwards the cancellation signal.
+std::atomic<int> g_collect_cancel_observed{0};
+
+async_simple::coro::Lazy<std::int32_t> collect_int_task(std::int32_t v) {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
+  co_return v;
+}
+
+async_simple::coro::Lazy<std::string> collect_str_task(std::string s) {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
+  co_return s;
+}
+
+async_simple::coro::Lazy<std::string> collect_fail_task() {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
+  throw std::runtime_error("boom in collectAll");
+  co_return "unreachable";
+}
+
+// A sub-task that cooperates with the collect* cancellation signal: the
+// collect* awaiter binds a Slot to this Lazy chain, so plain
+// async_simple::coro::sleep() is interrupted by the forwarded
+// SignalType::Terminate and throws SignalException (first task finished).
+async_simple::coro::Lazy<std::string> collect_cancellable_slow_task() {
+  try {
+    for (std::int32_t i = 0; i < 1000; ++i) {
+      co_await async_simple::coro::sleep(std::chrono::milliseconds(20));
+    }
+    co_return "slow-finished";
+  } catch (const async_simple::SignalException&) {
+    g_collect_cancel_observed.fetch_add(1);
+    throw;
+  }
+}
+
+async_simple::coro::Lazy<std::string> collect_fast_str_task() {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
+  co_return "ok";
+}
+
+async_simple::coro::Lazy<std::int32_t> collect_any_fast_int_task() {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
+  co_return 42;
+}
+
+async_simple::coro::Lazy<std::string> collect_any_slow_str_task() {
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(200));
+  co_return "slow";
+}
+
+}  // namespace
+
+async_simple::coro::Lazy<std::string> collect_all_demo() {
+  auto res = co_await async_simple::coro::collectAll(
+      collect_int_task(1), collect_str_task("two"), collect_int_task(3));
+  const auto& a = std::get<0>(res);
+  const auto& b = std::get<1>(res);
+  const auto& c = std::get<2>(res);
+  co_return (a.hasError() ? std::string("err") : std::to_string(a.value())) +
+           "|" + (b.hasError() ? std::string("err") : b.value()) + "|" +
+           (c.hasError() ? std::string("err") : std::to_string(c.value()));
+}
+
+async_simple::coro::Lazy<std::int32_t> collect_all_para_demo() {
+  std::vector<async_simple::coro::Lazy<std::int32_t>> input;
+  for (std::int32_t i = 0; i < 4; ++i) {
+    input.push_back(collect_int_task(i));
+  }
+  auto res = co_await async_simple::coro::collectAllPara(std::move(input));
+  std::int32_t sum = 0;
+  for (const auto& t : res) {
+    sum += t.value();
+  }
+  co_return sum;
+}
+
+async_simple::coro::Lazy<std::string> collect_all_error_demo() {
+  auto res = co_await async_simple::coro::collectAll(
+      collect_str_task("hello"), collect_fail_task());
+  const auto& ok = std::get<0>(res);
+  const auto& bad = std::get<1>(res);
+  co_return (ok.hasError() ? std::string("ok-error") : ok.value()) + "|" +
+           (bad.hasError() ? std::string("err-captured")
+                           : std::string("err-missed"));
+}
+
+async_simple::coro::Lazy<std::string> collect_all_cancel_demo() {
+  g_collect_cancel_observed.store(0);
+  auto res = co_await async_simple::coro::collectAll<
+      async_simple::SignalType::Terminate>(collect_fast_str_task(),
+                                           collect_cancellable_slow_task());
+  const auto& fast = std::get<0>(res);
+  const auto& slow = std::get<1>(res);
+  co_return (fast.hasError() ? std::string("fast-error") : fast.value()) + "|" +
+           (slow.hasError() ? std::string("slow-cancelled")
+                            : std::string("slow-finished"));
+}
+
+async_simple::coro::Lazy<std::string> collect_any_demo() {
+  auto res = co_await async_simple::coro::collectAny(
+      collect_any_slow_str_task(), collect_any_fast_int_task());
+  if (res.index() == 0) {
+    co_return "winner=slow,value=" + std::get<0>(res).value();
+  }
+  co_return "winner=fast,value=" + std::to_string(std::get<1>(res).value());
+}
+
+async_simple::coro::Lazy<std::string> collect_any_cancel_demo() {
+  g_collect_cancel_observed.store(0);
+  auto res = co_await async_simple::coro::collectAny<
+      async_simple::SignalType::Terminate>(collect_cancellable_slow_task(),
+                                           collect_any_fast_int_task());
+  // Let the cancelled loser observe the signal and unwind before checking.
+  co_await async_simple::coro::sleep(std::chrono::milliseconds(30));
+  const bool loser_cancelled = g_collect_cancel_observed.load() > 0;
+  const std::string winner =
+      res.index() == 1
+          ? "winner=fast,value=" + std::to_string(std::get<1>(res).value())
+          : "winner=slow";
+  co_return winner + "|" + (loser_cancelled ? "loser-cancelled"
+                                            : "loser-still-running");
 }
 
 }  // namespace demo::api

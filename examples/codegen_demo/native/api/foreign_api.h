@@ -41,6 +41,23 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> call_dart_from_uv(
     dcb::DartFn<std::string(std::string)> callback, std::string input);
 
+/// Test async_simple::coro::sleep() on the ForeignExecutor (libuv worker):
+/// the coroutine runs on the uv loop, sleeps 50ms, and resumes normally.
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_foreign_sleep();
+
+/// Test stopping the uv worker while a native timer is still pending:
+/// sleeps 10s (normally never completes in tests). stop() must clean the
+/// timer up on the loop thread and return promptly.
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_foreign_sleep_long();
+
+/// Test cancellable sleep on the ForeignExecutor: a 10s sleep bound to a
+/// Signal is cancelled after ~50ms, and the coroutine surfaces
+/// SignalException ("...timer is canceled...").
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> test_foreign_sleep_cancel();
+
 // ─── cbridge pure C API tests ────────────────────────────────────────────────
 
 /// Test dcb_async_create + dcb_async_complete + dcb::async_wait.

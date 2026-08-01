@@ -5,6 +5,21 @@ import 'package:codegen_demo/main.dart' as app;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+/// Polls until [condition] becomes true (used to wait until a cancellable
+/// task has registered its signal in the native registry).
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) {
+      fail('condition not met within $timeout');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -654,6 +669,172 @@ void main() {
     expect(output.toIso8601String(), '2020-01-01T00:00:00.000Z');
   });
 
+  // ─── async-simple Signal/Slot cancellation (C01-C06) ──────────────────────
+  //
+  // Dart cannot forcibly cancel a Future that maps to a running Lazy
+  // coroutine. The demo instead keeps a global task_id → Signal map: the
+  // coroutine owns a Slot, and cancelTask(taskId) emits
+  // SignalType::Terminate. The coroutine's cancellable timer throws
+  // async_simple::SignalException, which surfaces in Dart as a StateError.
+
+  testWidgets('C01: task completes normally when never cancelled', (
+    tester,
+  ) async {
+    expect(isTaskRunning(taskId: 'c01'), isFalse);
+
+    final result = await cancellableTask(
+      taskId: 'c01',
+      steps: 3,
+      intervalMs: 5,
+    );
+
+    expect(result, 'done:c01');
+    expect(isTaskRunning(taskId: 'c01'), isFalse);
+    // The registry entry was already removed, so a late cancel is a no-op.
+    expect(cancelTask(taskId: 'c01'), isFalse);
+  });
+
+  testWidgets('C02: cancel by id makes the Dart Future fail with StateError', (
+    tester,
+  ) async {
+    final future = cancellableTask(
+      taskId: 'c02',
+      steps: 10000,
+      intervalMs: 20,
+    );
+    await _waitUntil(() => isTaskRunning(taskId: 'c02'));
+    expect(isTaskRunning(taskId: 'c02'), isTrue);
+
+    expect(cancelTask(taskId: 'c02'), isTrue);
+    await expectLater(
+      future,
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('task cancelled by signal'),
+        ),
+      ),
+    );
+    expect(isTaskRunning(taskId: 'c02'), isFalse);
+    // The signal is one-shot: a second cancel finds nothing to do.
+    expect(cancelTask(taskId: 'c02'), isFalse);
+  });
+
+  testWidgets('C03: cancellation interrupts the pending timer promptly', (
+    tester,
+  ) async {
+    // Nominal runtime would be 10000 * 50ms = 500s; cancellation must not
+    // wait for the current sleep to finish.
+    final future = cancellableTask(
+      taskId: 'c03',
+      steps: 10000,
+      intervalMs: 50,
+    );
+    await _waitUntil(() => isTaskRunning(taskId: 'c03'));
+    // Give the coroutine a moment to enter the timer wait.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    final stopwatch = Stopwatch()..start();
+    expect(cancelTask(taskId: 'c03'), isTrue);
+    await expectLater(future, throwsA(isA<StateError>()));
+    stopwatch.stop();
+
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
+
+  testWidgets('C04: cancelling one id leaves other tasks running', (
+    tester,
+  ) async {
+    final victim = cancellableTask(
+      taskId: 'c04-victim',
+      steps: 10000,
+      intervalMs: 20,
+    );
+    final survivor = cancellableTask(
+      taskId: 'c04-survivor',
+      steps: 5,
+      intervalMs: 10,
+    );
+    await _waitUntil(
+      () =>
+          isTaskRunning(taskId: 'c04-victim') &&
+          isTaskRunning(taskId: 'c04-survivor'),
+    );
+
+    expect(cancelTask(taskId: 'c04-victim'), isTrue);
+    await expectLater(victim, throwsA(isA<StateError>()));
+
+    // The other task is unaffected and completes normally.
+    expect(await survivor, 'done:c04-survivor');
+    expect(isTaskRunning(taskId: 'c04-victim'), isFalse);
+    expect(isTaskRunning(taskId: 'c04-survivor'), isFalse);
+  });
+
+  testWidgets('C05: unknown ids are safe (no entry, no signal)', (
+    tester,
+  ) async {
+    expect(isTaskRunning(taskId: 'c05-unknown'), isFalse);
+    expect(cancelTask(taskId: 'c05-unknown'), isFalse);
+  });
+
+  testWidgets('C06: bridge recovers after a cancelled task', (tester) async {
+    final future = cancellableTask(
+      taskId: 'c06',
+      steps: 10000,
+      intervalMs: 20,
+    );
+    await _waitUntil(() => isTaskRunning(taskId: 'c06'));
+    expect(cancelTask(taskId: 'c06'), isTrue);
+    await expectLater(future, throwsA(isA<StateError>()));
+
+    // Session and runtime are still healthy.
+    expect(await add(a: 10, b: 20), 30);
+    expect(bridgeVersion(), 42);
+  });
+
+  // ─── async-simple collectAll / collectAny (D01-D06) ──────────────────────
+  //
+  // collectAll waits for every task and returns each result as a Try
+  // (exceptions are captured, not thrown). collectAny returns as soon as the
+  // first task completes. With SignalType::Terminate, the remaining tasks
+  // receive a cancellation signal once one task finishes.
+
+  testWidgets('D01: collectAll waits for all tasks and collects results', (
+    tester,
+  ) async {
+    expect(await collectAllDemo(), '1|two|3');
+  });
+
+  testWidgets('D02: collectAllPara sums all results', (tester) async {
+    expect(await collectAllParaDemo(), 6);
+  });
+
+  testWidgets('D03: collectAll captures task exceptions in Try', (
+    tester,
+  ) async {
+    expect(await collectAllErrorDemo(), 'hello|err-captured');
+  });
+
+  testWidgets(
+    'D04: collectAll<Terminate> cancels remaining tasks but still waits',
+    (tester) async {
+      expect(await collectAllCancelDemo(), 'ok|slow-cancelled');
+    },
+  );
+
+  testWidgets('D05: collectAny returns the first completed task', (
+    tester,
+  ) async {
+    expect(await collectAnyDemo(), 'winner=fast,value=42');
+  });
+
+  testWidgets('D06: collectAny<Terminate> cancels the losing task', (
+    tester,
+  ) async {
+    expect(await collectAnyCancelDemo(), 'winner=fast,value=42|loser-cancelled');
+  });
+
   // ══════════════════════════════════════════════════════════════════════════
   // Foreign runtime (libuv + ForeignExecutor) tests
   // ══════════════════════════════════════════════════════════════════════════
@@ -732,6 +913,72 @@ void main() {
       expect(r2, '[uv:second]');
 
       await stopUvWorker();
+    });
+
+    testWidgets('ForeignExecutor sleep resumes normally on the uv loop', (
+      tester,
+    ) async {
+      await startUvWorker();
+      try {
+        final result = await testForeignSleep();
+        expect(result, 'slept');
+      } finally {
+        await stopUvWorker();
+      }
+    });
+
+    testWidgets('ForeignExecutor sleep is cancellable via Signal', (
+      tester,
+    ) async {
+      await startUvWorker();
+      try {
+        final result = await testForeignSleepCancel();
+        expect(result, startsWith('cancelled:'));
+        expect(result, contains('timer is canceled'));
+      } finally {
+        await stopUvWorker();
+      }
+    });
+
+    testWidgets('ForeignExecutor sleep: 30 concurrent native timers', (
+      tester,
+    ) async {
+      await startUvWorker();
+      try {
+        final results = await Future.wait(
+          List.generate(30, (_) => testForeignSleep()),
+        );
+        expect(results, hasLength(30));
+        expect(results.every((r) => r == 'slept'), isTrue);
+      } finally {
+        await stopUvWorker();
+      }
+    });
+
+    testWidgets('stop uv worker while a native timer is pending', (
+      tester,
+    ) async {
+      await startUvWorker();
+      // Start a 10s sleep and do NOT await it; then stop the worker while the
+      // native timer is still live. stop() must clean up the timer on the
+      // loop thread and return promptly (this used to hang).
+      final pending = testForeignSleepLong();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      final stopwatch = Stopwatch()..start();
+      await stopUvWorker();
+      stopwatch.stop();
+      pending.ignore();
+
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+
+      // A fresh worker still works afterwards.
+      await startUvWorker();
+      try {
+        expect(await testForeignSleep(), 'slept');
+      } finally {
+        await stopUvWorker();
+      }
     });
   });
 

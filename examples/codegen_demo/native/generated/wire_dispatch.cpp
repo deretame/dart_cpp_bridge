@@ -179,6 +179,27 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 38208963: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_all_demo();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_all_demo", e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_all_demo",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
     case 66895156: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto scores = r.map<std::string, std::int32_t>(
@@ -293,6 +314,26 @@ void dispatch_request(std::shared_ptr<Session> session,
             }
             co_return;
           });
+      break;
+    }
+
+    case 286391769: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio([session, gen, req, method]()
+                                            -> async_simple::coro::Lazy<> {
+        try {
+          auto out = co_await ::demo::api::test_foreign_sleep();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_foreign_sleep", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_foreign_sleep", "unknown");
+        }
+        co_return;
+      });
       break;
     }
 
@@ -665,6 +706,62 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 727741271: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_any_cancel_demo();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_any_cancel_demo",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_any_cancel_demo",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
+    case 738309320: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::test_foreign_sleep_long();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "test_foreign_sleep_long",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "test_foreign_sleep_long",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
+    case 741187792: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto task_id = r.str();
+      ByteWriter w;
+      {
+        auto out = ::demo::api::cancel_task(task_id);
+        w.u8(out ? 1 : 0);
+      }
+      post_ok(session, gen, req, method, w.raw());
+      break;
+    }
+
     case 764074457: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto message = r.str();
@@ -753,6 +850,28 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 888212641: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_all_para_demo();
+              ByteWriter w;
+              w.i32(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_all_para_demo",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_all_para_demo",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
     case 909664976: {
       ByteReader r(frame.payload.data(), frame.payload.size());
 
@@ -767,6 +886,31 @@ void dispatch_request(std::shared_ptr<Session> session,
               post_err(session, gen, req, method, "start_workers", e.what());
             } catch (...) {
               post_err(session, gen, req, method, "start_workers", "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
+    case 917187185: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto task_id = r.str();
+      const auto steps = r.i32();
+      const auto interval_ms = r.i32();
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method, task_id = std::move(task_id), steps,
+           interval_ms]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::cancellable_task(task_id, steps,
+                                                                interval_ms);
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "cancellable_task", e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "cancellable_task",
+                       "unknown");
             }
             co_return;
           });
@@ -810,6 +954,28 @@ void dispatch_request(std::shared_ptr<Session> session,
               post_err(session, gen, req, method, "echo_list", e.what());
             } catch (...) {
               post_err(session, gen, req, method, "echo_list", "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
+    case 984657024: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_all_error_demo();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_all_error_demo",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_all_error_demo",
+                       "unknown");
             }
             co_return;
           });
@@ -958,6 +1124,18 @@ void dispatch_request(std::shared_ptr<Session> session,
       {
         auto out = ::demo::api::fail_sync(msg);
         w.i32(out);
+      }
+      post_ok(session, gen, req, method, w.raw());
+      break;
+    }
+
+    case 1229894954: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto task_id = r.str();
+      ByteWriter w;
+      {
+        auto out = ::demo::api::is_task_running(task_id);
+        w.u8(out ? 1 : 0);
       }
       post_ok(session, gen, req, method, w.raw());
       break;
@@ -1190,6 +1368,50 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 1614762534: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::test_foreign_sleep_cancel();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "test_foreign_sleep_cancel",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "test_foreign_sleep_cancel",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
+    case 1616407596: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_all_cancel_demo();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_all_cancel_demo",
+                       e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_all_cancel_demo",
+                       "unknown");
+            }
+            co_return;
+          });
+      break;
+    }
+
     case 1673543649: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto count = r.i32();
@@ -1219,6 +1441,27 @@ void dispatch_request(std::shared_ptr<Session> session,
         w.u8(out ? 1 : 0);
       }
       post_ok(session, gen, req, method, w.raw());
+      break;
+    }
+
+    case 1731712822: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      Runtime::instance().spawn_on_asio(
+          [session, gen, req, method]() -> async_simple::coro::Lazy<> {
+            try {
+              auto out = co_await ::demo::api::collect_any_demo();
+              ByteWriter w;
+              w.str(out);
+              post_ok(session, gen, req, method, w.raw());
+            } catch (const std::exception &e) {
+              post_err(session, gen, req, method, "collect_any_demo", e.what());
+            } catch (...) {
+              post_err(session, gen, req, method, "collect_any_demo",
+                       "unknown");
+            }
+            co_return;
+          });
       break;
     }
 
@@ -1977,6 +2220,32 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
     }
   }
 
+  if (frame.method_id == 741187792u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto task_id = r.str();
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::cancel_task(task_id);
+        w.u8(out ? 1 : 0);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("cancel_task", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("cancel_task", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    }
+  }
+
   if (frame.method_id == 1225502033u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto msg = r.str();
@@ -1998,6 +2267,32 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
       ByteWriter ew;
       ew.i32(1);
       ew.str(dcb::error::format("fail_sync", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    }
+  }
+
+  if (frame.method_id == 1229894954u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto task_id = r.str();
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::is_task_running(task_id);
+        w.u8(out ? 1 : 0);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("is_task_running", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("is_task_running", "unknown"));
       return make_frame(MsgType::kResponseErr, frame.request_id,
                         frame.method_id, ew.raw());
     }

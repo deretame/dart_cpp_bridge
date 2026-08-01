@@ -56,6 +56,8 @@ final class Rect {
 // Functions
 // ═════════════════════════════════════════════
 
+Future<String> collectAllDemo() => BridgeApiImpl.instance.collectAllDemo();
+
 Future<int> sumScores({required Map<String, int> scores}) =>
     BridgeApiImpl.instance.sumScores(scores);
 
@@ -99,17 +101,34 @@ Future<String> invokeRegistered({required String input}) =>
 Future<List<bool>> echoBoolList({required List<bool> values}) =>
     BridgeApiImpl.instance.echoBoolList(values);
 
+Future<String> collectAnyCancelDemo() =>
+    BridgeApiImpl.instance.collectAnyCancelDemo();
+
+bool cancelTask({required String taskId}) =>
+    BridgeApiImpl.instance.cancelTask(taskId);
+
 Future<int> incrementI64({required int value}) =>
     BridgeApiImpl.instance.incrementI64(value);
 
 Future<DateTime> echoTime({required DateTime value}) =>
     BridgeApiImpl.instance.echoTime(value);
 
+Future<int> collectAllParaDemo() => BridgeApiImpl.instance.collectAllParaDemo();
+
+Future<String> cancellableTask({
+  required String taskId,
+  int steps = 100,
+  int intervalMs = 20,
+}) => BridgeApiImpl.instance.cancellableTask(taskId, steps, intervalMs);
+
 Future<OrderStatus?> optionalStatus({OrderStatus? value}) =>
     BridgeApiImpl.instance.optionalStatus(value);
 
 Future<List<int>> echoList({required List<int> values}) =>
     BridgeApiImpl.instance.echoList(values);
+
+Future<String> collectAllErrorDemo() =>
+    BridgeApiImpl.instance.collectAllErrorDemo();
 
 Future<String> invokeRegisteredAsync({required String input}) =>
     BridgeApiImpl.instance.invokeRegisteredAsync(input);
@@ -128,6 +147,9 @@ Future<bool> negateBool({required bool value}) =>
 
 int failSync({required String msg}) => BridgeApiImpl.instance.failSync(msg);
 
+bool isTaskRunning({required String taskId}) =>
+    BridgeApiImpl.instance.isTaskRunning(taskId);
+
 Future<String> sleepGreeting({required String name}) =>
     BridgeApiImpl.instance.sleepGreeting(name);
 
@@ -142,11 +164,16 @@ Future<int> failNonStd() => BridgeApiImpl.instance.failNonStd();
 Future<int> incrementU32({required int value}) =>
     BridgeApiImpl.instance.incrementU32(value);
 
+Future<String> collectAllCancelDemo() =>
+    BridgeApiImpl.instance.collectAllCancelDemo();
+
 Stream<int> tickStream({int count = 5, int intervalMs = 10}) =>
     BridgeApiImpl.instance.tickStream(count, intervalMs);
 
 bool registerDartFn({required Future<String> Function(String) callback}) =>
     BridgeApiImpl.instance.registerDartFn(callback);
+
+Future<String> collectAnyDemo() => BridgeApiImpl.instance.collectAnyDemo();
 
 Future<String> greetDartFn({
   required Future<String> Function(String) callback,

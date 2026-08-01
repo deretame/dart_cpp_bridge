@@ -63,11 +63,13 @@ final class BridgeApiImpl {
 
   static const int cloneWithOffsetId = 36494560;
   static const int callDartFromWorkerAId = 36798377;
+  static const int collectAllDemoId = 38208963;
   static const int sumScoresId = 66895156;
   static const int distanceId = 75330037;
   static const int failNormalId = 81397966;
   static const int pairEchoId = 237527086;
   static const int tupleEchoId = 243144110;
+  static const int testForeignSleepId = 286391769;
   static const int fanOutId = 332105081;
   static const int stopWorkersId = 350574845;
   static const int callDartFromUvId = 400156061;
@@ -85,19 +87,26 @@ final class BridgeApiImpl {
   static const int invokeRegisteredId = 594957055;
   static const int echoBoolListId = 608718626;
   static const int pingWorkerId = 686903527;
+  static const int collectAnyCancelDemoId = 727741271;
+  static const int testForeignSleepLongId = 738309320;
+  static const int cancelTaskId = 741187792;
   static const int pipelineId = 764074457;
   static const int incrementI64Id = 826193512;
   static const int testChannelServiceConcurrentId = 859567955;
   static const int echoTimeId = 861874896;
+  static const int collectAllParaDemoId = 888212641;
   static const int startWorkersId = 909664976;
+  static const int cancellableTaskId = 917187185;
   static const int optionalStatusId = 923880942;
   static const int echoListId = 923919167;
+  static const int collectAllErrorDemoId = 984657024;
   static const int invokeRegisteredAsyncId = 999429777;
   static const int concatDartFnId = 1056101777;
   static const int testCbridgeInvokePureCId = 1082486080;
   static const int scaleId = 1132741135;
   static const int negateBoolId = 1187695424;
   static const int failSyncId = 1225502033;
+  static const int isTaskRunningId = 1229894954;
   static const int testCbridgeAsyncFailId = 1312284767;
   static const int sleepGreetingId = 1347623235;
   static const int echoU128Id = 1349826830;
@@ -108,8 +117,11 @@ final class BridgeApiImpl {
   static const int failNonStdId = 1517851511;
   static const int addCountersId = 1533879238;
   static const int incrementU32Id = 1597460230;
+  static const int testForeignSleepCancelId = 1614762534;
+  static const int collectAllCancelDemoId = 1616407596;
   static const int tickStreamId = 1673543649;
   static const int registerDartFnId = 1702006080;
+  static const int collectAnyDemoId = 1731712822;
   static const int askUvId = 1739046069;
   static const int greetDartFnId = 1789823149;
   static const int nestedCubeId = 1812101563;
@@ -178,6 +190,16 @@ final class BridgeApiImpl {
     }
   }
 
+  Future<String> collectAllDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
   Future<int> sumScores(Map<String, int> scores) async {
     final _payload = ByteWriter();
     _payload.u32(scores.length);
@@ -230,6 +252,16 @@ final class BridgeApiImpl {
       final _r = ByteReader(_bytes);
       return (_r.i32(), _r.str(), _r.u8() != 0);
     })();
+  }
+
+  Future<String> testForeignSleep() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
   }
 
   Future<(String, String)> fanOut(String message) async {
@@ -454,6 +486,34 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
+  Future<String> collectAnyCancelDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAnyCancelDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> testForeignSleepLong() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepLongId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
+  bool cancelTask(String taskId) {
+    final _payload = ByteWriter();
+    _payload.str(taskId);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(cancelTaskId, _payloadBytes);
+    return ByteReader(_bytes).u8() != 0;
+  }
+
   Future<String> pipeline(String message) async {
     final _payload = ByteWriter();
     _payload.str(message);
@@ -494,11 +554,38 @@ final class BridgeApiImpl {
     );
   }
 
+  Future<int> collectAllParaDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllParaDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).i32();
+  }
+
   Future<String> startWorkers() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(
       startWorkersId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> cancellableTask(
+    String taskId,
+    int steps,
+    int intervalMs,
+  ) async {
+    final _payload = ByteWriter();
+    _payload.str(taskId);
+    _payload.i32(steps);
+    _payload.i32(intervalMs);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      cancellableTaskId,
       _payloadBytes,
     );
     return ByteReader(_bytes).str();
@@ -541,6 +628,16 @@ final class BridgeApiImpl {
       }
       return _result;
     })();
+  }
+
+  Future<String> collectAllErrorDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllErrorDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
   }
 
   Future<String> invokeRegisteredAsync(String input) async {
@@ -636,6 +733,14 @@ final class BridgeApiImpl {
     final _payloadBytes = _payload.takeBytes();
     final _bytes = bridge.invokeSyncMethod(failSyncId, _payloadBytes);
     return ByteReader(_bytes).i32();
+  }
+
+  bool isTaskRunning(String taskId) {
+    final _payload = ByteWriter();
+    _payload.str(taskId);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = bridge.invokeSyncMethod(isTaskRunningId, _payloadBytes);
+    return ByteReader(_bytes).u8() != 0;
   }
 
   Future<String> testCbridgeAsyncFail() async {
@@ -754,6 +859,26 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).u32();
   }
 
+  Future<String> testForeignSleepCancel() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepCancelId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
+  Future<String> collectAllCancelDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllCancelDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
+  }
+
   Stream<int> tickStream(int count, int intervalMs) {
     final _payload = ByteWriter();
     _payload.i32(count);
@@ -784,6 +909,16 @@ final class BridgeApiImpl {
     } finally {
       // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.
     }
+  }
+
+  Future<String> collectAnyDemo() async {
+    final _payload = ByteWriter();
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAnyDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).str();
   }
 
   Future<String> askUv(String message) async {
