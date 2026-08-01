@@ -1,3 +1,14 @@
+## 1.1.1
+
+- Fix hot-restart safety across Dart/native boundary.
+  - Encode the session id directly as the `NativeFinalizer` token pointer value,
+    avoiding a cross-module `malloc`/`free` mismatch on hot restart.
+  - Copy posted wire frames and send them as external typed data with a finalizer,
+    so Dart owns the buffer lifetime.
+  - Guard `Runtime::start()` / `Runtime::stop()` with a mutex to prevent races.
+  - Catch exceptions in `dcb_session_finalizer`, object-handle drop callbacks, and
+    session dispose callbacks so they never propagate across FFI.
+
 ## 1.1.0
 
 - `DcbBuildOptions.compileCommandsPath`: configurable destination for `compile_commands.json` (relative to package root).

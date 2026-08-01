@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1
+
+- `dcb_gen_tool init`: extract dart_cpp_bridge lookup and generated-wire check
+  into `native/cmake/dcb_bridge.cmake`, so the root `native/CMakeLists.txt`
+  stays focused on the library target.
+- `dcb_gen_tool generate`: when no config path is given, default to
+  `dart_cpp_bridge.yaml` in the current directory.
+
 ## 1.1.0
 
 - Stable release aligned with `dart_cpp_bridge` 1.1.0.

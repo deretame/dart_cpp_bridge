@@ -67,8 +67,7 @@ Future<int> cmdInit(
 
   // Validate name (CMake target name: alphanumeric + underscore).
   if (!RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$').hasMatch(nativeLibName)) {
-    stderr.writeln(
-        'error: invalid library name "$nativeLibName". '
+    stderr.writeln('error: invalid library name "$nativeLibName". '
         'Use only letters, digits, and underscores (must start with a letter).');
     return 1;
   }
@@ -86,14 +85,17 @@ Future<int> cmdInit(
   // still missing the starter files, so we check per-file.
   final skipped = <String>[];
   final cmakePath = p.join(cwd, 'native', 'CMakeLists.txt');
+  final cmakeHelperPath = p.join(cwd, 'native', 'cmake', 'dcb_bridge.cmake');
   final hookPath = p.join(cwd, 'hook', 'build.dart');
   final apiHeaderPath = p.join(cwd, 'native', 'api', 'bridge_api.h');
   final implPath = p.join(cwd, 'native', 'api_impl', 'bridge_api.cpp');
   final hasCmake = File(cmakePath).existsSync();
+  final hasCmakeHelper = File(cmakeHelperPath).existsSync();
   final hasHook = File(hookPath).existsSync();
   final hasApiHeader = File(apiHeaderPath).existsSync();
   final hasImpl = File(implPath).existsSync();
   if (hasCmake) skipped.add('native/CMakeLists.txt');
+  if (hasCmakeHelper) skipped.add('native/cmake/dcb_bridge.cmake');
   if (hasHook) skipped.add('hook/build.dart');
   if (hasApiHeader) skipped.add('native/api/bridge_api.h');
   if (hasImpl) skipped.add('native/api_impl/bridge_api.cpp');
@@ -107,8 +109,7 @@ Future<int> cmdInit(
   // NOTE: include_paths only contains project-relative paths. The
   // dart_cpp_bridge native/include directory is resolved automatically
   // at codegen time from .dart_tool/package_config.json (parse_api.py).
-  _writeFile(
-      p.join(cwd, 'dart_cpp_bridge.yaml'), _yamlTemplate(packageName));
+  _writeFile(p.join(cwd, 'dart_cpp_bridge.yaml'), _yamlTemplate(packageName));
   log.info('  created dart_cpp_bridge.yaml');
 
   if (!hasCmake) {
@@ -116,6 +117,13 @@ Future<int> cmdInit(
     if (!nativeDir.existsSync()) nativeDir.createSync(recursive: true);
     _writeFile(cmakePath, _cmakeTemplate(nativeLibName));
     log.info('  created native/CMakeLists.txt');
+  }
+
+  if (!hasCmakeHelper) {
+    final cmakeDir = Directory(p.join(cwd, 'native', 'cmake'));
+    if (!cmakeDir.existsSync()) cmakeDir.createSync(recursive: true);
+    _writeFile(cmakeHelperPath, _cmakeHelperTemplate());
+    log.info('  created native/cmake/dcb_bridge.cmake');
   }
 
   if (!hasHook) {
@@ -151,9 +159,12 @@ Future<int> cmdInit(
   if (exitCode != 0) return exitCode;
 
   log.info('Done! Next steps:');
-  log.info('  1. Ensure dart_cpp_bridge is in pubspec.yaml && run "dart pub get"');
-  log.info('  2. Edit native/api/bridge_api.h + native/api_impl/bridge_api.cpp');
-  log.info('  3. Run "dcb_gen_tool generate dart_cpp_bridge.yaml" after API changes');
+  log.info(
+      '  1. Ensure dart_cpp_bridge is in pubspec.yaml && run "dart pub get"');
+  log.info(
+      '  2. Edit native/api/bridge_api.h + native/api_impl/bridge_api.cpp');
+  log.info(
+      '  3. Run "dcb_gen_tool generate dart_cpp_bridge.yaml" after API changes');
   log.info('  4. Run "dart run" or "flutter run" (hook builds native lib)');
   if (hasCmake) {
     log.info('  note: existing native/CMakeLists.txt was kept — make sure it');
@@ -221,6 +232,33 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Shared helper: locates dart_cpp_bridge, sets up the runtime dependency,
+# and verifies that generated wire code exists.
+include(cmake/dcb_bridge.cmake)
+
+# --- Library target ---
+option(BUILD_SHARED_LIBS "Build shared library" ON)
+add_library($libName
+  generated/wire_dispatch.cpp
+  api_impl/bridge_api.cpp
+)
+
+target_include_directories($libName
+  PRIVATE
+    \${CMAKE_CURRENT_SOURCE_DIR}
+    \${CMAKE_CURRENT_SOURCE_DIR}/api
+    \${CMAKE_CURRENT_SOURCE_DIR}/generated
+)
+
+target_link_libraries($libName PRIVATE
+  \$<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+
+if(WIN32)
+  target_compile_options($libName PRIVATE /utf-8)
+endif()
+''';
+
+String _cmakeHelperTemplate() => '''
 # --- Find dart_cpp_bridge (reads .dart_tool/package_config.json) ---
 file(READ "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/package_config.json" _j)
 string(JSON _c LENGTH "\${_j}" "packages")
@@ -251,27 +289,6 @@ set(GEN_WIRE "\${CMAKE_CURRENT_SOURCE_DIR}/generated/wire_dispatch.cpp")
 if(NOT EXISTS "\${GEN_WIRE}")
   message(FATAL_ERROR
     "Missing generated wire. Run: dcb_gen_tool generate dart_cpp_bridge.yaml")
-endif()
-
-# --- Library target ---
-option(BUILD_SHARED_LIBS "Build shared library" ON)
-add_library($libName
-  generated/wire_dispatch.cpp
-  api_impl/bridge_api.cpp
-)
-
-target_include_directories($libName
-  PRIVATE
-    \${CMAKE_CURRENT_SOURCE_DIR}
-    \${CMAKE_CURRENT_SOURCE_DIR}/api
-    \${CMAKE_CURRENT_SOURCE_DIR}/generated
-)
-
-target_link_libraries($libName PRIVATE
-  \$<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
-
-if(WIN32)
-  target_compile_options($libName PRIVATE /utf-8)
 endif()
 ''';
 

@@ -18,7 +18,8 @@ Usage:
   dcb_gen_tool <command> [options]
 
 Commands:
-  generate <config.yaml>   Run the full codegen pipeline (parse + generate).
+  generate [config.yaml]   Run the full codegen pipeline (parse + generate).
+                           Defaults to dart_cpp_bridge.yaml in the current directory.
   init [--name <native_lib_name>]
                            Scaffold a new dart_cpp_bridge project.
                            --name sets the native library / CMake target name
@@ -169,13 +170,9 @@ Future<int> runGenerate(
   required bool quiet,
   required bool skipVersionCheck,
 }) async {
-  if (args.isEmpty) {
-    stderr.writeln('error: missing <config.yaml> argument.');
-    stderr.writeln('Usage: dcb_gen_tool generate <path/to/dart_cpp_bridge.yaml>');
-    return 1;
-  }
-
-  final configPath = args.first;
+  // Default to dart_cpp_bridge.yaml in the current directory when no argument
+  // is provided, so users can simply run `dcb_gen_tool generate`.
+  final configPath = args.isEmpty ? 'dart_cpp_bridge.yaml' : args.first;
   final configFile = File(configPath);
   if (!configFile.existsSync()) {
     stderr.writeln('error: config file not found: $configPath');
@@ -191,8 +188,7 @@ Future<int> runGenerate(
       return 1;
     }
   } else {
-    stderr.writeln(
-        '[dcb_gen_tool] WARNING: --skip-version-check is set; '
+    stderr.writeln('[dcb_gen_tool] WARNING: --skip-version-check is set; '
         'generated code may be incompatible with the runtime.');
   }
 
@@ -344,13 +340,11 @@ Future<void> _postProcessCppOutput(
 ///    be a direct executable path or a containing directory.
 /// 2. `clang-format` on system PATH.
 /// 3. Returns null (skip formatting).
-String? _resolveClangFormat(
-    YamlMap config, String projectDir, CliLogger log) {
+String? _resolveClangFormat(YamlMap config, String projectDir, CliLogger log) {
   final candidates = _clangFormatCandidates(config);
   for (final entry in candidates) {
-    var resolved = p.isAbsolute(entry)
-        ? entry
-        : p.normalize(p.join(projectDir, entry));
+    var resolved =
+        p.isAbsolute(entry) ? entry : p.normalize(p.join(projectDir, entry));
     // If it's a directory, look for the executable inside.
     if (Directory(resolved).existsSync()) {
       resolved = p.join(
