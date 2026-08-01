@@ -5,8 +5,10 @@
 - Version aligned with `dart_cpp_bridge` 1.2.0.
 - Verified against the new cancellable-sleep / Signal-Slot / collect APIs:
   regenerated demo bindings cover `cancellableTask`, `collectAll` /
-  `collectAny`, and the foreign-runtime native timer tests with no codegen
-  changes required.
+  `collectAny`, and the foreign-runtime native timer tests.
+- Added a parse-only `async_simple/Signal.h` stub so codegen keeps working
+  without the CMake-fetched async-simple headers (cancellable-sleep headers
+  now include it).
 - No breaking changes: CLI behavior and generated output are unchanged.
 
 ## 1.1.1
