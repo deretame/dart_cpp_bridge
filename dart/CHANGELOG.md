@@ -1,3 +1,21 @@
+## 1.2.0
+
+- Cancellable `async_simple::coro::sleep()` on `AsioExecutor`: the
+  `schedule(Func, Duration, Slot*)` override now registers a
+  `SignalType::Terminate` handler that cancels the underlying
+  `asio::steady_timer`, so a sleep bound to a cancellation signal
+  (`Lazy::setLazyLocal`, or `collectAny<Terminate>` / `collectAll<Terminate>`)
+  throws `SignalException` promptly instead of waiting out the duration.
+- `ForeignExecutor`: explicit `schedule(Func, Duration, Slot*)` override with
+  two paths — an optional native event-loop timer, or a deactivation-safe
+  waiter-thread fallback. Pending sleeps never dereference the executor after
+  it is deactivated or destroyed.
+- New foreign-runtime C API: `dcb_foreign_register_ex` with optional
+  `dcb_schedule_after_fn` / `dcb_cancel_after_fn` native timer callbacks
+  (additive; `dcb_foreign_register` is unchanged).
+- Internal timer failures are logged to stderr (`[dcb] ...`) instead of being
+  silently swallowed.
+
 ## 1.1.1
 
 - Fix hot-restart safety across Dart/native boundary.

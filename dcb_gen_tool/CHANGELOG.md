@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Version aligned with `dart_cpp_bridge` 1.2.0.
+- Verified against the new cancellable-sleep / Signal-Slot / collect APIs:
+  regenerated demo bindings cover `cancellableTask`, `collectAll` /
+  `collectAny`, and the foreign-runtime native timer tests with no codegen
+  changes required.
+- No breaking changes: CLI behavior and generated output are unchanged.
+
 ## 1.1.1
 
 - `dcb_gen_tool init`: extract dart_cpp_bridge lookup and generated-wire check

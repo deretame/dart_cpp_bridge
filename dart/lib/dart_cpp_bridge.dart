@@ -1,4 +1,4 @@
-/// Dart FFI front-end for the experimental **dart_cpp_bridge** C++ runtime.
+/// Dart FFI front-end for the **dart_cpp_bridge** C++ runtime.
 ///
 /// Open a per-isolate session with [DartCppBridge.init], then use
 /// [DartCppBridge.invokeSyncMethod] / [DartCppBridge.invokeAsyncMethod] /

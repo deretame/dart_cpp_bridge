@@ -57,10 +57,6 @@ void main() async {
 - 快速开始：<https://deretame.github.io/dart_cpp_bridge/zh-cn/getting-started/>
 - GitHub：<https://github.com/deretame/dart_cpp_bridge>
 
-## 状态
-
-实验性 / `0.1.0-dev`。API 与 wire 格式可能变化。
-
 ## 致谢
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考

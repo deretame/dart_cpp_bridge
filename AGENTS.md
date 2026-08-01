@@ -5,9 +5,11 @@
 
 ## Project overview
 
-`dart_cpp_bridge` is an experimental **Dart ↔ C++20** interoperability bridge inspired by [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/). It lets existing C/C++ code expose sync, async, stream, and reverse Dart-closure APIs to Dart/Flutter with a runtime that feels like FRB.
+`dart_cpp_bridge` is a released **Dart ↔ C++20** interoperability bridge inspired by [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/). It lets existing C/C++ code expose sync, async, stream, and reverse Dart-closure APIs to Dart/Flutter with a runtime that feels like FRB.
 
-- **Status**: Experimental / Phase 1 + early Phase 2. Not a production drop-in replacement for FRB.
+- **Status**: Released / stable. `dart_cpp_bridge` (dart package) and
+  `dcb_gen_tool` are both published at **1.2.0**. Public APIs are stable;
+  avoid breaking changes (see [Compatibility policy](#compatibility-policy)).
 - **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines and a single-threaded Asio event loop.
 - **Repository**: <https://github.com/deretame/dart_cpp_bridge>
 
@@ -26,6 +28,45 @@ Runtime (process-wide)
 
 Core principle: **business C++ code is written as normal functions or `async_simple::coro::Lazy<T>`; the bridge handles codec, scheduling, and Dart API generation.** Do not invent bridge-specific Future/Stream wrapper types in business code.
 
+## Compatibility policy
+
+The project is in a **released / stable state** (1.2.0). Treat every public
+surface as part of the compatibility contract:
+
+- Dart package public API (`dart/lib/`) and generated code contracts;
+- C ABI exports: `ffi.h`, `cbridge.h`, `foreign_runtime.h` (including
+  `dart_cpp_bridge` FFI functions and the `dcb_*` C bridge API);
+- Public C++ headers under `dart/native/include/dart_cpp_bridge/`;
+- The wire protocol (frame layout, `msg_type` values, `method_id` semantics);
+- `dcb_gen_tool` CLI behavior, `dart_cpp_bridge.yaml` config schema, and
+  generated output file names/shapes.
+
+Rules for changes:
+
+- **No breaking changes without a major version bump.** Do not remove, rename,
+  or change existing functions, enum values, struct fields, wire frame
+  fields, `method_id`s, or generated file names. Do not silently change
+  behavior that callers may rely on.
+- **Prefer additive extensions.** Add new functions/APIs, `_ex` / `_v2`
+  variants with the old entry point kept as a wrapper, optional new callbacks
+  or fields defaulting to `NULL`/absent, and new `method_id`s — never
+  renumber existing ones.
+- **Deprecate, don't delete.** If something must change, keep the old API
+  working, document it as deprecated in the changelog, and remove it only in
+  a future major version.
+- Internal details (build artifacts, `examples/`, docs, private headers) are
+  not API and may change freely.
+
+## Versioning
+
+- `dart/pubspec.yaml` and `dcb_gen_tool/pubspec.yaml` **must always carry the
+  same version number**. When bumping either package, bump the other in the
+  same change — even if `dcb_gen_tool` has no code changes and the update is
+  only a version sync.
+- Keep both changelogs in step: the package with real changes gets a normal
+  entry; the other gets at least a short "version aligned with
+  `dart_cpp_bridge` x.y.z" entry.
+
 ## Technology stack
 
 | Layer        | Technology                                              | Notes                                                                             |
@@ -36,7 +77,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 | Dart side    | Dart 3 + `package:ffi`                                  | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                |
 | Dart SDK     | `>= 3.10.0`                                             | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+. |
 | Codegen      | Pinned Python 3.13.13 + libclang-ng 22.1.4.2            | Downloaded from remote, cached, hash-verified. No host Python/LLVM.               |
-| Build        | CMake 3.24+                                             | FetchContent pulls Asio/async-simple. Native Assets hook is not yet wired.        |
+| Build        | CMake 3.24+                                             | FetchContent pulls Asio/async-simple. Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
 
 ## Directory structure
 
@@ -282,9 +323,9 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 - **Sync DartFn on the io thread**: `DartFn::operator()` returns `Lazy<Ret>` (async only). For blocking contexts, use `syncAwait(dcb::spawn(fn(args...)))`. Calling `syncAwait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
 - **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
-- **Generated code is not a build step**: codegen must be run manually after API header changes. The Native Assets hook (Phase 3) will only compile and link, not regenerate code.
-- **No cancellation**: there is no general async cancellation. Stream subscription cancellation only stops new events from being delivered; C++ side continues running and silently drops late `add()` calls.
-- **No ABI/API stability**: version is `0.1.0-dev.2`. Method ids may change, wire format may change, generated code may change.
+- **Generated code is not a build step**: codegen must be run manually after API header changes. Native Assets hooks compile and link only; they do not regenerate code.
+- **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative via async-simple `Signal`/`Slot` (cancellable `sleep()`, `collectAny`/`collectAll<Terminate>`) and must be exposed by business code (e.g. a task_id → Signal map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
+- **Stable API — no breaking changes**: packages are released (`1.2.0`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
 
 ## Where to find more
 

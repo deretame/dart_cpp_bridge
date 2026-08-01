@@ -29,7 +29,7 @@
 #   target_link_libraries(my_bridge PRIVATE
 #     $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 #
-# Usage (external project, recommended after Phase 3 productization):
+# Usage (external project):
 #   include(FetchContent)
 #   FetchContent_Declare(
 #     dart_cpp_bridge
