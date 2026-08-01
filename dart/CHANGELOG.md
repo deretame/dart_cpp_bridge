@@ -1,3 +1,8 @@
+## 1.2.1
+
+- Version aligned with `dcb_gen_tool` 1.2.1 (codegen bugfix release; no runtime
+  API changes).
+
 ## 1.2.0
 
 - Cancellable `async_simple::coro::sleep()` on `AsioExecutor`: the

@@ -8,7 +8,7 @@
 `dart_cpp_bridge` is a released **Dart ↔ C++20** interoperability bridge inspired by [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/). It lets existing C/C++ code expose sync, async, stream, and reverse Dart-closure APIs to Dart/Flutter with a runtime that feels like FRB.
 
 - **Status**: Released / stable. `dart_cpp_bridge` (dart package) and
-  `dcb_gen_tool` are both published at **1.2.0**. Public APIs are stable;
+  `dcb_gen_tool` are both published at **1.2.1**. Public APIs are stable;
   avoid breaking changes (see [Compatibility policy](#compatibility-policy)).
 - **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines and a single-threaded Asio event loop.
 - **Repository**: <https://github.com/deretame/dart_cpp_bridge>
@@ -30,7 +30,7 @@ Core principle: **business C++ code is written as normal functions or `async_sim
 
 ## Compatibility policy
 
-The project is in a **released / stable state** (1.2.0). Treat every public
+The project is in a **released / stable state** (1.2.1). Treat every public
 surface as part of the compatibility contract:
 
 - Dart package public API (`dart/lib/`) and generated code contracts;
@@ -262,6 +262,14 @@ Errors are always encoded as frames with `msg_type=responseErr` and payload `cod
 
 - **C++**: C++20, no extensions, no RTTI/exception changes beyond standard C++ exceptions. Use `std::` consistently.
 - **Coroutines**: prefer `async_simple::coro::Lazy<T>` for async business code. Do not write custom `bridge::Future<T>` wrappers.
+- **Codegen parses API headers transitively**: `native/api/*.h` and everything
+  it includes are parsed by libclang; a missing or unparseable header can
+  silently degrade template types (`std::vector`, `std::unordered_map`, ...) to
+  `int` in generated bindings. Scanned headers may only include C++ standard
+  headers, `dart_cpp_bridge/*`, and `async_simple/coro/Lazy.h`; keep
+  implementations and third-party includes in `api_impl/*.cpp`. When a public
+  runtime header adds an external include, update `dcb_gen_tool/stubs` in the
+  same change.
 - **Threading**: never block the `io_context` thread. Blocking work goes to `asio::thread_pool` (normal/stream kind) or `spawn_blocking`.
 - **Error handling**: at the wire boundary always catch `const std::exception&` first, then `(...)`. Encode errors into frames; do not let exceptions propagate across FFI.
 - **Dart**: follows standard Dart package conventions, `package:lints` for static analysis. Use `final` and `StateError` for runtime failures.
@@ -325,7 +333,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 - **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
 - **Generated code is not a build step**: codegen must be run manually after API header changes. Native Assets hooks compile and link only; they do not regenerate code.
 - **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative via async-simple `Signal`/`Slot` (cancellable `sleep()`, `collectAny`/`collectAll<Terminate>`) and must be exposed by business code (e.g. a task_id → Signal map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
-- **Stable API — no breaking changes**: packages are released (`1.2.0`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
+- **Stable API — no breaking changes**: packages are released (`1.2.1`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
 
 ## Where to find more
 

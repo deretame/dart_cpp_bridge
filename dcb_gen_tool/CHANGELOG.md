@@ -1,14 +1,20 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed: codegen works without the CMake-fetched async-simple headers again.
+  Added a parse-only `async_simple/Signal.h` stub for the cancellable-sleep
+  runtime headers; missing stubs previously made libclang fail to parse the
+  scanned API headers and could silently degrade template types
+  (`std::vector`, `std::unordered_map`, ...) to `int` in generated bindings.
+- Version aligned with `dart_cpp_bridge` 1.2.1.
+
 ## 1.2.0
 
 - Version aligned with `dart_cpp_bridge` 1.2.0.
 - Verified against the new cancellable-sleep / Signal-Slot / collect APIs:
   regenerated demo bindings cover `cancellableTask`, `collectAll` /
   `collectAny`, and the foreign-runtime native timer tests.
-- Added a parse-only `async_simple/Signal.h` stub so codegen keeps working
-  without the CMake-fetched async-simple headers (cancellable-sleep headers
-  now include it).
 - No breaking changes: CLI behavior and generated output are unchanged.
 
 ## 1.1.1
