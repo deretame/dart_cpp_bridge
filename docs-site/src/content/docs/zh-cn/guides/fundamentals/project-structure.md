@@ -74,5 +74,6 @@ dart run bin/dcb_gen_tool.dart generate ../path/to/dart_cpp_bridge.yaml
 
 ## 延伸阅读
 
+- [注意事项与常见坑](./caveats/)
 - [代码生成配置](/dart_cpp_bridge/codegen/configuration/)
 - [代码生成输出](/dart_cpp_bridge/codegen/output/)

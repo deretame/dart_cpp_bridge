@@ -74,5 +74,6 @@ dart run bin/dcb_gen_tool.dart generate ../path/to/dart_cpp_bridge.yaml
 
 ## Further Reading
 
+- [Caveats & Gotchas](./caveats/)
 - [Code Generation Configuration](/dart_cpp_bridge/codegen/configuration/)
 - [Code Generation Output](/dart_cpp_bridge/codegen/output/)
