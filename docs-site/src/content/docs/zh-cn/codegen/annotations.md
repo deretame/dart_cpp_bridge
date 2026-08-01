@@ -11,6 +11,27 @@ sidebar:
 
 这些宏在 `BRIDGE_CODEGEN` 定义时展开为 `__attribute__((annotate("bridge::*")))`，否则展开为空。
 
+## 重要命名约束
+
+所有导出到 Dart 的函数及不透明类方法，在扫描到的 API 范围内必须具有**全局唯一的限定名**。C++ 函数重载**不被支持**。
+
+### 原因
+
+桥接层会为每个导出的 API 根据其完整限定名生成一个稳定的整数方法 ID，Dart 端通过这个 ID 进行调用分发。如果两个函数共享同一个限定名，生成器无法区分它们；同时 Dart 也没有与 C++ 重载解析等价的机制。
+
+### 规则
+
+- 不能声明两个限定名相同的 `BRIDGE_SYNC`、`BRIDGE_ASYNC` 或 `BRIDGE_NORMAL` 函数。
+- 不透明类的方法在同一类内也必须唯一。即使签名不同，同一个 `Counter` 类中也不能有两个名为 `process` 的方法。
+- 若 C++ 端存在重载，请在暴露给桥接层之前重命名，例如：
+
+  ```cpp
+  BRIDGE_SYNC int32_t add_ints(int32_t a, int32_t b);
+  BRIDGE_SYNC double add_doubles(double a, double b);
+  ```
+
+违反该约束会导致代码生成器报重复函数错误并中止。
+
 ## 函数注解
 
 ### BRIDGE_SYNC

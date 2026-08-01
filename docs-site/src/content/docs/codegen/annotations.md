@@ -11,6 +11,27 @@ Use annotation markers in C++ header files to tell the code generator how to han
 
 These macros expand to `__attribute__((annotate("bridge::*")))` when `BRIDGE_CODEGEN` is defined, and expand to nothing otherwise.
 
+## Important naming constraints
+
+All functions and opaque-class methods exported to Dart must have **globally unique qualified names** within the scanned API surface. C++ function overloading is **not supported**.
+
+### Why
+
+The bridge derives a stable integer method ID for each exported API by hashing its fully-qualified C++ name. The Dart side dispatches calls using that ID. If two functions share the same qualified name, the generator cannot distinguish them, and Dart has no equivalent of C++ overload resolution.
+
+### Rules
+
+- Do not declare two `BRIDGE_SYNC`, `BRIDGE_ASYNC`, or `BRIDGE_NORMAL` functions with the same qualified name.
+- Opaque-class methods must also be unique within their class. Two methods named `process` on the same `Counter` class are not allowed, even with different signatures.
+- Rename overloaded C++ functions before exposing them to the bridge. For example:
+
+  ```cpp
+  BRIDGE_SYNC int32_t add_ints(int32_t a, int32_t b);
+  BRIDGE_SYNC double add_doubles(double a, double b);
+  ```
+
+Violating this constraint causes the code generator to report a duplicate-function error and stop.
+
 ## Function Annotations
 
 ### BRIDGE_SYNC
