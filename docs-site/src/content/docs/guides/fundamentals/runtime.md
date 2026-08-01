@@ -115,6 +115,10 @@ async_simple::coro::Lazy<int> compute(int n) {
 
 `async_simple::coro::sleep(dur)` is non-blocking in a coroutine bound to `AsioExecutor`: AsioExecutor overrides async-simple's `schedule(Func, Duration)` and uses `asio::steady_timer`, so it does not occupy a thread.
 
+If the coroutine chain is bound to a cancellation signal (`Lazy::setLazyLocal`),
+the sleep is also **cancellable**: emitting `SignalType::Terminate` cancels the
+timer and the `co_await sleep(...)` throws `async_simple::SignalException`.
+
 ```cpp
 #include "async_simple/coro/Sleep.h"
 

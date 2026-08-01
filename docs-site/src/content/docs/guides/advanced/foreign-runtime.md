@@ -59,6 +59,23 @@ Requirements:
 - **Non-blocking**: the callback itself only enqueues + wakes; it must not execute fn synchronously
 - **Must execute**: every `fn(userdata)` must be called exactly once (otherwise the coroutine leaks)
 
+Optionally, your Worker can also register **native timer callbacks** so that
+`co_await async_simple::coro::sleep(...)` uses your event loop's own timer
+instead of a waiter thread (see "Sleep and Cancellation on a ForeignExecutor"
+below):
+
+```c
+// Schedule fn(userdata) on the loop thread after delay_us microseconds.
+// Returns an opaque timer handle, or NULL on failure (bridge falls back to a
+// waiter thread; on failure fn is NOT called and userdata must not be used).
+typedef void* (*dcb_schedule_after_fn)(
+    void (*fn)(void*), void* userdata, int64_t delay_us, void* ctx);
+
+// Cancel a pending timer. Must be thread-safe and a safe no-op for handles
+// that already fired or are unknown.
+typedef void (*dcb_cancel_after_fn)(void* timer_handle, void* ctx);
+```
+
 ### C API Provided by the Bridge
 
 `#include "dart_cpp_bridge/foreign_runtime.h"`:
@@ -66,6 +83,7 @@ Requirements:
 | Function | Purpose | When to call |
 |------|------|----------|
 | `dcb_foreign_register(name, schedule_fn, ctx)` | Register the runtime, returns runtime_id | When the Worker starts |
+| `dcb_foreign_register_ex(name, schedule_fn, schedule_after_fn, cancel_after_fn, ctx)` | Register with optional native timer support (pass NULL, NULL to get the same behavior as `dcb_foreign_register`) | When the Worker starts |
 | `dcb_foreign_mark_loop_thread(id)` | Mark the current thread as the loop thread | After the loop thread starts, before running coroutines |
 | `dcb_foreign_executor(id)` | Get the ForeignExecutor pointer | When you need `.via(ex)` or a channel |
 | `dcb_foreign_unregister(id)` | Unregister (no more tasks will be received) | When the Worker stops |
@@ -75,10 +93,16 @@ Requirements:
 
 ```cpp
 #include <uv.h>
+#include <atomic>
+#include <chrono>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include "dart_cpp_bridge/foreign_runtime.h"  // dcb_foreign_register, etc.
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include "dart_cpp_bridge/foreign_runtime.h"  // dcb_foreign_register_ex, etc.
 #include "dart_cpp_bridge/foreign_executor.hpp"  // dcb::ForeignExecutor
 
 class UvWorker {
@@ -93,8 +117,10 @@ class UvWorker {
     });
     async_.data = this;
 
-    // Register with the bridge and get the runtime ID
-    id_ = dcb_foreign_register("my-worker", &schedule_cb, this);
+    // Register with the bridge AND enable native timers, so
+    // co_await sleep() uses uv_timer_t instead of a waiter thread per sleep.
+    id_ = dcb_foreign_register_ex(
+        "my-worker", &schedule_cb, &schedule_after_cb, &cancel_after_cb, this);
 
     // Start the loop thread
     thread_ = std::thread([this] {
@@ -105,6 +131,26 @@ class UvWorker {
 
   void stop() {
     dcb_foreign_unregister(id_);  // The bridge will no longer post tasks to us
+
+    // Stop all pending timers on the loop thread before uv_run exits
+    // (uv_loop_close fails if live handles remain). Wait for the cleanup:
+    // uv_stop can make uv_run exit before the async wake-up is processed.
+    {
+      std::lock_guard lock(mu_);
+      if (!live_timers_.empty()) {
+        pending_.push({&stop_all_timers_task, this});
+        stop_all_requested_.store(true, std::memory_order_release);
+      }
+    }
+    if (stop_all_requested_.load(std::memory_order_acquire)) {
+      uv_async_send(&async_);
+      auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::seconds(2);
+      while (!stop_all_done_.load(std::memory_order_acquire) &&
+             std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    }
     uv_stop(&loop_);
     uv_async_send(&async_);       // Wake it so uv_run exits
     thread_.join();
@@ -127,6 +173,121 @@ class UvWorker {
     uv_async_send(&self->async_);  // Thread-safely wake the loop
   }
 
+  // ─── Native timer support (optional) ────────────────────────────────────
+  //
+  // schedule_after_cb is invoked on the loop thread (the awaiting coroutine
+  // runs there), so uv_timer_init is safe. cancel_after_cb may be called from
+  // ANY thread; it only enqueues a stop task and never touches the handle
+  // outside the loop thread. live_timers_ (guarded by mu_) makes cancels a
+  // safe no-op for timers that already fired.
+
+  struct TimerBox {
+    void (*fn)(void*);
+    void* userdata;
+    UvWorker* self;
+  };
+  struct CancelTask {
+    UvWorker* self;
+    uv_timer_t* timer;
+  };
+
+  static void* schedule_after_cb(void (*fn)(void*), void* userdata,
+                                 int64_t delay_us, void* ctx) {
+    auto* self = static_cast<UvWorker*>(ctx);
+    auto* timer = new uv_timer_t;
+    if (uv_timer_init(&self->loop_, timer) != 0) {
+      delete timer;
+      return nullptr;  // Failure → bridge falls back to a waiter thread
+    }
+    auto* box = new TimerBox{fn, userdata, self};
+    timer->data = box;
+    const uint64_t timeout_ms =
+        delay_us <= 0 ? 1 : static_cast<uint64_t>((delay_us + 999) / 1000);
+    if (uv_timer_start(timer, &timer_cb, timeout_ms, 0) != 0) {
+      self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+      uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+      return nullptr;
+    }
+    {
+      std::lock_guard lock(self->mu_);
+      self->live_timers_.insert(timer);
+    }
+    return timer;  // Opaque handle handed back to ForeignExecutor
+  }
+
+  static void timer_cb(uv_timer_t* timer) {
+    auto* box = static_cast<TimerBox*>(timer->data);
+    auto* self = box->self;
+    {
+      std::lock_guard lock(self->mu_);
+      self->live_timers_.erase(timer);
+    }
+    box->fn(box->userdata);  // Resume the sleeping coroutine
+    // Never delete a libuv handle directly: it stays in the loop's handle
+    // queue until uv_close runs its close callback.
+    self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+    uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+  }
+
+  static void timer_close_cb(uv_handle_t* handle) {
+    auto* timer = reinterpret_cast<uv_timer_t*>(handle);
+    auto* box = static_cast<TimerBox*>(timer->data);
+    auto* self = box->self;
+    delete box;
+    delete timer;
+    const int remaining =
+        self->pending_closes_.fetch_sub(1, std::memory_order_acq_rel) - 1;
+    if (remaining == 0 &&
+        self->stop_all_requested_.load(std::memory_order_acquire)) {
+      self->stop_all_done_.store(true, std::memory_order_release);
+    }
+  }
+
+  static void cancel_after_cb(void* timer_handle, void* ctx) {
+    auto* self = static_cast<UvWorker*>(ctx);
+    auto* timer = static_cast<uv_timer_t*>(timer_handle);
+    {
+      std::lock_guard lock(self->mu_);
+      if (self->live_timers_.find(timer) == self->live_timers_.end()) {
+        return;  // Already fired or unknown: safe no-op
+      }
+      self->pending_.push({&cancel_timer_task, new CancelTask{self, timer}});
+    }
+    uv_async_send(&self->async_);  // libuv handles are only touched on the loop thread
+  }
+
+  static void cancel_timer_task(void* p) {
+    auto task =
+        std::unique_ptr<CancelTask>(static_cast<CancelTask*>(p));
+    auto* self = task->self;
+    auto* timer = task->timer;
+    {
+      std::lock_guard lock(self->mu_);
+      if (self->live_timers_.erase(timer) == 0) {
+        return;  // Timer callback already fired and closed it
+      }
+    }
+    uv_timer_stop(timer);
+    self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+    uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+  }
+
+  static void stop_all_timers_task(void* p) {
+    auto* self = static_cast<UvWorker*>(p);
+    std::vector<uv_timer_t*> timers;
+    {
+      std::lock_guard lock(self->mu_);
+      timers.assign(self->live_timers_.begin(), self->live_timers_.end());
+      self->live_timers_.clear();
+    }
+    for (auto* timer : timers) {
+      uv_timer_stop(timer);
+      self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+      uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+    }
+    // stop_all_done_ is set by timer_close_cb once every handle is closed.
+  }
+
   // ─── Execute all pending tasks on the loop thread ───
   void drain() {
     std::queue<std::pair<void (*)(void*), void*>> batch;
@@ -145,13 +306,21 @@ class UvWorker {
   uv_async_t async_{};
   std::mutex mu_;
   std::queue<std::pair<void (*)(void*), void*>> pending_;
+  std::unordered_set<uv_timer_t*> live_timers_;
   std::thread thread_;
   uint32_t id_{0};
+  std::atomic<int> pending_closes_{0};
+  std::atomic<bool> stop_all_requested_{false};
+  std::atomic<bool> stop_all_done_{false};
 };
 ```
 
 :::note
 `dcb_foreign_executor()` returns `void*`, but the actual type is `dcb::ForeignExecutor*`; use `static_cast` when using it. The `executor()` method in the example already does this for you.
+
+If your event loop has no timer facility, just pass `NULL, NULL` (or keep
+using `dcb_foreign_register`); `co_await sleep()` then falls back to a
+waiter thread and cancellation still works.
 :::
 
 ### How It Works
@@ -175,6 +344,52 @@ Key points:
 - `schedule_cb` can be called from **any thread** (bridge io thread, other workers, etc.), so enqueueing must be under a lock
 - `uv_async_send` is libuv's only thread-safe wakeup mechanism
 - `drain()` is always executed on the loop thread, so `fn(ud)` needs no extra synchronization
+
+### Timer Flow (co_await sleep)
+
+When the runtime registered `schedule_after_cb` / `cancel_after_cb`,
+`co_await sleep()` is driven by `uv_timer_t`:
+
+```text
+awaiting coroutine (loop thread)         UvWorker                     libuv loop thread
+───────────────────────────────────────────────────────────────────────────
+co_await sleep(dur)
+  ForeignExecutor::schedule(4-arg)
+    → schedule_after_cb(delay_us)
+                              new uv_timer_t + uv_timer_start
+                              insert live_timers_
+                              return handle
+    → emplace Terminate handler on Slot
+                                                      ──────▶  timer fires
+                                                               timer_cb:
+                                                                 erase live_timers_
+                                                                 fn(ud) → resume coroutine
+                                                                 uv_close(handle)
+
+cancel path (any thread):
+  signal->emits(Terminate)
+    → Terminate handler
+      → cancel_after_cb(handle)
+                              lock; find in live_timers_
+                              enqueue cancel task + uv_async_send
+      → schedule_cb(resume)   ← handler also posts the resume
+                                                      ──────▶  cancel_timer_task:
+                                                               uv_timer_stop + uv_close
+                                                               resume task:
+                                                               TimeAwaiter throws SignalException
+```
+
+Key points for the timer callbacks:
+- `schedule_after_cb` runs on the loop thread (the awaiting coroutine runs
+  there), so initializing handles is safe; return `NULL` to fall back to the
+  waiter thread.
+- `cancel_after_cb` may run on **any** thread: never touch the libuv handle
+  directly — enqueue a stop task and wake the loop. The `live_timers_` set
+  makes cancels a safe no-op for timers that already fired.
+- libuv handles must be released with `uv_close` (free in the close
+  callback), never `delete` directly.
+- On shutdown, close every live timer on the loop thread **before** `uv_stop`
+  so `uv_loop_close` succeeds.
 
 ### Other Event Loops
 
@@ -371,6 +586,37 @@ worker->spawn([cb = std::move(dartFn), input]() mutable -> async_simple::coro::L
 
 See `examples/multi_runtime_demo` for details.
 
+## Sleep and Cancellation on a ForeignExecutor
+
+`ForeignExecutor` overrides `schedule(Func, Duration, Slot*)` and picks between
+two implementations:
+
+- **Native timer (preferred)**: if the runtime registered
+  `schedule_after_fn` / `cancel_after_fn` via `dcb_foreign_register_ex`, the
+  sleep is driven by the event loop's own timer. A `SignalType::Terminate`
+  handler stops the timer and posts the coroutine resume back to the loop, so
+  cancellation is prompt and no thread is consumed per sleep.
+- **Waiter-thread fallback**: when no timer callbacks are registered (or the
+  native timer fails to start), a detached thread waits on a promise until the
+  duration elapses **or** the `Terminate` signal fires, then posts the resume
+  via `schedule_fn`. The thread captures shared state instead of `this`, so a
+  pending sleep never dereferences the executor after it is deactivated or
+  destroyed; once deactivated, pending waits post nothing and simply exit.
+
+Cancellation works exactly like on `AsioExecutor` in both paths: bind a signal
+with `Lazy::setLazyLocal` (or rely on `collectAll<Terminate>` /
+`collectAny<Terminate>`), emit `SignalType::Terminate`, and the sleep throws
+`async_simple::SignalException`.
+
+`co_await sleep(...)` never blocks the loop thread in either path. The "do not
+block the loop thread" rule still applies to *synchronous* code running
+directly in a loop-thread callback (e.g. `std::this_thread::sleep_for` inside
+a `schedule` lambda) — that still freezes the event loop.
+
+The libuv demo (`examples/codegen_demo`) registers native timers via
+`dcb_foreign_register_ex` and exercises both sleep and cancellation in
+`test_foreign_sleep` / `test_foreign_sleep_cancel`.
+
 ## MSVC Notes
 
 :::danger[MSVC 19.51 coroutine lambda capture bug]
@@ -399,7 +645,7 @@ This bug is unrelated to ForeignExecutor and can be triggered by coroutine lambd
 |------|------|
 | schedule must be thread-safe | The bridge may call it from any thread |
 | fn(userdata) must execute on the loop thread | Prerequisite for correct coroutine resumption |
-| Do not block the loop thread | sleep / synchronous IO will freeze the whole event loop |
+| Do not block the loop thread | **Synchronous** sleep / IO in a loop-thread callback freezes the event loop; `co_await coro::sleep(...)` is fine (native timer or waiter thread) |
 | std::function must be copyable | Wrap move-only captures in `shared_ptr` |
 | No more schedules after unregister | The executor becomes invalid after `dcb_foreign_unregister` |
 | Fallback when executor is invalid | The channel's `wake_waiter` will inline resume to prevent coroutine leaks |

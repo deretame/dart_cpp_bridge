@@ -115,6 +115,10 @@ async_simple::coro::Lazy<int> compute(int n) {
 
 `async_simple::coro::sleep(dur)` 在绑定了 `AsioExecutor` 的协程中是非阻塞的：AsioExecutor 重写了 async-simple 的 `schedule(Func, Duration)`，用 `asio::steady_timer` 实现，不会占用线程。
 
+如果协程链绑定了取消信号（`Lazy::setLazyLocal`），sleep 也是**可取消**的：
+发出 `SignalType::Terminate` 会取消定时器，`co_await sleep(...)` 会抛出
+`async_simple::SignalException`。
+
 ```cpp
 #include "async_simple/coro/Sleep.h"
 

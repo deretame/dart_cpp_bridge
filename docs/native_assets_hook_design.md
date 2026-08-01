@@ -1,7 +1,7 @@
 # Native Assets Hook 方案设计
 
 > 对应阶段：**Phase 3**（见 [progress.md](./progress.md)）
-> 状态：方案调研 / 设计稿，尚未实现
+> 状态：**已实现**（随 `dart_cpp_bridge` 1.1.0+ 发布，`hook/build.dart` + `hook/link.dart`；1.2.0 已验证）
 > 关联决策：hook 直接驱动 CMake、CMakeLists 为构建单点真相、平台配置用密封类（非 YAML `user_defines`）、Android 用系统 CMake(≥3.24) + NDK toolchain、`cc_builder`/`CBuilder` 不适用
 > 平台优先级：**Windows > Linux > Android > macOS**（iOS 暂缓）
 > 更新日期：2026-07-26

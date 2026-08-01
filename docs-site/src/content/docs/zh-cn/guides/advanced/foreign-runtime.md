@@ -59,6 +59,21 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 - **不阻塞**：回调本身只做入队 + 唤醒，不能同步执行 fn
 - **必须执行**：每个 `fn(userdata)` 都必须被调用一次（否则协程泄漏）
 
+可选地，Worker 还可以注册**原生定时器回调**，让
+`co_await async_simple::coro::sleep(...)` 使用事件循环自己的定时器，而不是
+每 sleep 开一个等待线程（详见下文“在 ForeignExecutor 上 sleep 与取消”）：
+
+```c
+// 在 delay_us 微秒后，于 loop 线程上执行 fn(userdata)。
+// 返回不透明 timer 句柄；失败返回 NULL（bridge 回退到等待线程；
+// 失败时保证不会调用 fn，也不能使用 userdata）。
+typedef void* (*dcb_schedule_after_fn)(
+    void (*fn)(void*), void* userdata, int64_t delay_us, void* ctx);
+
+// 取消挂起的定时器。必须线程安全；对已触发或未知句柄必须是安全 no-op。
+typedef void (*dcb_cancel_after_fn)(void* timer_handle, void* ctx);
+```
+
 ### bridge 提供的 C API
 
 `#include "dart_cpp_bridge/foreign_runtime.h"`：
@@ -66,6 +81,7 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 | 函数 | 作用 | 调用时机 |
 |------|------|----------|
 | `dcb_foreign_register(name, schedule_fn, ctx)` | 注册运行时，返回 runtime_id | Worker 启动时 |
+| `dcb_foreign_register_ex(name, schedule_fn, schedule_after_fn, cancel_after_fn, ctx)` | 注册并可选携带原生定时器支持（传 NULL, NULL 与 `dcb_foreign_register` 行为一致） | Worker 启动时 |
 | `dcb_foreign_mark_loop_thread(id)` | 标记当前线程为 loop 线程 | loop 线程启动后、跑协程前 |
 | `dcb_foreign_executor(id)` | 获取 ForeignExecutor 指针 | 需要 `.via(ex)` 或 channel 时 |
 | `dcb_foreign_unregister(id)` | 注销（之后不再收到任务） | Worker 停止时 |
@@ -75,10 +91,16 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 
 ```cpp
 #include <uv.h>
+#include <atomic>
+#include <chrono>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include "dart_cpp_bridge/foreign_runtime.h"  // dcb_foreign_register 等 C API
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include "dart_cpp_bridge/foreign_runtime.h"  // dcb_foreign_register_ex 等 C API
 #include "dart_cpp_bridge/foreign_executor.hpp"  // dcb::ForeignExecutor
 
 class UvWorker {
@@ -93,8 +115,10 @@ class UvWorker {
     });
     async_.data = this;
 
-    // 注册到 bridge，获取 runtime ID
-    id_ = dcb_foreign_register("my-worker", &schedule_cb, this);
+    // 注册到 bridge，并启用原生定时器：
+    // 这样 co_await sleep() 使用 uv_timer_t，而不是每 sleep 开一个等待线程。
+    id_ = dcb_foreign_register_ex(
+        "my-worker", &schedule_cb, &schedule_after_cb, &cancel_after_cb, this);
 
     // 启动 loop 线程
     thread_ = std::thread([this] {
@@ -105,6 +129,26 @@ class UvWorker {
 
   void stop() {
     dcb_foreign_unregister(id_);  // bridge 不再向我们投递任务
+
+    // 在 uv_run 退出前，让 loop 线程清掉所有挂起的定时器
+    // （uv_loop_close 在还有存活句柄时会失败）。这里要等清理完成：
+    // uv_stop 可能让 uv_run 在异步唤醒被处理之前就退出。
+    {
+      std::lock_guard lock(mu_);
+      if (!live_timers_.empty()) {
+        pending_.push({&stop_all_timers_task, this});
+        stop_all_requested_.store(true, std::memory_order_release);
+      }
+    }
+    if (stop_all_requested_.load(std::memory_order_acquire)) {
+      uv_async_send(&async_);
+      auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::seconds(2);
+      while (!stop_all_done_.load(std::memory_order_acquire) &&
+             std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+    }
     uv_stop(&loop_);
     uv_async_send(&async_);       // 唤醒使其退出 uv_run
     thread_.join();
@@ -127,6 +171,120 @@ class UvWorker {
     uv_async_send(&self->async_);  // 线程安全地唤醒 loop
   }
 
+  // ─── 原生定时器支持（可选） ─────────────────────────────────────────────
+  //
+  // schedule_after_cb 在 loop 线程上被调用（等待中的协程就在那里跑），所以
+  // uv_timer_init 是安全的。cancel_after_cb 可能被任意线程调用，它只入队一个
+  // 停止任务、绝不直接在 loop 线程之外碰句柄。live_timers_（由 mu_ 保护）
+  // 让“定时器已触发/未知句柄”的取消变成安全 no-op。
+
+  struct TimerBox {
+    void (*fn)(void*);
+    void* userdata;
+    UvWorker* self;
+  };
+  struct CancelTask {
+    UvWorker* self;
+    uv_timer_t* timer;
+  };
+
+  static void* schedule_after_cb(void (*fn)(void*), void* userdata,
+                                 int64_t delay_us, void* ctx) {
+    auto* self = static_cast<UvWorker*>(ctx);
+    auto* timer = new uv_timer_t;
+    if (uv_timer_init(&self->loop_, timer) != 0) {
+      delete timer;
+      return nullptr;  // 失败 → bridge 回退到等待线程
+    }
+    auto* box = new TimerBox{fn, userdata, self};
+    timer->data = box;
+    const uint64_t timeout_ms =
+        delay_us <= 0 ? 1 : static_cast<uint64_t>((delay_us + 999) / 1000);
+    if (uv_timer_start(timer, &timer_cb, timeout_ms, 0) != 0) {
+      self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+      uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+      return nullptr;
+    }
+    {
+      std::lock_guard lock(self->mu_);
+      self->live_timers_.insert(timer);
+    }
+    return timer;  // 不透明句柄交回给 ForeignExecutor
+  }
+
+  static void timer_cb(uv_timer_t* timer) {
+    auto* box = static_cast<TimerBox*>(timer->data);
+    auto* self = box->self;
+    {
+      std::lock_guard lock(self->mu_);
+      self->live_timers_.erase(timer);
+    }
+    box->fn(box->userdata);  // 恢复睡眠中的协程
+    // 永远不要直接 delete libuv 句柄：它还在 loop 的 handle 队列里，
+    // 必须 uv_close，由 close 回调释放。
+    self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+    uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+  }
+
+  static void timer_close_cb(uv_handle_t* handle) {
+    auto* timer = reinterpret_cast<uv_timer_t*>(handle);
+    auto* box = static_cast<TimerBox*>(timer->data);
+    auto* self = box->self;
+    delete box;
+    delete timer;
+    const int remaining =
+        self->pending_closes_.fetch_sub(1, std::memory_order_acq_rel) - 1;
+    if (remaining == 0 &&
+        self->stop_all_requested_.load(std::memory_order_acquire)) {
+      self->stop_all_done_.store(true, std::memory_order_release);
+    }
+  }
+
+  static void cancel_after_cb(void* timer_handle, void* ctx) {
+    auto* self = static_cast<UvWorker*>(ctx);
+    auto* timer = static_cast<uv_timer_t*>(timer_handle);
+    {
+      std::lock_guard lock(self->mu_);
+      if (self->live_timers_.find(timer) == self->live_timers_.end()) {
+        return;  // 已触发或未知句柄：安全 no-op
+      }
+      self->pending_.push({&cancel_timer_task, new CancelTask{self, timer}});
+    }
+    uv_async_send(&self->async_);  // libuv 句柄只在 loop 线程上操作
+  }
+
+  static void cancel_timer_task(void* p) {
+    auto task =
+        std::unique_ptr<CancelTask>(static_cast<CancelTask*>(p));
+    auto* self = task->self;
+    auto* timer = task->timer;
+    {
+      std::lock_guard lock(self->mu_);
+      if (self->live_timers_.erase(timer) == 0) {
+        return;  // timer 回调已经触发并关闭了它
+      }
+    }
+    uv_timer_stop(timer);
+    self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+    uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+  }
+
+  static void stop_all_timers_task(void* p) {
+    auto* self = static_cast<UvWorker*>(p);
+    std::vector<uv_timer_t*> timers;
+    {
+      std::lock_guard lock(self->mu_);
+      timers.assign(self->live_timers_.begin(), self->live_timers_.end());
+      self->live_timers_.clear();
+    }
+    for (auto* timer : timers) {
+      uv_timer_stop(timer);
+      self->pending_closes_.fetch_add(1, std::memory_order_acq_rel);
+      uv_close(reinterpret_cast<uv_handle_t*>(timer), &timer_close_cb);
+    }
+    // 所有句柄关闭后，由 timer_close_cb 设置 stop_all_done_。
+  }
+
   // ─── 在 loop 线程上执行所有待处理任务 ───
   void drain() {
     std::queue<std::pair<void (*)(void*), void*>> batch;
@@ -145,13 +303,21 @@ class UvWorker {
   uv_async_t async_{};
   std::mutex mu_;
   std::queue<std::pair<void (*)(void*), void*>> pending_;
+  std::unordered_set<uv_timer_t*> live_timers_;
   std::thread thread_;
   uint32_t id_{0};
+  std::atomic<int> pending_closes_{0};
+  std::atomic<bool> stop_all_requested_{false};
+  std::atomic<bool> stop_all_done_{false};
 };
 ```
 
 :::note
 `dcb_foreign_executor()` 返回的是 `void*`，实际类型为 `dcb::ForeignExecutor*`，使用时要 `static_cast` 转换。示例中的 `executor()` 方法已经帮你做了这件事。
+
+如果你的事件循环没有定时器能力，直接传 `NULL, NULL`（或者继续用
+`dcb_foreign_register`）即可；`co_await sleep()` 会回退到等待线程，取消仍然
+可用。
 :::
 
 ### 工作原理
@@ -175,6 +341,51 @@ ForeignExecutor::schedule(func)
 - `schedule_cb` 可以从**任意线程**被调用（bridge io 线程、其他 worker 等），所以入队必须加锁
 - `uv_async_send` 是 libuv 唯一线程安全的唤醒方式
 - `drain()` 始终在 loop 线程上执行，所以 `fn(ud)` 无需额外同步
+
+### 定时器流程（co_await sleep）
+
+注册了 `schedule_after_cb` / `cancel_after_cb` 之后，`co_await sleep()` 由
+`uv_timer_t` 驱动：
+
+```text
+等待中的协程（loop 线程）               UvWorker                     libuv loop 线程
+───────────────────────────────────────────────────────────────────────────
+co_await sleep(dur)
+  ForeignExecutor::schedule(4 参)
+    → schedule_after_cb(delay_us)
+                              new uv_timer_t + uv_timer_start
+                              插入 live_timers_
+                              返回句柄
+    → 在 Slot 上注册 Terminate 处理器
+                                                      ──────▶  定时器触发
+                                                               timer_cb:
+                                                                 移出 live_timers_
+                                                                 fn(ud) → 恢复协程
+                                                                 uv_close(句柄)
+
+取消路径（任意线程）：
+  signal->emits(Terminate)
+    → Terminate 处理器
+      → cancel_after_cb(句柄)
+                              lock；在 live_timers_ 中查找
+                              入队 cancel 任务 + uv_async_send
+      → schedule_cb(resume)   ← 处理器同时投递协程恢复
+                                                      ──────▶  cancel_timer_task:
+                                                               uv_timer_stop + uv_close
+                                                               resume 任务：
+                                                               TimeAwaiter 抛 SignalException
+```
+
+定时器回调的关键点：
+- `schedule_after_cb` 在 loop 线程上执行（等待中的协程就在那里跑），初始化
+  句柄是安全的；返回 `NULL` 表示回退到等待线程。
+- `cancel_after_cb` 可能在**任意线程**执行：绝不要直接碰 libuv 句柄——入队
+  一个停止任务并唤醒 loop。`live_timers_` 集合让“已触发/未知句柄”的取消成为
+  安全 no-op。
+- libuv 句柄必须用 `uv_close` 释放（在 close 回调里 free），不能直接
+  `delete`。
+- 关闭时要在 `uv_stop` **之前**于 loop 线程上关闭所有存活定时器，这样
+  `uv_loop_close` 才能成功。
 
 ### 其他事件循环
 
@@ -371,6 +582,31 @@ worker->spawn([cb = std::move(dartFn), input]() mutable -> async_simple::coro::L
 
 详见 `examples/multi_runtime_demo`。
 
+## 在 ForeignExecutor 上 sleep 与取消
+
+`ForeignExecutor` 重写了 `schedule(Func, Duration, Slot*)`，在两种实现之间选择：
+
+- **原生定时器（首选）**：如果运行时通过 `dcb_foreign_register_ex` 注册了
+  `schedule_after_fn` / `cancel_after_fn`，sleep 由事件循环自己的定时器驱动。
+  `SignalType::Terminate` 处理器会停掉定时器并把协程恢复投递回 loop，取消
+  及时，且每个 sleep 不再消耗一个线程。
+- **等待线程回退**：没有注册定时器回调（或原生定时器启动失败）时，一个分离
+  线程在 promise 上等待，直到时长结束**或** `Terminate` 信号触发，然后通过
+  `schedule_fn` 投递协程恢复。线程持有共享状态而不是 `this`，executor 被
+  注销/销毁后挂起的 sleep 不会再碰它；注销后等待线程直接退出、不再投递。
+
+两条路径的取消行为都和 `AsioExecutor` 一样：用 `Lazy::setLazyLocal` 绑定信号
+（或者依赖 `collectAll<Terminate>` / `collectAny<Terminate>`），发出
+`SignalType::Terminate`，sleep 就会抛 `async_simple::SignalException`。
+
+两条路径都不会阻塞 loop 线程。“不要阻塞 loop 线程”的约束仍然适用于直接跑在
+loop 回调里的**同步**代码（比如 `schedule` lambda 里写
+`std::this_thread::sleep_for`），那依然会卡死事件循环。
+
+libuv demo（`examples/codegen_demo`）通过 `dcb_foreign_register_ex` 注册了
+原生定时器，`test_foreign_sleep` / `test_foreign_sleep_cancel` 覆盖了 sleep
+和取消两条路径。
+
 ## MSVC 注意事项
 
 :::danger[MSVC 19.51 协程 lambda 捕获 bug]
@@ -399,7 +635,7 @@ static Lazy<> my_coro(DartFn<...> cb, std::string input) {
 |------|------|
 | schedule 必须线程安全 | bridge 可能从任意线程调用 |
 | fn(userdata) 必须在 loop 线程执行 | 协程正确恢复的前提 |
-| 不要阻塞 loop 线程 | sleep / 同步 IO 会卡死整个事件循环 |
+| 不要阻塞 loop 线程 | 在 loop 回调里做**同步** sleep / IO 会卡死事件循环；`co_await coro::sleep(...)` 没问题（原生定时器或等待线程） |
 | std::function 要求可拷贝 | 捕获 move-only 类型时用 `shared_ptr` 包装 |
 | 注销后不再收到 schedule | `dcb_foreign_unregister` 后 executor 失效 |
 | executor 失效时 fallback | channel 的 `wake_waiter` 会 inline resume（防协程泄漏） |

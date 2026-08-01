@@ -242,6 +242,158 @@ async_simple::coro::Lazy<> delayed() {
 
 On `AsioExecutor`, `sleep` uses `asio::steady_timer` and does not occupy a thread.
 
+## Cancellation (Signal & Slot)
+
+A Dart `Future` produced by a bridge call maps to a running `Lazy` coroutine.
+There is no Dart-side handle that can "kill" that coroutine, so **the bridge
+does not support direct future cancellation**. The async-simple way is
+cooperative: a task listens on an `async_simple::Signal` through its own
+`async_simple::Slot`, and whoever wants to cancel emits
+`SignalType::Terminate`.
+
+### Cancel an async operation by id
+
+Because a Dart `Future` has no identity the C++ side can look up later, keep a
+global `task_id → Signal` registry yourself and cancel by id:
+
+```cpp
+std::mutex g_mu;
+std::unordered_map<std::string, std::shared_ptr<async_simple::Signal>> g_signals;
+
+// May be called from any thread (Signal::emits is thread-safe).
+bool cancel_task(std::string id) {
+  std::shared_ptr<async_simple::Signal> signal;
+  {
+    std::lock_guard<std::mutex> lk(g_mu);
+    auto it = g_signals.find(id);
+    if (it == g_signals.end()) return false;
+    signal = it->second;
+  }
+  return signal->emits(async_simple::SignalType::Terminate) !=
+         async_simple::SignalType::None;
+}
+```
+
+The coroutine registers its signal at startup and binds it to its own
+coroutine chain with `Lazy::setLazyLocal`, so every nested
+`async_simple::coro::sleep()` inherits the Slot and can be interrupted. The
+exception is caught at the wire boundary, so Dart sees a `StateError`:
+
+```cpp
+async_simple::coro::Lazy<std::string> cancellable_task(std::string id) {
+  auto signal = async_simple::Signal::create();
+  {
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_signals[id] = signal;
+  }
+  // RAII guard: g_signals.erase(id) on exit (normal / cancelled / failed)
+  co_return co_await cancellable_task_impl(id).setLazyLocal(signal.get());
+}
+
+async_simple::coro::Lazy<std::string> cancellable_task_impl(std::string id) {
+  try {
+    co_await async_simple::coro::sleep(std::chrono::seconds(30));
+  } catch (const async_simple::SignalException&) {
+    throw async_simple::SignalException(
+        async_simple::SignalType::Terminate, "task cancelled: " + id);
+  }
+  co_return "done:" + id;
+}
+```
+
+### The library supports cancellable sleep
+
+`async_simple::coro::sleep()` asks the executor for
+`schedule(Func, Duration, Slot*)`. `dcb::AsioExecutor` implements that
+override: when the coroutine chain has a cancellation signal bound (via
+`setLazyLocal`, or automatically inside `collectAll<Terminate>` /
+`collectAny<Terminate>`), the executor registers a `SignalType::Terminate`
+handler that cancels the underlying `asio::steady_timer`, and the sleep
+awaiter throws `SignalException` immediately instead of waiting out the
+duration. This is how `examples/codegen_demo` cancels `cancellable_task`; its
+integration tests C01-C06 cover normal completion, cancel-by-id, prompt timer
+interruption, per-id isolation, and unknown ids.
+
+If you write your own awaiters (custom IO), you can still use the docs'
+custom-awaiter pattern (`signalHelper{Terminate}.tryEmplace` /
+`checkHasCanceled`); the executor fix covers `sleep()` / `after()`.
+
+`ForeignExecutor` (non-asio event loops such as libuv) uses the loop's own
+timer when the runtime registers the optional timer callbacks
+(`dcb_foreign_register_ex`), and falls back to a waiter thread otherwise;
+cancellable sleep works in both cases. See
+[Foreign Runtime Integration](/dart_cpp_bridge/guides/advanced/foreign-runtime/).
+
+See the official docs for the full model — `collectAny` / `collectAll`
+structured cancellation, `Lazy::setLazyLocal`, `CurrentSlot`, `ForbidSignal`,
+and custom awaiters:
+[Signal and Cancellation](https://alibaba.github.io/async_simple/docs.en/SignalAndCancellation.html).
+
+## Running Multiple Tasks (collectAll / collectAny)
+
+When one bridge call needs to run several coroutines, use the `collectAll` /
+`collectAny` family instead of hand-rolling counters and promises.
+
+### collectAll — wait for every task
+
+`collectAll` starts all tasks and waits until every one finishes. Results come
+back as `Try<T>` values, so **a failing task does not throw out of
+`co_await collectAll(...)`**; each error is captured in its own `Try`.
+
+```cpp
+// Variadic: Lazy<T1>, Lazy<T2>, ... → tuple<Try<T1>, Try<T2>, ...>
+auto [a, b] = co_await async_simple::coro::collectAll(
+    compute_int(), compute_string());
+
+// Vector: std::vector<Lazy<T>> → std::vector<Try<T>>
+std::vector<async_simple::coro::Lazy<int>> input;
+input.push_back(compute_int(1));
+input.push_back(compute_int(2));
+auto results = co_await async_simple::coro::collectAll(std::move(input));
+```
+
+`collectAllPara` is the same API but submits the tasks to the current
+executor, so their suspensions can overlap. Keep in mind that the bridge's
+`AsioExecutor` is a single thread, so "para" means cooperative interleaving on
+the io thread, not multi-core parallelism.
+
+### collectAny — return the first completed task
+
+`collectAny` starts all tasks and returns as soon as the first one completes;
+the results of the others are ignored. The classic use is a timeout: race the
+real work against `async_simple::coro::sleep(...)` and pick the winner.
+
+```cpp
+auto res = co_await async_simple::coro::collectAny(
+    slow_http_fetch(), quick_cache_lookup());
+if (res.index() == 0) { /* first argument won */ }
+```
+
+### Cancelling the losers: collectAll<Terminate> / collectAny<Terminate>
+
+Both functions take a `SignalType` template parameter. When the first task
+finishes, that signal is forwarded to the remaining tasks:
+
+- `collectAny<SignalType::Terminate>` returns immediately, and the losers
+  receive the cancellation signal. Sub-tasks that use
+  `async_simple::coro::sleep(...)` (or any awaitable that checks the Slot)
+  unwind automatically with `SignalException`; for custom IO, cooperate via
+  `co_await CurrentSlot{}` and the `signalHelper` helpers (see the
+  cancellation section above).
+- `collectAll<SignalType::Terminate>` also signals the remaining tasks when
+  the first one finishes, but **still waits for all of them to finish**; the
+  cancelled tasks show up as `Try` errors in the result.
+
+`examples/codegen_demo` exercises both APIs in `collect_all_demo`,
+`collect_all_para_demo`, `collect_all_error_demo`, `collect_all_cancel_demo`,
+`collect_any_demo`, and `collect_any_cancel_demo`; integration tests D01-D06
+cover result collection, `Try` error capture, and loser cancellation.
+
+See the official docs for `collectAllPara`, `collectAllWindowed`, and the
+callback forms of `collectAny`:
+[Lazy / Collect (EN)](https://alibaba.github.io/async_simple/docs.en/Lazy.html)
+or [Lazy / Collect (中文)](https://alibaba.github.io/async_simple/docs.cn/Lazy.html).
+
 ## Blocking Operations
 
 Never perform blocking IO or long-running computation directly in an io coroutine. Use `dcb::spawn_blocking`:
@@ -290,5 +442,7 @@ This bug is unrelated to the executor; any coroutine lambda on any executor can 
 ## Further Reading
 
 - [async-simple official repository](https://github.com/alibaba/async_simple)
+- [Signal and Cancellation (official docs)](https://alibaba.github.io/async_simple/docs.en/SignalAndCancellation.html) — Signal/Slot, structured cancellation, custom awaiters
+- [Lazy / Collect (official docs)](https://alibaba.github.io/async_simple/docs.cn/Lazy.html) — collectAll / collectAny / collectAllPara / collectAllWindowed
 - [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime, spawn, channel, sleep
 - [Foreign Runtime Integration](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — ForeignExecutor, MSVC notes

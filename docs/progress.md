@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-07-25（新增 BRIDGE_DATA_CLASS / BRIDGE_OPAQUE 显式类标记）
+> 更新日期：2026-08-01（发布 1.2.0：可取消 sleep、ForeignExecutor 原生 timer、协作式取消）
 
 ---
 
@@ -12,13 +12,15 @@
 |------|------|------|
 | **Phase 1** 手写骨架 | **基本完成** | Runtime / Session / 四通道 / DartFn io 真挂起 / Dart 包 / 测试 |
 | **Phase 2** Codegen | **完成** | 工具链 + scan/标记 + SYNC/ASYNC/NORMAL + Dart 三层 + 类型校验 + 模板；见 `examples/codegen_demo` |
-| **Phase 3** Native Assets + 生产 | 未开始 | hook 只编链接；错误表、压测等 |
+| **Phase 3** Native Assets + 生产 | **核心完成** | Native Assets hook 已接线（`hook/build.dart` + `hook/link.dart`）；codegen 仍手动；1.2.0 已发布 |
 | **Phase 4** 业务接入 | 未开始 | 不替换任何已有 FRB 生产桥 |
 
-当前仓库是 **独立实验工程**，与 Breeze 等业务仓解耦。
+当前仓库已发布 **1.2.0**（`dart_cpp_bridge` 与 `dcb_gen_tool` 版本同步），
+与 Breeze 等业务仓解耦。公开 API / C ABI / wire 协议已稳定，变更需遵守
+`AGENTS.md` 的兼容性政策。
 
-Dart 测试：`cd dart && dart test`（约 **82** 例，含 DartFn sync/async、数据类、Opaque 类方法导出、析构生命周期）。  
-C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、DartFn e2e 模拟 reply）。
+Dart 测试：`cd dart && dart test`（codec + FFI 原生测试）。  
+C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、DartFn e2e、coro::sleep 可取消、ForeignExecutor 回退取消）。
 
 ---
 
@@ -37,7 +39,7 @@ C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、Dar
 | **Runtime 进程唯一** | ✅ | |
 | **Session 每 Isolate 一个** | ✅ | `SessionRegistry` + `dcb_session_open` |
 | dispose = generation，晚到 post 丢弃 | ✅ | |
-| 不做 CancelToken | ✅ | |
+| 不做运行时 CancelToken（协作式信号取消由业务层暴露） | ✅ | Signal/Slot + 可取消 sleep + `collectAny/All<Terminate>` |
 | Stream 关订阅后 add 静默丢 | ✅ | `dcb_stream_close` |
 | NativeFinalizer 自动关 session | ✅ | 对齐 FRB：日常可不手动 dispose |
 | 可选 `dispose` / 进程 `shutdown` | ✅ | worker 勿调 shutdown |

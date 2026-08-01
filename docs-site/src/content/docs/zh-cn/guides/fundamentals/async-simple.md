@@ -232,6 +232,146 @@ async_simple::coro::Lazy<> delayed() {
 
 在 `AsioExecutor` 上，`sleep` 使用 `asio::steady_timer`，不占用线程。
 
+## 取消（Signal & Slot）
+
+通过 bridge 调用生成的 Dart `Future`，对应的是一个正在运行的 `Lazy`
+协程。Dart 侧没有任何句柄可以“杀掉”这个协程，所以 **bridge 不支持直接取消
+Future**。async-simple 的取消是协作式的：任务通过自己的 `async_simple::Slot`
+监听一个 `async_simple::Signal`，需要取消时向信号发出 `SignalType::Terminate`。
+
+### 用 id 取消异步操作
+
+Dart 的 `Future` 没有 C++ 侧可以查找的标识，所以需要自己维护一个全局的
+`task_id → Signal` 注册表，再按 id 取消：
+
+```cpp
+std::mutex g_mu;
+std::unordered_map<std::string, std::shared_ptr<async_simple::Signal>> g_signals;
+
+// 任意线程都可以调用（Signal::emits 是线程安全的）。
+bool cancel_task(std::string id) {
+  std::shared_ptr<async_simple::Signal> signal;
+  {
+    std::lock_guard<std::mutex> lk(g_mu);
+    auto it = g_signals.find(id);
+    if (it == g_signals.end()) return false;
+    signal = it->second;
+  }
+  return signal->emits(async_simple::SignalType::Terminate) !=
+         async_simple::SignalType::None;
+}
+```
+
+协程启动时把自己的信号放进 map，并用 `Lazy::setLazyLocal` 把它绑定到当前
+协程链上，这样链上每个 `async_simple::coro::sleep()` 都会继承到 Slot，可以被
+打断。异常会被 wire 边界捕获，Dart 侧看到的是 `StateError`：
+
+```cpp
+async_simple::coro::Lazy<std::string> cancellable_task(std::string id) {
+  auto signal = async_simple::Signal::create();
+  {
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_signals[id] = signal;
+  }
+  // RAII guard：协程退出（正常 / 取消 / 失败）时 g_signals.erase(id)
+  co_return co_await cancellable_task_impl(id).setLazyLocal(signal.get());
+}
+
+async_simple::coro::Lazy<std::string> cancellable_task_impl(std::string id) {
+  try {
+    co_await async_simple::coro::sleep(std::chrono::seconds(30));
+  } catch (const async_simple::SignalException&) {
+    throw async_simple::SignalException(
+        async_simple::SignalType::Terminate, "task cancelled: " + id);
+  }
+  co_return "done:" + id;
+}
+```
+
+### 库已经支持可取消的 sleep
+
+`async_simple::coro::sleep()` 会调用 executor 的 `schedule(Func, Duration,
+Slot*)`。`dcb::AsioExecutor` 已经实现了这个重载：当协程链绑定了取消信号
+（通过 `setLazyLocal`，或者在 `collectAll<Terminate>` /
+`collectAny<Terminate>` 里自动绑定）时，executor 会注册一个
+`SignalType::Terminate` 处理器来取消底层的 `asio::steady_timer`，sleep 的
+awaiter 会立刻抛 `SignalException`，而不是等满整个时长。
+`examples/codegen_demo` 的 `cancellable_task` 就是这么取消的；集成测试
+C01-C06 覆盖了正常完成、按 id 取消、及时打断等待、id 隔离和未知 id。
+
+如果自己写 awaiter（自定义 IO），仍然可以用文档里的“自定义 awaiter”模式
+（`signalHelper{Terminate}.tryEmplace` / `checkHasCanceled`）；executor 的修复
+覆盖的是 `sleep()` / `after()`。
+
+`ForeignExecutor`（libuv 等非 asio 事件循环）在运行时注册了可选定时器回调
+（`dcb_foreign_register_ex`）时使用 loop 自己的定时器，否则回退到等待线程；
+两条路径下可取消 sleep 都生效。详见
+[外部运行时集成](/dart_cpp_bridge/guides/advanced/foreign-runtime/)。
+
+完整的模型（`collectAny` / `collectAll` 结构化取消、`Lazy::setLazyLocal`、
+`CurrentSlot`、`ForbidSignal`、自定义 awaiter）见官方文档：
+[Signal and Cancellation](https://alibaba.github.io/async_simple/docs.en/SignalAndCancellation.html)。
+
+## 一次运行多个任务（collectAll / collectAny）
+
+当一个 bridge 调用里需要同时跑多个协程时，直接用 `collectAll` /
+`collectAny` 家族，不要自己手写计数器和 Promise。
+
+### collectAll — 等所有任务完成
+
+`collectAll` 会启动所有任务，等到全部完成后一起返回。结果以 `Try<T>`
+形式给出，所以**某个任务抛异常不会让 `co_await collectAll(...)` 直接抛出**，
+每个错误都会被装进对应的 `Try` 里：
+
+```cpp
+// 变参形式：Lazy<T1>, Lazy<T2>, ... → tuple<Try<T1>, Try<T2>, ...>
+auto [a, b] = co_await async_simple::coro::collectAll(
+    compute_int(), compute_string());
+
+// 容器形式：std::vector<Lazy<T>> → std::vector<Try<T>>
+std::vector<async_simple::coro::Lazy<int>> input;
+input.push_back(compute_int(1));
+input.push_back(compute_int(2));
+auto results = co_await async_simple::coro::collectAll(std::move(input));
+```
+
+`collectAllPara` 接口一样，但会把任务提交到当前 executor，让它们的挂起可以
+交错。注意 bridge 的 `AsioExecutor` 是单线程的，所以这里的 "Para" 是 io
+线程上的协作式交错，不是多核并行。
+
+### collectAny — 返回第一个完成的任务
+
+`collectAny` 启动所有任务，只要有一个完成就立刻返回，其余任务的结果会被
+忽略。最经典的用法是做超时：把真正的工作和
+`async_simple::coro::sleep(...)` 放在一起赛跑，谁先完成听谁的。
+
+```cpp
+auto res = co_await async_simple::coro::collectAny(
+    slow_http_fetch(), quick_cache_lookup());
+if (res.index() == 0) { /* 第一个参数赢了 */ }
+```
+
+### 取消输家：collectAll<Terminate> / collectAny<Terminate>
+
+这两个函数都接受 `SignalType` 模板参数。当第一个任务完成时，这个信号会转发
+给其余任务：
+
+- `collectAny<SignalType::Terminate>` 立刻返回，输家会收到取消信号。任务必须
+  配合：使用 `async_simple::coro::sleep(...)`（或其他检查 Slot 的 awaitable）
+  的子任务会自动以 `SignalException` 退出；自定义 IO 则通过
+  `co_await CurrentSlot{}` 和 `signalHelper` 配合（见上面的“取消”一节）。
+- `collectAll<SignalType::Terminate>` 也会在第一个任务完成时给其余任务发
+  信号，但**仍然会等所有任务结束**；被取消的任务在结果里表现为 `Try` 错误。
+
+`examples/codegen_demo` 在 `collect_all_demo`、`collect_all_para_demo`、
+`collect_all_error_demo`、`collect_all_cancel_demo`、`collect_any_demo` 和
+`collect_any_cancel_demo` 里演示了这两种 API；集成测试 D01-D06 覆盖了结果
+收集、`Try` 错误捕获和输家取消。
+
+`collectAllPara`、`collectAllWindowed` 以及 `collectAny` 的回调形式见官方文档：
+[Lazy / Collect（英文）](https://alibaba.github.io/async_simple/docs.en/Lazy.html)
+或 [Lazy / Collect（中文）](https://alibaba.github.io/async_simple/docs.cn/Lazy.html)。
+
 ## 阻塞操作怎么办
 
 永远不要直接在 io 协程里做阻塞 IO 或长时间计算。用 `dcb::spawn_blocking`：
@@ -280,5 +420,7 @@ static async_simple::coro::Lazy<> good(
 ## 延伸阅读
 
 - [async-simple 官方仓库](https://github.com/alibaba/async_simple)
+- [Signal and Cancellation（官方文档）](https://alibaba.github.io/async_simple/docs.en/SignalAndCancellation.html) — Signal/Slot、结构化取消、自定义 awaiter
+- [Lazy / Collect（官方文档）](https://alibaba.github.io/async_simple/docs.cn/Lazy.html) — collectAll / collectAny / collectAllPara / collectAllWindowed
 - [基础运行时](/dart_cpp_bridge/guides/fundamentals/runtime/) — Runtime、spawn、channel、sleep
 - [外部运行时集成](/dart_cpp_bridge/guides/advanced/foreign-runtime/) — ForeignExecutor、MSVC 注意事项

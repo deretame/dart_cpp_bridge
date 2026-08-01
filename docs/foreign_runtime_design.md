@@ -125,6 +125,18 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 ///        返回 0 表示失败。
 uint32_t dcb_foreign_register(const char* name, dcb_schedule_fn schedule_fn, void* ctx);
 
+/// 可选：带原生定时器支持的注册（不破坏旧 API）。
+/// schedule_after_fn 在 delay_us 微秒后在 loop 线程执行 fn(userdata)，
+/// 返回不透明 timer 句柄（NULL=失败，bridge 回退等待线程）。
+/// cancel_after_fn 取消挂起的定时器：必须线程安全，对已触发/未知句柄是 no-op。
+/// 两个回调必须成对提供（可都传 NULL，等价于 dcb_foreign_register）。
+uint32_t dcb_foreign_register_ex(
+    const char* name,
+    dcb_schedule_fn schedule_fn,
+    dcb_schedule_after_fn schedule_after_fn,
+    dcb_cancel_after_fn cancel_after_fn,
+    void* ctx);
+
 /// 注销外部运行时。
 /// 注销后，任何对该运行时的 schedule 调用变为 no-op（安全降级）。
 /// 已挂起的协程不会被恢复（调用方应确保 channel 已关闭或不再等待）。
@@ -150,6 +162,23 @@ void* dcb_foreign_executor(uint32_t runtime_id);
 }
 #endif
 ```
+
+### 3.1 可选：原生定时器回调
+
+基础 C API 只会“投递任务”，不会“延时投递”，所以早期实现里
+`co_await async_simple::coro::sleep(...)` 只能靠基类/回退的“每 sleep 开一个
+等待线程”实现。为了让 libuv/glib 这类 loop 用上自己的定时器，新增一对可选
+回调（见上方 `dcb_foreign_register_ex`）：
+
+- `dcb_schedule_after_fn`：延时投递，返回不透明句柄；失败返回 NULL 时
+  bridge 保证不调用 fn 且不使用 userdata，并回退到等待线程。
+- `dcb_cancel_after_fn`：取消定时器，可被任意线程调用；实现方需要把操作
+  marshal 到自己的 loop 线程（libuv 的 timer 句柄不能跨线程操作）。
+
+`ForeignExecutor::schedule(Func, Duration, Slot*)` 优先走原生定时器；取消时
+`Terminate` 处理器负责“停 timer + 把协程恢复投递回 loop”，并通过共享 job 的
+原子标记保证恢复**恰好执行一次**（timer 正常触发与取消竞争时也不会双重
+resume）。没有注册或启动失败时回退到等待线程，两条路径都支持取消。
 
 ## 4. ForeignExecutor C++ 类
 
@@ -508,5 +537,6 @@ FetchContent_MakeAvailable(libuv)
 - **glib 适配**：`g_main_context_invoke(context, fn, userdata)` 即可实现 schedule_fn
 - **Tokio/async-std (Rust)**：通过 FFI 暴露 `tokio::spawn` 作为 schedule_fn
 - **多 ForeignExecutor 并行**：注册表支持多个外部运行时同时存在
-- **定时器支持**：ForeignExecutor 可扩展 `schedule(Func, Duration)` 委托给 `uv_timer_t`
+- ~~定时器支持~~：**已实现**——`dcb_foreign_register_ex` + `dcb_schedule_after_fn` /
+  `dcb_cancel_after_fn`，libuv demo 用 `uv_timer_t` 对接
 - **线程池模式**：对于没有事件循环的场景，提供 `dcb_foreign_register_threadpool` 简化版

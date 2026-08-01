@@ -24,7 +24,7 @@
 | 注解属性 | 对外宏 `BRIDGE_SYNC` / `DCB_*` 等；**非 codegen 编译时宏为空**。Codegen（libclang）路径展开为 `__attribute__((annotate("bridge::*")))`（未知 `[[bridge::*]]` 会被 clang 丢掉、AST 不可见） |
 | 错误（C++） | wire 边界统一 `catch (const std::exception&)` 再 `catch (...)`，编成错误帧；**异常永不穿出 FFI** |
 | 错误（Dart） | 公用库对齐主流用法：**直接抛异常**（`Future` / `Stream` error），不做 `Result` 双模式 |
-| 取消 | **不做**任何 CancelToken / 通用 async 取消；Dart 普通 `Future` 本身也不可取消 |
+| 取消 | 无运行时 CancelToken / 通用取消协议；提供协作式信号取消（async-simple Signal/Slot + 可取消 sleep），由业务层暴露（如 id→Signal map + cancelTask） |
 | Stream 与 Dart 关闭 | Dart 关闭订阅后，C++ 侧 `StreamSink::add` **发送失败则静默丢弃**，业务逻辑**照常跑完**；**不**由 Dart 主动打断 C++ 操作 |
 | dispose | 仅生命周期：`generation` / 会话失效后 **禁止再 post 进 isolate**（丢弃晚到结果）；这不是 cancel API |
 | Codegen 工具链 | **Python 解释器 + libclang 均为远端下载的固定版本**（URL + hash 锁定）；**禁止**使用本机 Python、本机 LLVM/系统 libclang |
@@ -245,7 +245,7 @@ FRB 的 **RPC 主路径**是 **Completer + port**（要返回值/错误）。
 - 不把调度器做成多线程 worker 池（默认单线程；多线程事件循环非目标）；
 - 不把 asio/async-simple/STL **实现细节**当作线协议（协议按逻辑类型编）；
 - 不支持任意模板/重载/默认参数作为稳定 API 面；
-- **不做** CancelToken / Dart 主动取消 C++ 任务；
+- 不做运行时 CancelToken / Dart `cancel(request_id)` 协议；提供协作式信号取消（Signal/Slot、可取消 sleep、`collectAny/All<Terminate>`），由业务层暴露；
 - 不做 Dart `Result` 双模式（失败即抛异常）；
 - **不**在 `flutter build` hook 里隐式 codegen。
 
@@ -536,12 +536,17 @@ Dart cancel:  仅使 sink 失效；C++ add 静默丢弃；业务不中断
 
 可选补充：全局 void 事件可用 `NativeCallable.listener`；**主推仍是 StreamSink + port**，与 FRB 一致、能带类型载荷与错误。
 
-### 4.5 不做取消；句柄与错误
+### 4.5 协作式取消（无运行时 CancelToken）；句柄与错误
 
-#### 取消（明确不做）
+#### 取消（协作式；无运行时 CancelToken）
 
-- **不提供** CancelToken、不提供 Dart `cancel(request_id)` 去打断 C++。
-- 理由：Dart 普通 `Future` 本身不支持取消；做原生取消链路成本高、与主流 async 用法不一致，吃力不讨好。
+- **不提供**运行时 CancelToken、不提供 Dart `cancel(request_id)` 协议。取消是
+  协作式的：业务代码把 `async_simple::Signal` 放进全局 map，暴露
+  `cancelTask(id)` 之类的 API 并发出 `SignalType::Terminate`；协程在检查点或
+  可取消 sleep（`AsioExecutor` / `ForeignExecutor` 原生 timer 或线程回退）处
+  抛 `SignalException`，wire 边界将其转成 Dart `StateError`。
+- 理由：Dart 普通 `Future` 本身不支持强杀；取消必须协作（任务在检查点响应），
+  运行时只提供机制，取消语义归业务层。
 - Dart 侧若不再 `await` 或 discard Future：等价于**忽略结果**；C++ 仍跑完，`try_post` 时若 Completer 已无或 session 已 dispose 则丢弃。
 - **Stream：** 唯一与「关闭」相关的行为是订阅结束 → sink 不再投递；**仍然不**取消 C++ 侧下载/循环等。
 
@@ -980,7 +985,7 @@ abstract final class NativeBridge {
 - 错误码表、Handle + Finalizer；`StreamSink` 多线程 add 压测
 - 拷贝与大 blob 策略
 - 压测：并发、热重启、dispose 竞态、listener 泄漏（若使用）
-- **不含** CancelToken / 通用取消
+- **不含**运行时 CancelToken / 通用取消协议（协作式信号取消由业务层暴露）
 
 ### Phase 4 — 再谈接入业务
 
@@ -1039,7 +1044,7 @@ native_bridge/                 # 或拆成 runtime 库 + examples 仓库
 | 未知属性告警 / `-Werror` | `BRIDGE_*` 宏，非 codegen 为空 |
 | listener 未 close | 包装强制 close；文档与 lint |
 | 异常出 FFI | 边界 `catch` + `catch (...)`；策略全库一致 |
-| 误做全套取消 | 文档写死不做；review 拒绝 CancelToken API |
+| 误做运行时 CancelToken / 强制取消 | 取消必须协作式；review 拒绝“强杀协程”类 API（Signal/Slot 机制除外） |
 
 ---
 
@@ -1065,7 +1070,7 @@ native_bridge/                 # 或拆成 runtime 库 + examples 仓库
 - **工具链**：codegen = **手动** + **远端固定版 Python/libclang**（每次 hash 校验，失败重下，不用本机）；hook = **本机 C++ 编译器**只编链接。  
 - **依赖**：CMake 库 FetchContent，**暴露 asio + async-simple**；**examples 模板**给用户改。  
 - **StreamSink**：io 线程与 pool 线程均可 `add`；Dart 关流后静默丢。  
-- **不做取消**；dispose 用 generation 丢弃晚到 post。生成物是否进 Git **用户自定**。  
+- **不做运行时取消协议**（协作式信号取消由业务层实现）；dispose 用 generation 丢弃晚到 post。生成物是否进 Git **用户自定**。  
 - **listener** 替不了 RPC / 类型化 Stream。
 
 先在独立仓库把 Phase 1–2 做稳，再考虑与任何业务工程集成。
