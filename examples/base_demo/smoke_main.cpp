@@ -2,6 +2,7 @@
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/foreign_executor.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
@@ -9,6 +10,7 @@
 #include <asio/post.hpp>
 
 #include <async_simple/Try.h>
+#include <async_simple/Signal.h>
 #include <async_simple/coro/Lazy.h>
 #include <async_simple/coro/Sleep.h>
 #include <async_simple/coro/SyncAwait.h>
@@ -562,6 +564,194 @@ void test_coro_sleep_no_block_io() {
   std::printf("coro::sleep (io not blocked, ~%lldms) ok\n", elapsed);
 }
 
+struct CancellableSleepCtx {
+  std::shared_ptr<std::promise<std::string>> done;
+  std::shared_ptr<async_simple::Signal> signal;
+  std::chrono::steady_clock::time_point t0;
+};
+
+// coro::sleep must be interruptible when the coroutine chain is bound to a
+// cancellation signal (Lazy::setLazyLocal + SignalType::Terminate). The 4-arg
+// schedule(Func, Duration, Slot*) override in AsioExecutor registers a
+// timer-cancelling handler on the Slot, so the sleeping coroutine throws
+// SignalException promptly instead of waiting out the full 10s.
+async_simple::coro::Lazy<> cancellable_sleep_coro(
+    std::shared_ptr<CancellableSleepCtx> ctx) {
+  try {
+    co_await async_simple::coro::sleep(std::chrono::seconds(10))
+        .setLazyLocal(ctx->signal.get());
+    ctx->done->set_value("not-cancelled");
+  } catch (const async_simple::SignalException& e) {
+    ctx->done->set_value(e.what());
+  }
+  co_return;
+}
+
+void test_coro_sleep_cancellation() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto ctx = std::make_shared<CancellableSleepCtx>();
+  ctx->done = std::make_shared<std::promise<std::string>>();
+  ctx->signal = async_simple::Signal::create();
+  ctx->t0 = std::chrono::steady_clock::now();
+  auto fut = ctx->done->get_future();
+
+  Runtime::instance().spawn_on_asio(
+      [ctx]() { return cancellable_sleep_coro(ctx); });
+
+  // Let the coroutine enter the timer wait, then cancel it.
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ctx->signal->emits(async_simple::SignalType::Terminate);
+
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("coro::sleep cancellation timed out");
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - ctx->t0)
+                     .count();
+  const auto msg = fut.get();
+  Runtime::instance().stop();
+  if (msg.find("timer is canceled") == std::string::npos) {
+    fail("coro::sleep did not throw SignalException on cancel");
+  }
+  if (elapsed >= 2000) {
+    fail("coro::sleep cancellation not prompt");
+  }
+  std::printf("coro::sleep cancellation (cancelled after ~%lldms) ok\n",
+              elapsed);
+}
+
+struct ForeignSleepCtx {
+  std::shared_ptr<std::promise<std::string>> done;
+  std::shared_ptr<async_simple::Signal> signal;
+  std::chrono::steady_clock::time_point t0;
+};
+
+// A ForeignExecutor without native timer callbacks must fall back to the
+// waiter-thread implementation, and cancellation must still work there.
+async_simple::coro::Lazy<> foreign_sleep_coro(
+    std::shared_ptr<ForeignSleepCtx> ctx) {
+  try {
+    co_await async_simple::coro::sleep(std::chrono::seconds(10))
+        .setLazyLocal(ctx->signal.get());
+    ctx->done->set_value("not-cancelled");
+  } catch (const async_simple::SignalException& e) {
+    ctx->done->set_value(e.what());
+  }
+  co_return;
+}
+
+void test_foreign_executor_sleep_fallback_cancel() {
+  asio::io_context ioc;
+  auto guard = std::make_shared<
+      asio::executor_work_guard<asio::io_context::executor_type>>(
+      ioc.get_executor());
+  std::thread loop([&ioc] { ioc.run(); });
+
+  // Minimal "foreign loop": schedule_fn just posts to an io_context.
+  dcb::ForeignExecutor executor(
+      "smoke-foreign",
+      [](void (*fn)(void*), void* userdata, void* ctx) {
+        asio::post(*static_cast<asio::io_context*>(ctx),
+                   [fn, userdata] { fn(userdata); });
+      },
+      &ioc);
+  executor.set_loop_thread_id(loop.get_id());
+
+  auto ctx = std::make_shared<ForeignSleepCtx>();
+  ctx->done = std::make_shared<std::promise<std::string>>();
+  ctx->signal = async_simple::Signal::create();
+  ctx->t0 = std::chrono::steady_clock::now();
+  auto fut = ctx->done->get_future();
+
+  executor.schedule([&executor, ctx] {
+    foreign_sleep_coro(ctx).via(&executor).start([](auto&&) {});
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ctx->signal->emits(async_simple::SignalType::Terminate);
+
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    guard->reset();
+    loop.join();
+    fail("ForeignExecutor fallback sleep cancellation timed out");
+  }
+  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - ctx->t0)
+                     .count();
+  const auto msg = fut.get();
+  guard->reset();
+  loop.join();
+  if (msg.find("timer is canceled") == std::string::npos) {
+    fail("ForeignExecutor fallback sleep did not throw SignalException");
+  }
+  if (elapsed >= 2000) {
+    fail("ForeignExecutor fallback sleep cancellation not prompt");
+  }
+  std::printf("ForeignExecutor fallback sleep cancellation (~%lldms) ok\n",
+              elapsed);
+}
+
+struct PendingForeignSleepCtx {
+  std::shared_ptr<async_simple::Signal> signal;
+  std::atomic<bool> entered{false};
+};
+
+// Marks `entered` right before suspending in sleep, so the test can wait
+// until the waiter thread exists before destroying the executor.
+async_simple::coro::Lazy<> foreign_sleep_pending_coro(
+    std::shared_ptr<PendingForeignSleepCtx> ctx) {
+  ctx->entered.store(true, std::memory_order_release);
+  co_await async_simple::coro::sleep(std::chrono::seconds(10))
+      .setLazyLocal(ctx->signal.get());
+  co_return;
+}
+
+// A ForeignExecutor may be destroyed while a sleep is pending: the waiter
+// thread holds shared state (not `this`). When Terminate wakes it afterwards,
+// it must see that the executor is gone and exit without posting — no
+// use-after-free.
+void test_foreign_executor_destroy_with_pending_sleep() {
+  asio::io_context ioc;
+  auto guard = std::make_shared<
+      asio::executor_work_guard<asio::io_context::executor_type>>(
+      ioc.get_executor());
+  std::thread loop([&ioc] { ioc.run(); });
+
+  auto* executor = new dcb::ForeignExecutor(
+      "smoke-foreign-destroy",
+      [](void (*fn)(void*), void* userdata, void* ctx) {
+        asio::post(*static_cast<asio::io_context*>(ctx),
+                   [fn, userdata] { fn(userdata); });
+      },
+      &ioc);
+  executor->set_loop_thread_id(loop.get_id());
+
+  auto ctx = std::make_shared<PendingForeignSleepCtx>();
+  ctx->signal = async_simple::Signal::create();
+  executor->schedule([executor, ctx] {
+    foreign_sleep_pending_coro(ctx).via(executor).start([](auto&&) {});
+  });
+
+  // Wait until the coroutine entered the sleep, then give await_suspend time
+  // to spawn the waiter thread and register the Terminate handler.
+  while (!ctx->entered.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  delete executor;  // deactivates; the pending waiter must not touch `this`
+
+  // Wake the waiter: it sees the executor is gone and exits without posting.
+  ctx->signal->emits(async_simple::SignalType::Terminate);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  guard->reset();
+  loop.join();
+  std::printf("ForeignExecutor destroy with pending sleep ok\n");
+}
+
 }  // namespace
 
 int main() {
@@ -579,6 +769,9 @@ int main() {
   test_spawn_blocking_void();
   test_spawn_blocking_void_exception();
   test_coro_sleep_no_block_io();
+  test_coro_sleep_cancellation();
+  test_foreign_executor_sleep_fallback_cancel();
+  test_foreign_executor_destroy_with_pending_sleep();
 
   Runtime::instance().start();
   g_add_done = std::make_shared<std::promise<int>>();

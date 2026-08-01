@@ -1,6 +1,7 @@
 #pragma once
 
 #include <async_simple/Executor.h>
+#include <async_simple/Signal.h>
 
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
@@ -9,6 +10,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
+#include <iostream>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -105,12 +108,64 @@ class AsioExecutor : public async_simple::Executor {
   // thread and sleeps on it). The 2-arg schedule(Func, Duration) inherited
   // from the base delegates here, so both paths use the timer.
   //
-  // `schedule_info` (priority) and `slot` (cancellation) are ignored for now;
-  // cancellation support can be hooked onto `slot` later.
+  // When `slot` is non-null (async_simple::coro::sleep inherits the Slot from
+  // the coroutine's signal chain, e.g. via Lazy::setLazyLocal), a
+  // SignalType::Terminate handler is registered that cancels the timer.
+  // TimeAwaiter::await_resume() then sees the fired signal and throws
+  // SignalException, so `co_await async_simple::coro::sleep(...)` is
+  // interruptible by cancellation. The handler is consumed/cleared by
+  // TimeAwaiter's checkHasCanceled, so no explicit cleanup is needed here.
+  //
+  // `schedule_info` (priority) is ignored: asio timers fire on the io thread
+  // regardless.
   void schedule(Func func, Duration dur, uint64_t /*schedule_info*/,
-                async_simple::Slot* /*slot*/) override {
+                async_simple::Slot* slot) override {
     auto timer = std::make_shared<asio::steady_timer>(ioc_, dur);
-    timer->async_wait([fn = std::move(func), timer](const asio::error_code&) { fn(); });
+    if (slot != nullptr) {
+      const bool registered =
+          async_simple::signalHelper{async_simple::SignalType::Terminate}
+              .tryEmplace(slot, [timer](async_simple::SignalType,
+                                        async_simple::Signal*) {
+                // Runs on the thread that emits the signal (e.g. a Dart
+                // caller thread); asio timer cancellation is thread-safe.
+                try {
+                  timer->cancel();
+                } catch (const std::exception& e) {
+                  // Signal handlers run inside Signal::emits() (noexcept).
+                  // A failed cancel is not fatal: the timer fires normally and
+                  // TimeAwaiter::await_resume() still throws, but log it so
+                  // the failure is not invisible.
+                  std::cerr << "[dcb] AsioExecutor: failed to cancel sleep "
+                               "timer from signal handler: "
+                            << e.what() << std::endl;
+                } catch (...) {
+                  std::cerr << "[dcb] AsioExecutor: failed to cancel sleep "
+                               "timer from signal handler: unknown exception"
+                            << std::endl;
+                }
+              });
+      if (!registered) {
+        // The signal fired between TimeAwaiter::await_ready() and our
+        // emplace. Cancel immediately; the pending handler below resumes the
+        // coroutine and await_resume() throws SignalException.
+        try {
+          timer->cancel();
+        } catch (const std::exception& e) {
+          std::cerr << "[dcb] AsioExecutor: failed to cancel sleep timer "
+                       "(signal fired before emplace): "
+                    << e.what() << std::endl;
+        } catch (...) {
+          std::cerr << "[dcb] AsioExecutor: failed to cancel sleep timer "
+                       "(signal fired before emplace): unknown exception"
+                    << std::endl;
+        }
+      }
+    }
+    timer->async_wait([fn = std::move(func), timer](const asio::error_code&) {
+      // Resume even when the timer was cancelled (operation_aborted):
+      // TimeAwaiter::await_resume() decides whether to throw.
+      fn();
+    });
   }
 
  private:

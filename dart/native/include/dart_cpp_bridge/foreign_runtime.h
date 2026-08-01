@@ -35,6 +35,29 @@ extern "C" {
 ///   ctx      - context pointer passed during registration
 typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 
+/// Optional delayed-schedule callback type (native timer support).
+///
+/// A foreign runtime that has its own timer facility (libuv uv_timer_t,
+/// glib g_timeout_add, ...) can register this pair so that
+/// `co_await async_simple::coro::sleep(...)` on the ForeignExecutor uses a
+/// real event-loop timer instead of the thread-based fallback.
+///
+/// schedule_after_fn:
+///   Schedule `fn(userdata)` on the loop thread after at least `delay_us`
+///   microseconds. Returns an opaque timer handle, or NULL on failure
+///   (the bridge then falls back to a waiter thread; in that case `fn` is
+///   guaranteed NOT to be called and `userdata` must not be used).
+///   Invoked on the loop thread when the awaiting coroutine runs there
+///   (which is the case for co_await sleep on a ForeignExecutor).
+///
+/// cancel_after_fn:
+///   Cancel a pending timer. Must be safe to call from ANY thread
+///   (implementations should marshal to their loop thread if needed) and
+///   must be a safe no-op for handles that already fired or are unknown.
+typedef void* (*dcb_schedule_after_fn)(
+    void (*fn)(void*), void* userdata, int64_t delay_us, void* ctx);
+typedef void (*dcb_cancel_after_fn)(void* timer_handle, void* ctx);
+
 /// Register an external runtime.
 ///
 /// Parameters:
@@ -45,6 +68,22 @@ typedef void (*dcb_schedule_fn)(void (*fn)(void*), void* userdata, void* ctx);
 /// Returns: runtime_id (>0), used later to fetch the executor or unregister.
 ///          Returns 0 on failure.
 DCB_API uint32_t dcb_foreign_register(const char* name, dcb_schedule_fn schedule_fn, void* ctx);
+
+/// Register an external runtime with optional native timer support.
+///
+/// Same as dcb_foreign_register, plus:
+///   schedule_after_fn - delayed-schedule callback (may be NULL)
+///   cancel_after_fn   - timer cancel callback (may be NULL)
+///
+/// The two timer callbacks must be provided together (both NULL means "no
+/// native timer"; the bridge uses the thread-based fallback for sleep).
+/// Returns runtime_id (>0), or 0 on failure.
+DCB_API uint32_t dcb_foreign_register_ex(
+    const char* name,
+    dcb_schedule_fn schedule_fn,
+    dcb_schedule_after_fn schedule_after_fn,
+    dcb_cancel_after_fn cancel_after_fn,
+    void* ctx);
 
 /// Unregister an external runtime.
 /// After unregistering, any schedule call targeting this runtime becomes a no-op (safe degradation).

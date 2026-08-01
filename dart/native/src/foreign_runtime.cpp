@@ -33,12 +33,26 @@ std::uint32_t g_foreign_next_id = 1;
 extern "C" {
 
 DCB_API uint32_t dcb_foreign_register(const char* name, dcb_schedule_fn schedule_fn, void* ctx) {
+  return dcb_foreign_register_ex(name, schedule_fn, nullptr, nullptr, ctx);
+}
+
+DCB_API uint32_t dcb_foreign_register_ex(
+    const char* name,
+    dcb_schedule_fn schedule_fn,
+    dcb_schedule_after_fn schedule_after_fn,
+    dcb_cancel_after_fn cancel_after_fn,
+    void* ctx) {
   if (!schedule_fn) return 0;
+  // Timer callbacks must be provided as a pair.
+  if ((schedule_after_fn == nullptr) != (cancel_after_fn == nullptr)) {
+    return 0;
+  }
 
   std::lock_guard lock(dcb::g_foreign_mu);
   auto id = dcb::g_foreign_next_id++;
   auto executor = std::make_unique<dcb::ForeignExecutor>(
-      name ? name : "foreign", schedule_fn, ctx);
+      name ? name : "foreign", schedule_fn, schedule_after_fn, cancel_after_fn,
+      ctx);
 
   dcb::g_foreign_registry[id] = dcb::ForeignEntry{std::move(executor)};
   return id;
