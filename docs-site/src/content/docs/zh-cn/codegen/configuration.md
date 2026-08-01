@@ -75,6 +75,26 @@ dcb_gen_tool generate dart_cpp_bridge.yaml
 
 ## 头文件组织建议
 
+`dcb_gen_tool` 使用 libclang 解析被扫描的头文件——**包括它们传递包含的所有
+头文件**。libclang 解析不了的头文件不一定会让生成过程报错，而是可能把无法
+解析的模板类型（如 `std::vector<T>`、`std::unordered_map<K,V>`）静默降级为
+`int`，生成的绑定要到 C++/Dart 编译阶段才暴露问题。
+
+### include 白名单
+
+`native/api/*.h` 只允许 include：
+
+- C++ 标准库头文件（用于签名中的类型）；
+- `dart_cpp_bridge/*` 运行时头文件；
+- `BRIDGE_ASYNC` 返回类型需要的 `async_simple/coro/Lazy.h`（真实依赖未拉取时由
+  `dcb_gen_tool` 的 stubs 兜底）。
+
+**不要**在被扫描的头文件中 include 其他三方库或项目依赖头文件——包括只存在于
+构建环境中的头（`build/_deps`、内置 SDK 等）。重型 include 和实现请放到
+`native/api_impl/*.cpp`，codegen 不会解析该目录。
+
+### 声明规范
+
 - 被 `scan` 扫描到的头文件应只放**声明**，不要写函数实现（不要把 `.cpp` 内容贴进头文件）。
 - **数据类**和**不透明类**必须直接定义在头文件内；codegen 只解析被扫描的头文件，不会解析头文件外部定义的类。
 - 自由函数、静态方法、构造函数等实现请放在对应的 `.cpp` 文件中。

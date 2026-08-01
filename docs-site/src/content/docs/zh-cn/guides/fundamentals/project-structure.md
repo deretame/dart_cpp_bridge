@@ -63,6 +63,11 @@ dart run bin/dcb_gen_tool.dart generate ../path/to/dart_cpp_bridge.yaml
 
 ## 注意事项
 
+- `native/api/*.h` 及其传递包含的所有头文件都会参与 codegen 解析。被扫描的
+  头文件只保留 include 白名单（C++ 标准库、`dart_cpp_bridge/*`、
+  `async_simple/coro/Lazy.h`），实现和三方库 include 放在
+  `native/api_impl/*.cpp`。参见
+  [配置 → 头文件组织](/dart_cpp_bridge/codegen/configuration/)。
 - 不要手动修改 `native/generated/` 和 `lib/src/native_gen/` 里的文件，重新生成会覆盖
 - 如果生成输出路径不满意，可以在 `dart_cpp_bridge.yaml` 里调整
 - 业务代码应放在 `native/api_impl/` 或 `native/api/` 中，保持生成层不依赖具体实现

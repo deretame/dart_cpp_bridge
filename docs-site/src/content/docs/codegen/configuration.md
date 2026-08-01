@@ -75,6 +75,28 @@ The first run automatically downloads and caches the Python + libclang toolchain
 
 ## Header Organization Recommendations
 
+`dcb_gen_tool` parses scanned headers with libclang — **including every header
+they include transitively**. A header that libclang cannot resolve does not
+always stop generation; it can silently degrade unresolved template types
+(e.g. `std::vector<T>`, `std::unordered_map<K,V>`) to `int`, producing
+bindings that only fail later at C++/Dart compile time.
+
+### Include Whitelist
+
+`native/api/*.h` may only include:
+
+- C++ standard library headers (for signature types);
+- `dart_cpp_bridge/*` runtime headers;
+- `async_simple/coro/Lazy.h` for `BRIDGE_ASYNC` return types (backed by
+  `dcb_gen_tool` stubs when the real dependency has not been fetched yet).
+
+Do **not** include other third-party or dependency headers in scanned headers —
+including headers that only exist in your build environment (`build/_deps`,
+vendored SDKs, ...). Move heavy includes and implementations into
+`native/api_impl/*.cpp`, which codegen never parses.
+
+### Declaration Hygiene
+
 - Headers scanned by `scan` should contain **declarations only**; do not put function implementations in them (do not paste `.cpp` content into the header).
 - **Data classes** and **opaque classes** must be defined directly in the header; codegen only parses scanned headers and will not see classes defined elsewhere.
 - Free functions, static methods, constructors, and other implementations should go in the corresponding `.cpp` files.
