@@ -26,6 +26,12 @@ description: "集中收录常见问题：codegen 约束、线程规则、取消�
 | 使用 `RescheduleLazy::detach()` | 异常在 io 线程上抛出，直接崩溃进程 | 使用 `dcb::spawn_detached` |
 | MSVC 下用协程 lambda | 挂起恢复后捕获的变量被破坏 | 改用静态协程函数或显式传参。参见 [常见错误](../fundamentals/async-simple/#常见错误) |
 
+## async-simple 与 uthread
+
+| 坑 | 后果 | 正确做法 |
+|---|---|---|
+| 在业务代码里使用 async-simple 的 uthread（纤程） | uthread 不参与 dart_cpp_bridge 的构建（CMake `EXCLUDE_FROM_ALL`），也不支持 Windows；其 Darwin 汇编按 `CMAKE_SYSTEM_PROCESSOR` 选择，macOS 跨架构 slice 会编译失败 | 只用 async-simple 的头文件部分（`Lazy` / `Executor` / `Promise` / `Signal`）；需要纤程时直接使用 Boost.Fiber。参见 [async-simple 协程入门](../fundamentals/async-simple/#dont-use-uthread-use-boostfiber) |
+
 ## 取消与 Stream
 
 | 坑 | 后果 | 正确做法 |

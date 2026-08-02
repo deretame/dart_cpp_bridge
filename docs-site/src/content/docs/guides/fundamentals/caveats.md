@@ -27,6 +27,12 @@ page stays a lightweight index.
 | `RescheduleLazy::detach()` | Exceptions surface on the io thread and crash the process | Use `dcb::spawn_detached` |
 | Coroutine lambdas on MSVC | Captured values are corrupted after suspension | Use static coroutine functions or pass values explicitly. See [Common Mistakes](../fundamentals/async-simple/#common-mistakes) |
 
+## async-simple & uthread
+
+| Gotcha | What happens | Fix |
+|---|---|---|
+| Using async-simple's `uthread` fibers in business code | uthread is not built or linked by dart_cpp_bridge (CMake `EXCLUDE_FROM_ALL`), is not supported on Windows, and its Darwin assembly selection ignores `CMAKE_OSX_ARCHITECTURES`, breaking macOS cross-architecture slices | Use only async-simple's header-only surface (`Lazy` / `Executor` / `Promise` / `Signal`); if you need fibers, use Boost.Fiber. See [Don't use uthread](../fundamentals/async-simple/#dont-use-uthread-use-boostfiber) |
+
 ## Cancellation & Streams
 
 | Gotcha | What happens | Fix |

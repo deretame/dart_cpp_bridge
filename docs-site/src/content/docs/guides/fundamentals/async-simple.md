@@ -12,6 +12,25 @@ async-simple is a C++20 coroutine library. The bridge mainly uses two concepts:
 - **`async_simple::coro::Lazy<T>`** — A lazily started coroutine task. A function returning `Lazy<T>` does not execute immediately when called; it only starts when awaited with `co_await`, `.start()`, or `syncAwait()`.
 - **`async_simple::Executor`** — The coroutine scheduler. `dcb::AsioExecutor` and `dcb::ForeignExecutor` are both implementations. After a coroutine suspends, the executor decides which thread resumes it.
 
+## Don't use uthread (use Boost.Fiber)
+
+async-simple also ships an optional stackful-fiber implementation named
+**uthread**. `dart_cpp_bridge` deliberately does **not** build or link it:
+
+- The runtime only uses async-simple's header-only surface (`Lazy`,
+  `Executor`, `Promise`/`Future`, `Signal`); no bridge code references
+  uthread.
+- The uthread static/shared targets are excluded from the CMake build
+  (`EXCLUDE_FROM_ALL`) in `dart/native/CMakeLists.txt`.
+- uthread is not supported on Windows.
+- Its Darwin assembly sources are selected by `CMAKE_SYSTEM_PROCESSOR` and
+  ignore `CMAKE_OSX_ARCHITECTURES`, which breaks macOS cross-architecture
+  slices.
+
+If your business code needs fibers, use a dedicated fiber library such as
+**Boost.Fiber** instead. Do not include `async_simple/uthread/*` headers and
+do not link `async_simple` / `async_simple_static`.
+
 ## Writing a Coroutine
 
 A business C++ function just needs to return `Lazy<T>`, use `co_await` to wait for other async operations, and use `co_return` to return results:
