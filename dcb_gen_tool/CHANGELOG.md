@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.4
+
+- Version aligned with `dart_cpp_bridge` 1.2.4 (async_simple uthread build
+  fix; no tooling changes).
+
 ## 1.2.3
 
 - Version aligned with `dart_cpp_bridge` 1.2.3 (macOS per-architecture build

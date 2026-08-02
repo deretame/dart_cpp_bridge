@@ -1,3 +1,13 @@
+## 1.2.4
+
+- Fix macOS cross-architecture builds: async_simple's uthread static/shared
+  targets (Darwin assembly selected by `CMAKE_SYSTEM_PROCESSOR`, which
+  ignores `CMAKE_OSX_ARCHITECTURES`) are now excluded from the default CMake
+  build. The runtime only uses the header-only target, so the unused uthread
+  assembly is no longer compiled — previously building an x86_64 slice on an
+  arm64 host (or vice versa) compiled the wrong `.S` file and failed.
+- Version aligned with `dcb_gen_tool` 1.2.4 (no tooling changes).
+
 ## 1.2.3
 
 - Fix macOS universal-binary builds: `DcbCMakeBuilder` now passes the

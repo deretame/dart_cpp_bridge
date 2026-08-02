@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-08-02（发布 1.2.3：`DcbCMakeBuilder` 在 macOS 按 hooks 目标架构构建，修复 Flutter universal binary lipo 失败；1.2.2 已发布：修复 `file://` rootUri 路径解析；1.2.1 已于 2026-08-01 发布）
+> 更新日期：2026-08-02（发布 1.2.4：不再编译 async_simple uthread（EXCLUDE_FROM_ALL），修复 macOS 跨架构 slice 汇编选错；1.2.3 已发布：macOS 按目标架构构建；1.2.2 已发布：修复 `file://` rootUri 路径解析；1.2.1 已于 2026-08-01 发布）
 
 ---
 
@@ -12,10 +12,10 @@
 |------|------|------|
 | **Phase 1** 手写骨架 | **基本完成** | Runtime / Session / 四通道 / DartFn io 真挂起 / Dart 包 / 测试 |
 | **Phase 2** Codegen | **完成** | 工具链 + scan/标记 + SYNC/ASYNC/NORMAL + Dart 三层 + 类型校验 + 模板；见 `examples/codegen_demo` |
-| **Phase 3** Native Assets + 生产 | **核心完成** | Native Assets hook 已接线（`hook/build.dart` + `hook/link.dart`）；codegen 仍手动；1.2.3 已发布 |
+| **Phase 3** Native Assets + 生产 | **核心完成** | Native Assets hook 已接线（`hook/build.dart` + `hook/link.dart`）；codegen 仍手动；1.2.4 已发布 |
 | **Phase 4** 业务接入 | 未开始 | 不替换任何已有 FRB 生产桥 |
 
-当前仓库已发布 **1.2.3**（`dart_cpp_bridge` 与 `dcb_gen_tool` 版本同步），
+当前仓库已发布 **1.2.4**（`dart_cpp_bridge` 与 `dcb_gen_tool` 版本同步），
 与 Breeze 等业务仓解耦。公开 API / C ABI / wire 协议已稳定，变更需遵守
 `AGENTS.md` 的兼容性政策。
 
