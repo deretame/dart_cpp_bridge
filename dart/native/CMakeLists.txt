@@ -66,8 +66,12 @@ target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECAT
 # --- async-simple (header-only) ---
 # MakeAvailable runs its CMakeLists, providing the official
 # async_simple_header_only INTERFACE target (include dirs + Threads +
-# cxx_std_20). On Windows with UTHREAD=OFF, async_simple degrades to a
-# pure INTERFACE library with zero extra compilation overhead.
+# cxx_std_20). The upstream project also defines uthread static/shared
+# targets whose Darwin assembly is selected by CMAKE_SYSTEM_PROCESSOR (it
+# ignores CMAKE_OSX_ARCHITECTURES), which breaks macOS cross-architecture
+# slices. The runtime only uses the header-only target and never uthread —
+# uthread is also not supported on Windows; use Boost.Fiber if fibers are
+# needed — so keep the uthread libraries out of the default build.
 set(ASYNC_SIMPLE_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 set(ASYNC_SIMPLE_BUILD_DEMO_EXAMPLE OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
@@ -78,6 +82,15 @@ FetchContent_Declare(
   GIT_SUBMODULES  ""
 )
 FetchContent_MakeAvailable(async_simple)
+foreach(_dcb_uthread_target async_simple async_simple_static)
+  if(TARGET "${_dcb_uthread_target}")
+    get_target_property(_dcb_uthread_type "${_dcb_uthread_target}" TYPE)
+    if(NOT _dcb_uthread_type STREQUAL "INTERFACE_LIBRARY")
+      set_target_properties("${_dcb_uthread_target}"
+        PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    endif()
+  endif()
+endforeach()
 
 # --- moodycamel::ConcurrentQueue (header-only, lock-free MPMC queue) ---
 FetchContent_Declare(
