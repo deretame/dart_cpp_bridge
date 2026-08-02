@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-08-02（发布 1.2.2：修复 `dcb_gen_tool init` 模板与 codegen_demo 的 `file://` rootUri 路径解析；1.2.1 已于 2026-08-01 发布）
+> 更新日期：2026-08-02（发布 1.2.2：修复 `dcb_gen_tool init` 模板与 codegen_demo 的 `file://` rootUri 路径解析；`DcbCMakeBuilder` 在 macOS 按 hooks 目标架构构建，修复 Flutter universal binary lipo 失败；1.2.1 已于 2026-08-01 发布）
 
 ---
 

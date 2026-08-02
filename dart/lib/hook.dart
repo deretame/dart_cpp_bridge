@@ -328,7 +328,13 @@ final class MacosConfig extends DcbPlatformConfig {
   /// Whether to build a universal (arm64 + x86_64) binary.
   ///
   /// When `true`, passes `-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64`.
-  /// Defaults to `false` (native architecture only).
+  /// Defaults to `false` (build only the hooks-provided target architecture).
+  ///
+  /// With Flutter Native Assets / code_assets, keep this `false`: the hooks
+  /// system invokes the builder once per target architecture and merges the
+  /// per-architecture dylibs into a universal binary itself. Enabling
+  /// `universal` there produces a fat dylib per invocation and breaks the
+  /// final `lipo -create` merge.
   final bool universal;
 
   /// Extra definitions passed verbatim to the CMake configure step, e.g.
@@ -609,7 +615,13 @@ final class DcbCMakeBuilder {
         }
       case MacosConfig cfg:
         cmake = cfg.cmake;
-        configureArgs.addAll(_resolveMacosArgs(cfg, buildType));
+        configureArgs.addAll(
+          _resolveMacosArgs(
+            cfg,
+            buildType,
+            input.config.code.targetArchitecture,
+          ),
+        );
       case IosConfig cfg:
         cmake = cfg.cmake;
         configureArgs.addAll(
@@ -715,7 +727,11 @@ final class DcbCMakeBuilder {
   // -------------------------------------------------------------------------
 
   /// Resolves macOS-specific configure arguments.
-  List<String> _resolveMacosArgs(MacosConfig cfg, String buildType) {
+  List<String> _resolveMacosArgs(
+    MacosConfig cfg,
+    String buildType,
+    Architecture targetArchitecture,
+  ) {
     final args = <String>[];
 
     // Single-config generator: build type is set at configure time.
@@ -760,9 +776,21 @@ final class DcbCMakeBuilder {
       args.add('-DCMAKE_OSX_DEPLOYMENT_TARGET=${cfg.deploymentTarget}');
     }
 
-    // Universal binary (arm64 + x86_64).
+    // Architecture: explicit universal builds combine both slices; otherwise
+    // build exactly the architecture requested by the hooks system, so each
+    // per-architecture invocation produces a distinct slice for lipo.
     if (cfg.universal) {
       args.add('-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64');
+    } else {
+      final arch = switch (targetArchitecture) {
+        Architecture.arm64 => 'arm64',
+        Architecture.x64 => 'x86_64',
+        final a => throw DcbCMakeException(
+            'Unsupported macOS architecture: $a. '
+            'macOS supports arm64 and x86_64.',
+          ),
+      };
+      args.add('-DCMAKE_OSX_ARCHITECTURES=$arch');
     }
 
     // User-supplied extra defines.
