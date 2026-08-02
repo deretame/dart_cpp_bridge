@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.3
+
+- Version aligned with `dart_cpp_bridge` 1.2.3 (macOS per-architecture build
+  fix; no tooling changes).
+
 ## 1.2.2
 
 - Fixed: `dcb_gen_tool init` now generates `native/cmake/dcb_bridge.cmake`

@@ -1,4 +1,4 @@
-## 1.2.2
+## 1.2.3
 
 - Fix macOS universal-binary builds: `DcbCMakeBuilder` now passes the
   hooks-provided `targetArchitecture` to CMake via
@@ -6,8 +6,12 @@
   architecture twice. Flutter's native-assets flow invokes the hook once per
   architecture and merges the slices with lipo; previously both invocations
   produced the same host-arch dylib and `lipo -create` failed.
+- Version aligned with `dcb_gen_tool` 1.2.3 (no tooling changes).
+
+## 1.2.2
+
 - Version aligned with `dcb_gen_tool` 1.2.2 (codegen `init` `file://` path
-  handling bugfix).
+  handling bugfix; no runtime API changes).
 
 ## 1.2.1
 
