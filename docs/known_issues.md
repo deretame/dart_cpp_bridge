@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-07-30
+> 更新日期：2026-08-02
 
 ---
 
@@ -536,4 +536,16 @@ Available native assets: package:codegen_demo/codegen_demo.dart.
 - macOS `flutter test`：66/66 通过
 - iOS simulator `flutter build ios --simulator`：成功
 - iOS simulator 集成测试：通过（sync/async/normal/stream/dartfn/opaque 全部正常）
+
+---
+
+## 12. 【已解决】StreamSink / channel awaiter 的裸指针悬垂
+
+- `StreamSink`：原先持 `Session*`，session 关闭（registry 最后引用释放）后
+  `add()`/`end()`/`error()` 会解引用已销毁对象；现改为持 `shared_ptr<Session>`，
+  关闭后靠 generation 检查静默丢弃晚到调用。
+- `co::mpsc` / `co::oneshot`：`recv()` 的 awaitable/awaiter 原先持 `state_.get()` 裸指针，
+  Receiver 在协程挂起期间被销毁/移动（或对临时 `Pair` 直接 `recv()`）会 UAF；
+  现改为持 `shared_ptr<state>`，状态至少活到协程恢复。
+- 相关：`include/dart_cpp_bridge/stream_sink.hpp`、`include/dart_cpp_bridge/channel.hpp`。
 

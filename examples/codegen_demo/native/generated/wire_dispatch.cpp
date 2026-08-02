@@ -452,7 +452,7 @@ void dispatch_request(std::shared_ptr<Session> session,
     case 444673125: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto msg = r.str();
-      auto sink = dcb::StreamSink<std::int32_t>(session.get(), req, gen, method,
+      auto sink = dcb::StreamSink<std::int32_t>(session, req, gen, method,
                                                 [](std::int32_t v) {
                                                   ByteWriter w;
                                                   w.i32(v);
@@ -468,7 +468,7 @@ void dispatch_request(std::shared_ptr<Session> session,
       const auto _stream_id = r.u64();
       std::optional<dcb::StreamSink<std::int32_t>> sink;
       if (_stream_id != 0) {
-        sink.emplace(session.get(), _stream_id, gen, method,
+        sink.emplace(session, _stream_id, gen, method,
                      [](std::int32_t v) {
                        ByteWriter w;
                        w.i32(v);
@@ -1163,6 +1163,28 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 88691087: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto url = r.str();
+      const auto _stream_id = r.u64();
+      std::optional<dcb::StreamSink<std::int32_t>> sink;
+      if (_stream_id != 0) {
+        sink.emplace(session, _stream_id, gen, method,
+                     [](std::int32_t v) {
+                       ByteWriter w;
+                       w.i32(v);
+                       return w.raw();
+                     });
+      }
+      ByteWriter w;
+      {
+        auto out = ::demo::api::sync_download_with_progress(url, std::move(sink));
+        w.str(out);
+      }
+      post_ok(session, gen, req, method, w.raw());
+      break;
+    }
+
     case 1347623235: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto name = r.str();
@@ -1281,7 +1303,7 @@ void dispatch_request(std::shared_ptr<Session> session,
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto count = r.i32();
       const auto interval_ms = r.i32();
-      auto sink = dcb::StreamSink<std::string>(session.get(), req, gen, method,
+      auto sink = dcb::StreamSink<std::string>(session, req, gen, method,
                                                [](std::string v) {
                                                  ByteWriter w;
                                                  w.str(v);
@@ -1416,7 +1438,7 @@ void dispatch_request(std::shared_ptr<Session> session,
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto count = r.i32();
       const auto interval_ms = r.i32();
-      auto sink = dcb::StreamSink<std::int32_t>(session.get(), req, gen, method,
+      auto sink = dcb::StreamSink<std::int32_t>(session, req, gen, method,
                                                 [](std::int32_t v) {
                                                   ByteWriter w;
                                                   w.i32(v);
@@ -1640,7 +1662,7 @@ void dispatch_request(std::shared_ptr<Session> session,
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto count = r.i32();
       const auto interval_ms = r.i32();
-      auto sink = dcb::StreamSink<std::string>(session.get(), req, gen, method,
+      auto sink = dcb::StreamSink<std::string>(session, req, gen, method,
                                                [](std::string v) {
                                                  ByteWriter w;
                                                  w.str(v);
@@ -2111,7 +2133,7 @@ void dispatch_request(std::shared_ptr<Session> session,
       }
       const auto count = r.i32();
       const auto intervalMs = r.i32();
-      auto sink = dcb::StreamSink<std::int32_t>(session.get(), req, gen, method,
+      auto sink = dcb::StreamSink<std::int32_t>(session, req, gen, method,
                                                 [](std::int32_t v) {
                                                   ByteWriter w;
                                                   w.i32(v);
@@ -2191,6 +2213,41 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
       ew.str(dcb::error::format("cloneWithOffset", "unknown"));
       return make_frame(MsgType::kResponseErr, frame.request_id,
                         frame.method_id, ew.raw());
+    }
+  }
+
+  if (frame.method_id == 88691087u) {
+    auto session = dcb::SessionRegistry::instance().get(session_id);
+    auto gen = session->generation();
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto url = r.str();
+    const auto _stream_id = r.u64();
+    std::optional<dcb::StreamSink<std::int32_t>> sink;
+    if (_stream_id != 0) {
+      sink.emplace(session, _stream_id, gen, frame.method_id,
+                   [](std::int32_t v) {
+                     ByteWriter w;
+                     w.i32(v);
+                     return w.raw();
+                   });
+    }
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::sync_download_with_progress(url, std::move(sink));
+        w.str(out);
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
+    } catch (const std::exception& e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("sync_download_with_progress", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("sync_download_with_progress", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
     }
   }
 

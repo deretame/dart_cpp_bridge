@@ -206,6 +206,29 @@ async_simple::coro::Lazy<std::string> download_with_progress(
   co_return std::string("downloaded: ") + url;
 }
 
+namespace {
+// Free coroutine function: parameters are copied into the coroutine frame, so
+// passing a moved-in StreamSink is safe (a coroutine lambda would instead
+// reference captures of the temporary lambda object, which dangles).
+async_simple::coro::Lazy<> emit_sync_progress(dcb::StreamSink<std::int32_t> sink) {
+  for (std::int32_t i = 1; i <= 5; ++i) {
+    sink.add(i * 20);  // 20, 40, 60, 80, 100
+  }
+  co_return;
+}
+}  // namespace
+
+std::string sync_download_with_progress(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
+  // Sync variant: do NOT emit inside the blocking FFI call. Spawn a coroutine
+  // that sends the events asynchronously; Dart receives them from the reply
+  // port queue right after the sync call returns.
+  if (progress) {
+    dcb::spawn_detached(emit_sync_progress(std::move(*progress)));
+  }
+  return std::string("downloaded: ") + url;
+}
+
 async_simple::coro::Lazy<double> distance(Point a, Point b) {
   const double dx = a.x - b.x;
   const double dy = a.y - b.y;

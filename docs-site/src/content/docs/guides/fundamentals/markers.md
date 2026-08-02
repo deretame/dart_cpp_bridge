@@ -92,15 +92,18 @@ Notes:
 
 ## 4. Stream — Streams
 
-Stream functions run on the io thread and push data to Dart via `StreamSink<T>`.
+A function is exported as a Dart `Stream<T>` when it carries an export marker
+(`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`) and takes a required `dcb::StreamSink<T>`
+parameter. The export marker is the gate: a `StreamSink` parameter alone does not export the
+function (the generator warns and skips it). For plain `void` stream functions use
+`BRIDGE_NORMAL`; the sink parameter makes it a stream regardless of the marker's usual
+scheduling, and the generated Dart API returns `Stream<T>`.
 
 ```cpp
-BRIDGE_ASYNC
-void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
-           std::int32_t interval_ms) {
-  for (int i = 0; i < count; ++i) {
+BRIDGE_NORMAL
+void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count) {
+  for (std::int32_t i = 0; i < count; ++i) {
     sink.add(i);
-    co_await async_simple::coro::sleep(std::chrono::milliseconds(interval_ms));
   }
   sink.end();
 }
@@ -108,8 +111,17 @@ void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
 
 Notes:
 
-- Cancelling a subscription only stops Dart-side reception; the C++ side continues to run
-- `add()` calls after cancellation are silently dropped
+- The function may return immediately; keep the sink and call `add()` later from any thread
+- `sink.error(msg)` sends an error event; `sink.end()` closes the stream normally
+- Cancelling the subscription only stops Dart-side reception; the C++ side continues running
+  and later `add()` calls are silently dropped
+- `std::optional<dcb::StreamSink<T>>` makes the stream optional: the generated Dart signature
+  takes a `StreamController<T>?` input parameter instead of returning a `Stream<T>`; use it
+  on `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` functions (there is no separate stream
+  marker; sync events are delivered after the FFI call returns)
+
+See [Streams](/dart_cpp_bridge/guides/fundamentals/streams/) for complete examples
+(required and optional streams, cancellation, threading, errors).
 
 ## 5. DartFn — Reverse Dart Closure Calls
 
@@ -153,7 +165,8 @@ std::string bad(dcb::DartFn<std::string(std::string)> callback);
 
 ```text
 Need to return a Stream?
-  → Yes: BRIDGE_ASYNC with StreamSink<T>
+  → Yes: export marker (typically BRIDGE_NORMAL) + dcb::StreamSink<T> parameter
+  → Optional: std::optional<dcb::StreamSink<T>> parameter on a sync/async/normal function
 
 Need to call a Dart closure?
   → Yes: BRIDGE_ASYNC + DartFn (co_await)

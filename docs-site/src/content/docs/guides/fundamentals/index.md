@@ -68,6 +68,7 @@ See [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/) and [async-si
 - [Quick Start](/dart_cpp_bridge/getting-started/) — create a project, install tools, generate your first bindings
 - [Architecture Design](/dart_cpp_bridge/guides/fundamentals/architecture/) — core components and call flow
 - [Marker Selection Guide](/dart_cpp_bridge/guides/fundamentals/markers/) — choose `BRIDGE_SYNC` / `ASYNC` / `NORMAL` / `Stream` / `DartFn`
+- [Streams](/dart_cpp_bridge/guides/fundamentals/streams/) — required and optional streams with `StreamSink`
 - [Lifecycle Management](/dart_cpp_bridge/guides/fundamentals/lifecycle/) — Runtime, Session, Opaque objects, NativeFinalizer
 - [Exceptions and Error Handling](/dart_cpp_bridge/guides/fundamentals/errors/) — C++ ↔ Dart exception propagation rules
 - [Project Directory Structure](/dart_cpp_bridge/guides/fundamentals/project-structure/) — hand-written files and generated artifacts

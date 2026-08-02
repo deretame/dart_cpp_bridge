@@ -58,6 +58,25 @@ Ordinary function that is dispatched to the thread pool for execution:
 BRIDGE_NORMAL std::string blocking_read(std::string path);
 ```
 
+### Stream Functions
+
+A function with a required `dcb::StreamSink<T>` parameter is generated as a Dart `Stream<T>`,
+but only when it also carries an export marker (`BRIDGE_SYNC` / `BRIDGE_ASYNC` /
+`BRIDGE_NORMAL`). For plain `void` stream functions use `BRIDGE_NORMAL`:
+
+```cpp
+BRIDGE_NORMAL
+void tick_stream(dcb::StreamSink<int32_t> sink, int32_t count);
+```
+
+Constraints:
+
+- The export marker is the gate: a `StreamSink` parameter alone does not export the function
+  (the generator warns and skips it)
+- Optional streams use `std::optional<dcb::StreamSink<T>>` on `BRIDGE_ASYNC` /
+  `BRIDGE_NORMAL` / `BRIDGE_SYNC` functions instead (sync events are delivered after the FFI
+  call returns)
+
 ### BRIDGE_PERSIST
 
 Marks a function with DartFn parameters as a persistent callback: the Dart side does not automatically unregister the closure after the call, allowing C++ to store and invoke it repeatedly. Typically used with `BRIDGE_SYNC` (registration) or `BRIDGE_NORMAL` (trigger):

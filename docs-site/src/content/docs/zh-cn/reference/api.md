@@ -132,7 +132,12 @@ class StreamSink {
 }  // namespace dcb
 ```
 
-在 BRIDGE_NORMAL 或 BRIDGE_ASYNC 函数中接收 `std::optional<StreamSink<T>>`，通过 `add()` 发送流数据、`end()` 结束、`error()` 报错。
+必需 stream：`void` 函数带导出标记（通常 `BRIDGE_NORMAL`）和 `StreamSink<T>` 参数，
+生成的 Dart API 返回 `Stream<T>`。
+可选 stream：在 `BRIDGE_SYNC`、`BRIDGE_NORMAL` 或 `BRIDGE_ASYNC` 函数中接收
+`std::optional<StreamSink<T>>`，生成的 Dart API 变为 `StreamController<T>?` 输入参数
+（`BRIDGE_SYNC` 的事件在阻塞 FFI 调用返回后送达）。两种方式都通过 `add()` 发送流数据、
+`end()` 结束、`error()` 报错。
 
 ### DartFn
 

@@ -84,6 +84,11 @@ Future<String> downloadWithProgress({
   StreamController<int>? progress,
 }) => BridgeApiImpl.instance.downloadWithProgress(url, progress);
 
+String syncDownloadWithProgress({
+  required String url,
+  StreamController<int>? progress,
+}) => BridgeApiImpl.instance.syncDownloadWithProgress(url, progress);
+
 Future<int?> maybeDouble({int? value}) =>
     BridgeApiImpl.instance.maybeDouble(value);
 

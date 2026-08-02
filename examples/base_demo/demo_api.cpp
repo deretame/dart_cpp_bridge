@@ -490,7 +490,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto count = r.i32();
         const auto interval_ms = r.i32();
-        auto sink = make_i32_sink(session.get(), req, gen, method);
+        auto sink = make_i32_sink(session, req, gen, method);
         ticks(std::move(sink), count, interval_ms);
         break;
       }
@@ -879,7 +879,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           post_err(session, gen, req, method, "Counter::incrementStream", "Counter handle not found or already dropped");
           break;
         }
-        auto sink = make_i32_sink(session.get(), req, gen, method);
+        auto sink = make_i32_sink(session, req, gen, method);
         counter_increment_stream(obj, count, interval_ms, std::move(sink));
         break;
       }
@@ -1076,7 +1076,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case MethodId::kFailStream: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto msg = r.str();
-        auto sink = make_i32_sink(session.get(), req, gen, method);
+        auto sink = make_i32_sink(session, req, gen, method);
         fail_stream(std::move(sink), std::move(msg));
         break;
       }

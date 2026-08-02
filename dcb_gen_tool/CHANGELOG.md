@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+- Codegen: `BRIDGE_SYNC` functions with `std::optional<dcb::StreamSink<T>>`
+  parameters now generate the optional-sink wire setup (sync dispatch reads
+  the stream id and constructs the sink) and Dart bindings that use
+  `invokeSyncMethodWithStream`.
+- Codegen: functions with a `StreamSink` parameter are exported as Dart
+  `Stream<T>` when they also carry an export marker (`BRIDGE_SYNC` /
+  `BRIDGE_ASYNC` / `BRIDGE_NORMAL`); sink-only functions are skipped with a
+  parser warning.
+- Parser tests: added coverage for unmarked stream functions, marked stream
+  export, and sync/async optional-sink classification.
+- Version aligned with `dart_cpp_bridge` 1.3.0.
+
 ## 1.2.4
 
 - Version aligned with `dart_cpp_bridge` 1.2.4 (async_simple uthread build

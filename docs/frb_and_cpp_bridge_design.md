@@ -434,7 +434,7 @@ int32_t bridge_version() { return 1; }
 // ---- wire / 生成代码（业务不写这些）----
 
 // async 协程：
-void wire_fetch(Session* s, uint64_t request_id, bytes args) {
+void wire_fetch(const std::shared_ptr<Session>& s, uint64_t request_id, bytes args) {
   auto req = decode<FetchRequest>(args);
   auto gen = s->generation();
   runtime().spawn_on_asio([s, gen, request_id, req = std::move(req)]() -> Lazy<> {
@@ -450,7 +450,7 @@ void wire_fetch(Session* s, uint64_t request_id, bytes args) {
 }
 
 // normal（同步体 → spawn_blocking / thread_pool → 一次 reply）：
-void wire_sleep_test(Session* s, uint64_t request_id, bytes args) {
+void wire_sleep_test(const std::shared_ptr<Session>& s, uint64_t request_id, bytes args) {
   auto gen = s->generation();
   runtime().spawn_on_asio([s, gen, request_id]() -> Lazy<> {
     try {
@@ -466,8 +466,11 @@ void wire_sleep_test(Session* s, uint64_t request_id, bytes args) {
 }
 
 // stream：
-void wire_create_log_stream(Session* s, uint64_t stream_id, bytes args) {
-  auto sink = StreamSink<std::string>::from_session(s, stream_id);
+void wire_create_log_stream(const std::shared_ptr<Session>& s, uint64_t stream_id, bytes args) {
+  auto gen = s->generation();
+  auto sink = StreamSink<std::string>(
+      s, stream_id, gen, /*method_id=*/0,
+      [](const std::string& v) { /* encode v → bytes */ });
   try {
     create_log_stream(std::move(sink));
     // 不在这里 end；由业务/持有方决定何时 end
@@ -508,7 +511,7 @@ void wire_create_log_stream(Session* s, uint64_t stream_id, bytes args) {
 
 | 条件（优先级从上到下） | kind | 调度 | Dart |
 |------------------------|------|------|------|
-| 参数含 `StreamSink<T>` | `stream` | 调用业务（可马上返回）；事件经 sink | `Stream<T>`（sink 不出现在 Dart 参数里） |
+| 导出标记 + 参数含 `StreamSink<T>` | `stream` | 调用业务（可马上返回）；事件经 sink | `Stream<T>`（sink 不出现在 Dart 参数里） |
 | `BRIDGE_ASYNC` / 返回 `Lazy<T>` | `async` | **单线程** `io_context` 上 `co_await` 业务 | `Future<T>` |
 | `BRIDGE_SYNC` | `sync` | 当前 FFI 线程 | 同步返回值 |
 | 普通 `T foo(...)` 且非 sync | `normal` | **`spawn_blocking` → `asio::thread_pool`** | `Future<T>` |
@@ -643,7 +646,11 @@ payload:     bytes
 - **不**递归扫描整个应用仓库；**不**扫描 `.cpp`；**不**把第三方 include 树当作 API 面（第三方只出现在 `include_paths` 里供解析）。
 - 业务 API **可以**包含 `Lazy<T>`（async-simple 头）；asio 实现、wire 细节仍不进业务 AST 也可拆文件。
 - 结构体 / 函数用注解宏（见 §6.1.1）。
-- **stream 不靠返回 `Stream<T>`**，靠参数列表里出现 `StreamSink<T>`（与 FRB 相同）；带 `StreamSink` 参数即视为生成标记。
+- **stream 不靠返回 `Stream<T>`**：函数须带导出标记（`BRIDGE_SYNC`/`BRIDGE_ASYNC`/`BRIDGE_NORMAL`，
+  通常 `BRIDGE_NORMAL`）且带 `StreamSink<T>` 参数才导出为 stream；
+  只有 `StreamSink` 参数而没有导出标记的函数**不生成**（解析器告警并跳过）。
+  可选 stream 用 `std::optional<StreamSink<T>>` 参数（`BRIDGE_SYNC` / `BRIDGE_ASYNC` /
+  `BRIDGE_NORMAL` 函数；sync 时事件在 FFI 调用返回后送达）。
 - 解析用 compile flags 与真编译一致（`-std=c++20`、`-I`、宏）。
 - **Python 与 libclang 均仓库锁定 + 远端拉取 + hash 校验；明确禁止回落到本机安装。**
 - 工具链缓存为**用户级目录**，按 `versions.lock` 指纹分 `envs/`（多项目 / 多锁版本并存）；详见仓库 `dcb_gen_tool/README.md`。
@@ -685,7 +692,7 @@ payload:     bytes
 | `BRIDGE_SYNC` | 导出为 Dart **同步** API |
 | `BRIDGE_ASYNC` | 导出为 Dart `Future`；业务侧 `Lazy` + asio |
 | `BRIDGE_NORMAL` | 导出为 Dart `Future`；wire 走 **blocking 池**（业务普通同步函数） |
-| 参数含 `StreamSink<T>` | 导出为 Dart `Stream<T>`（可与上列宏并存；以 stream 规则为准） |
+| 导出标记 + 参数含 `StreamSink<T>` | 导出为 Dart `Stream<T>`（函数须带 SYNC/ASYNC/NORMAL 标记） |
 
 - **无上述标记的自由函数：不生成。**
 - **类型：** `struct` / `class` 必须使用显式类标记：
@@ -938,7 +945,7 @@ abstract final class NativeBridge {
 | 协程 | Rust `async fn` | 业务 **`Lazy<T>`**（async-simple）；wire 负责 spawn |
 | 普通同步→Future | thread pool（normal） | wire `spawn_blocking`（kind=`normal`） |
 | 业务 async 签名 | `async fn f() -> T` | `Lazy<T> f()`（**不**返回桥 Future 包装） |
-| 业务 stream 签名 | `fn f(sink: StreamSink<T>)` | `void f(StreamSink<T> sink, ...)` |
+| 业务 stream 签名 | `fn f(sink: StreamSink<T>)` | 导出标记 + `void f(StreamSink<T> sink, ...)` |
 | Dart Future | Completer + port | **长期 port + request_id** |
 | 流 | `StreamSink` 参数 | 同构；Dart 关闭后 add 静默丢弃 |
 | 取消 | （FRB 另有能力，本草案不对齐） | **明确不做** |

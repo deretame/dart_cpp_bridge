@@ -262,7 +262,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "/Users/z4/pack/dart_cpp_bridge/examples/multi_runtime_demo/native/api/multi_runtime_api.h"
     }
   ],

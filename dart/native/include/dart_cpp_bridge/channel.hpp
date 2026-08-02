@@ -33,6 +33,10 @@
 // cross-thread destroy race on ViaCoroutine. Without an executor, the waiter
 // is resumed directly on the sender's thread.
 //
+// The awaitable/awaiter returned by recv() holds a shared_ptr to the channel
+// state, so the state stays alive even if the Receiver (or both endpoints) is
+// destroyed/moved while the coroutine is suspended.
+//
 // mpsc is multi-producer, single-consumer. Do not call recv() concurrently.
 
 namespace co {
@@ -128,7 +132,7 @@ struct oneshot_state {
 
 template <channel_value T>
 struct mpsc_recv_awaiter {
-  mpsc_state<T>* st;
+  std::shared_ptr<mpsc_state<T>> st;
   async_simple::Executor* ex;
 
   bool await_ready() const noexcept
@@ -162,7 +166,7 @@ struct mpsc_recv_awaiter {
 
 template <channel_value T>
 struct mpsc_recv_awaitable {
-  mpsc_state<T>* st;
+  std::shared_ptr<mpsc_state<T>> st;
 
   // Prefer async_simple path: avoids ViaAsyncAwaiter cross-thread destroy race.
   auto coAwait(async_simple::Executor* ex) noexcept
@@ -190,7 +194,7 @@ struct mpsc_recv_awaitable {
 
 template <channel_value T>
 struct oneshot_recv_awaiter {
-  oneshot_state<T>* st;
+  std::shared_ptr<oneshot_state<T>> st;
   async_simple::Executor* ex;
 
   bool await_ready() const noexcept
@@ -225,7 +229,7 @@ struct oneshot_recv_awaiter {
 
 template <channel_value T>
 struct oneshot_recv_awaitable {
-  oneshot_state<T>* st;
+  std::shared_ptr<oneshot_state<T>> st;
 
   auto coAwait(async_simple::Executor* ex) noexcept
   {
@@ -386,7 +390,7 @@ class Receiver {
   }
 
   // co_await rx.recv() -> optional<T> (nullopt if closed & empty)
-  auto recv() { return detail::mpsc_recv_awaitable<T>{state_.get()}; }
+  auto recv() { return detail::mpsc_recv_awaitable<T>{state_}; }
 
   std::optional<T> try_recv()
   {
@@ -531,7 +535,7 @@ class Receiver {
     return static_cast<bool>(state_);
   }
 
-  auto recv() { return detail::oneshot_recv_awaitable<T>{state_.get()}; }
+  auto recv() { return detail::oneshot_recv_awaitable<T>{state_}; }
 
   bool is_ready() const
   {

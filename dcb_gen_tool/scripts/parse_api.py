@@ -1,4 +1,4 @@
-"""Scan configured headers and collect BRIDGE_*/StreamSink-marked APIs into IR."""
+"""Scan configured headers and collect BRIDGE_*-marked APIs into IR."""
 
 from __future__ import annotations
 
@@ -324,7 +324,15 @@ def _collect_classes(
                         ATTR_DESTRUCTOR,
                         ATTR_TO_STRING,
                     }
-                    if not (method_attrs & exported_attrs) and not _has_stream_sink(args):
+                    if not (method_attrs & exported_attrs):
+                        if _has_stream_sink(args):
+                            print(
+                                f"warning: `{ch.spelling}` has a StreamSink "
+                                "parameter but no export marker "
+                                "(BRIDGE_SYNC/ASYNC/NORMAL); it will not be "
+                                "exported",
+                                file=sys.stderr,
+                            )
                         continue
                     has_exported_method = True
                     # Destructors are handled uniformly by dcb_drop_object; no wire
@@ -908,6 +916,8 @@ def _has_stream_sink(args: list[dict[str, Any]]) -> bool:
 
 def _classify(attrs: set[str], ret: dict[str, Any], args: list[dict[str, Any]]) -> str | None:
     if _has_stream_sink(args):
+        if not (attrs & {ATTR_SYNC, ATTR_ASYNC, ATTR_NORMAL}):
+            return None
         return "stream"
     if ATTR_SYNC in attrs:
         return "sync"
@@ -988,6 +998,13 @@ def _collect_functions(
             )
             kind = _classify(attrs, ret, args)
             if kind is None:
+                if _has_stream_sink(args):
+                    print(
+                        f"warning: `{cursor.spelling}` has a StreamSink "
+                        "parameter but no export marker "
+                        "(BRIDGE_SYNC/ASYNC/NORMAL); it will not be exported",
+                        file=sys.stderr,
+                    )
                 return
             # unwrap Lazy for return payload type
             ret_payload = ret["inner"] if ret.get("kind") == "lazy" else ret

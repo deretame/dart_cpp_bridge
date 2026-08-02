@@ -45,6 +45,8 @@ C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、Dar
 | 可选 `dispose` / 进程 `shutdown` | ✅ | worker 勿调 shutdown |
 | **DartFn 反向调用（参数式）** | ✅ | 见下表 |
 | oneshot channel（`co::oneshot`） | ✅ | `include/dart_cpp_bridge/channel.hpp` |
+| channel awaiter 持 shared state | ✅ | `recv()` 的 awaitable/awaiter 持 `shared_ptr<state>`，Receiver 先销毁/移动也不悬垂 |
+| `StreamSink` 持 `shared_ptr<Session>` | ✅ | sink 可长期持有；session 关闭后 add/end/error 经 generation 检查静默丢弃 |
 
 #### DartFn 仿函数模式
 
@@ -206,7 +208,8 @@ dart test
 7. **Stream 生成** ✅
    - 目标：C++ `StreamSink<T>` 参数映射为 Dart `Stream<T>`；函数返回 `void`，由业务代码在内部通过 sink 异步/多线程发数据。
    - 实现点：
-     - IR：`StreamSink<T>` 参数标记为 `"kind": "stream_sink"`；函数整体归类为 `stream`。
+     - IR：`StreamSink<T>` 参数标记为 `"kind": "stream_sink"`；**带导出标记（通常 `BRIDGE_NORMAL`）**且含 `StreamSink<T>` 参数的函数归类为 `stream`（只有 sink 参数、无导出标记的函数不生成，解析器告警）。
+     - 可选 stream：`std::optional<StreamSink<T>>` 参数用于 `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 函数，Dart 侧变为 `StreamController<T>?` 输入参数（sync 事件在 FFI 调用返回后送达）。
      - C++ 生成：从请求 payload 读出其余参数，构造带 encode lambda 的 `dcb::StreamSink<T>`，调用业务函数；stream id 复用 `request_id`。
      - Dart 运行层：把 `_streams` 从 `Map<int, StreamController<int>>` 改为带类型化 decoder 的 `Map<int, _StreamSubscription>`，并新增公共 `openStream<T>(methodId, payload, decodeItem)` 方法。
      - Dart 生成：stream 方法返回 `Stream<T>`，构造 payload 后调用 `bridge.openStream<T>(...)`。

@@ -31,6 +31,7 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::int32_t> uv_compute(std::int32_t n);
 
 /// libuv worker sends streaming data to Dart via an mpsc channel.
+BRIDGE_NORMAL
 void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count = 5,
                std::int32_t interval_ms = 50);
 

@@ -154,12 +154,18 @@ async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo
     std::tuple<std::int32_t, std::string, bool> value);
 
 // stream → Dart: Stream<int> tickStream({int count = 5, int intervalMs = 10})
+BRIDGE_NORMAL
 void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
                  std::int32_t interval_ms = 10);
 
 // async + optional sink → Dart: Future<String> downloadWithProgress({required String url, StreamController<int>? progress})
 BRIDGE_ASYNC
 async_simple::coro::Lazy<std::string> download_with_progress(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
+
+// sync + optional sink → Dart: String syncDownloadWithProgress({required String url, StreamController<int>? progress})
+BRIDGE_SYNC
+std::string sync_download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
 
 // data class tests
@@ -194,6 +200,7 @@ BRIDGE_ASYNC
 async_simple::coro::Lazy<std::int32_t> fail_non_std();
 
 // R05: stream emits data then errors
+BRIDGE_NORMAL
 void fail_stream(dcb::StreamSink<std::int32_t> sink, std::string msg);
 
 // --- Deep nesting test (G03) ---

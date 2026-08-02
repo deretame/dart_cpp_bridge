@@ -248,7 +248,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto count = r.i32();
         const auto interval_ms = r.i32();
-        auto sink = dcb::StreamSink<std::string>(session.get(), req, gen, method, [](std::string v) {
+        auto sink = dcb::StreamSink<std::string>(session, req, gen, method, [](std::string v) {
           ByteWriter w;
           w.str(v);
           return w.raw();

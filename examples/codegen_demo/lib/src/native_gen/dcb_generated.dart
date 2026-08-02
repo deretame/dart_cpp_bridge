@@ -77,6 +77,7 @@ final class BridgeApiImpl {
   static const int failAsyncId = 414051157;
   static const int failStreamId = 444673125;
   static const int downloadWithProgressId = 463555789;
+  static const int syncDownloadWithProgressId = 88691087;
   static const int startUvWorkerId = 482550500;
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
@@ -350,6 +351,13 @@ final class BridgeApiImpl {
       progress,
       (final _r) => _r.i32(),
     );
+    return ByteReader(_bytes).str();
+  }
+
+  String syncDownloadWithProgress(String url, StreamController<int>? progress) {
+    final _payload = ByteWriter();
+    _payload.str(url);
+    final _bytes = bridge.invokeSyncMethodWithStream<int>(syncDownloadWithProgressId, _payload, progress, (final _r) => _r.i32());
     return ByteReader(_bytes).str();
   }
 

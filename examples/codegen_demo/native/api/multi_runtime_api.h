@@ -49,6 +49,7 @@ async_simple::coro::Lazy<std::pair<std::string, std::string>> fan_out(
 
 /// Worker A emits [count] items with [interval_ms] delay between each,
 /// forwarded to Dart via mpsc channel → Main → Stream.
+BRIDGE_NORMAL
 void worker_stream(dcb::StreamSink<std::string> sink, std::int32_t count = 5,
                    std::int32_t interval_ms = 50);
 

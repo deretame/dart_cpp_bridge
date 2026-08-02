@@ -132,7 +132,12 @@ class StreamSink {
 }  // namespace dcb
 ```
 
-In `BRIDGE_NORMAL` or `BRIDGE_ASYNC` functions, receive `std::optional<StreamSink<T>>`, send stream data via `add()`, end the stream via `end()`, and report errors via `error()`.
+Required streams: give a `void` function an export marker (typically `BRIDGE_NORMAL`) and a
+`StreamSink<T>` parameter — the generated Dart API returns `Stream<T>`. Optional streams:
+receive `std::optional<StreamSink<T>>` in `BRIDGE_SYNC`, `BRIDGE_NORMAL`, or `BRIDGE_ASYNC`
+functions — the generated Dart API takes a `StreamController<T>?` input parameter instead
+(for `BRIDGE_SYNC`, events are delivered after the blocking FFI call returns). In both cases,
+send stream data via `add()`, end the stream via `end()`, and report errors via `error()`.
 
 ### DartFn
 

@@ -182,7 +182,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\foreign_runtime_demo\\native\\api\\foreign_api.h"
     },
     {

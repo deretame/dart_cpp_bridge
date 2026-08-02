@@ -92,15 +92,17 @@ std::string sleep_greeting(std::string name) {
 
 ## 4. Stream — 流
 
-Stream 函数在 io 线程上运行，通过 `StreamSink<T>` 向 Dart 推送数据。
+带导出标记（`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`）且带必需
+`dcb::StreamSink<T>` 参数的函数会导出为 Dart `Stream<T>`。导出标记是门槛：
+只有 `StreamSink` 参数而没有导出标记的函数不会生成（生成器会告警并跳过）。
+普通 `void` stream 函数通常用 `BRIDGE_NORMAL`；sink 参数会把它变成 stream，
+与标记本身的调度语义无关，生成的 Dart API 返回 `Stream<T>`。
 
 ```cpp
-BRIDGE_ASYNC
-void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
-           std::int32_t interval_ms) {
-  for (int i = 0; i < count; ++i) {
+BRIDGE_NORMAL
+void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count) {
+  for (std::int32_t i = 0; i < count; ++i) {
     sink.add(i);
-    co_await async_simple::coro::sleep(std::chrono::milliseconds(interval_ms));
   }
   sink.end();
 }
@@ -108,8 +110,16 @@ void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
 
 注意：
 
-- 取消订阅只停止 Dart 侧接收，C++ 侧继续运行
-- 取消后的 `add()` 会被静默丢弃
+- 函数可以立刻返回；sink 可长期持有，之后在任意线程 `add()`
+- `sink.error(msg)` 发送错误事件；`sink.end()` 正常关闭流
+- 取消订阅只停止 Dart 侧接收，C++ 侧继续运行，之后的 `add()` 静默丢弃
+- `std::optional<dcb::StreamSink<T>>` 表示可选 stream：生成的 Dart 签名变为
+  传入 `StreamController<T>?` 输入参数，而不是返回 `Stream<T>`；请用在
+  `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 函数上（没有单独的 stream 标记；
+  sync 的事件在 FFI 调用返回后送达）
+
+完整示例（必需/可选 stream、取消、线程、错误）见
+[Stream 流](/dart_cpp_bridge/zh-cn/guides/fundamentals/streams/)。
 
 ## 5. DartFn — 反向调用 Dart 闭包
 
@@ -153,7 +163,8 @@ std::string bad(dcb::DartFn<std::string(std::string)> callback);
 
 ```text
 需要返回 Stream 吗？
-  → 是：用 StreamSink<T> 的 BRIDGE_ASYNC
+  → 是：导出标记（通常 BRIDGE_NORMAL）+ dcb::StreamSink<T> 参数
+  → 可选：sync/async/normal 函数带 std::optional<dcb::StreamSink<T>> 参数
 
 需要调用 Dart 闭包吗？
   → 是：BRIDGE_ASYNC + DartFn（co_await）

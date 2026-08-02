@@ -343,6 +343,51 @@ final class DartCppBridge implements Finalizable {
     }
   }
 
+  /// Invoke a sync method that optionally produces stream events.
+  ///
+  /// Used for C++ `BRIDGE_SYNC` functions with `std::optional<StreamSink<T>>`
+  /// parameters. The same [request_id] carries both stream events
+  /// (streamData/streamEnd/streamErr) and the final response frame.
+  ///
+  /// [controller] receives stream events if provided; pass null to skip.
+  /// The stream_id is appended to [payload] automatically (non-zero if
+  /// controller is provided, 0 otherwise). Events posted by C++ during the
+  /// blocking FFI call are queued on the reply port and delivered to
+  /// [controller] after this method returns.
+  ///
+  /// Returns the raw response payload bytes.
+  Uint8List invokeSyncMethodWithStream<T>(
+    int methodId,
+    ByteWriter payload,
+    StreamController<T>? controller,
+    T Function(ByteReader) decodeItem,
+  ) {
+    _ensureAlive();
+    final id = _allocId();
+    // Write stream_id: non-zero if controller provided, 0 otherwise.
+    payload.u64(controller != null ? id : 0);
+    if (controller != null) {
+      _streams[id] = _StreamSubscription<T>(controller, decodeItem);
+    }
+    final resp = parseFrame(_invokeSyncRaw(makeFrame(
+      type: MsgType.request,
+      requestId: id,
+      methodId: methodId,
+      payload: payload.takeBytes(),
+    )));
+    if (resp.type == MsgType.responseErr) {
+      _streams.remove(id);
+      final r = ByteReader(resp.payload);
+      r.i32();
+      throw StateError(r.str());
+    }
+    if (resp.type != MsgType.responseOk) {
+      _streams.remove(id);
+      throw StateError('unexpected sync response ${resp.type}');
+    }
+    return resp.payload;
+  }
+
   Uint8List _invokeSyncRaw(Uint8List req) {
     _ensureAlive();
     final ptr = malloc<Uint8>(req.length);

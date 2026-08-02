@@ -49,8 +49,9 @@ class BRIDGE_OPAQUE Counter {
   BRIDGE_ASYNC async_simple::coro::Lazy<std::string> greetDartFn(
       dcb::DartFn<std::string(std::string)> callback, std::string name);
 
-  void tickStream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
-                  std::int32_t intervalMs = 10);
+  BRIDGE_NORMAL void tickStream(dcb::StreamSink<std::int32_t> sink,
+                                std::int32_t count = 5,
+                                std::int32_t intervalMs = 10);
 
  private:
   std::int32_t value_ = 0;

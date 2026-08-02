@@ -245,6 +245,33 @@ void main() {
     expect(result, 'downloaded: test.txt');
   });
 
+  testWidgets('sync + optional StreamSink syncDownloadWithProgress with progress', (
+    tester,
+  ) async {
+    final progressValues = <int>[];
+    final controller = StreamController<int>();
+    controller.stream.listen(progressValues.add);
+
+    final result = syncDownloadWithProgress(
+      url: 'https://example.com/file.zip',
+      progress: controller,
+    );
+
+    expect(result, 'downloaded: https://example.com/file.zip');
+    // Events posted by C++ during the blocking FFI call are delivered on the
+    // reply port right after the call returns.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(progressValues, [20, 40, 60, 80, 100]);
+    await controller.close();
+  });
+
+  testWidgets('sync + optional StreamSink syncDownloadWithProgress without progress', (
+    tester,
+  ) async {
+    final result = syncDownloadWithProgress(url: 'test.txt');
+    expect(result, 'downloaded: test.txt');
+  });
+
   testWidgets('data class distance', (tester) async {
     final a = const Point(x: 0.0, y: 0.0);
     final b = const Point(x: 3.0, y: 4.0);

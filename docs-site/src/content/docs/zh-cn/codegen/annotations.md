@@ -58,6 +58,24 @@ BRIDGE_ASYNC async_simple::coro::Lazy<int32_t> compute_async(int32_t input);
 BRIDGE_NORMAL std::string blocking_read(std::string path);
 ```
 
+### Stream 函数
+
+带必需 `dcb::StreamSink<T>` 参数的函数会生成 Dart `Stream<T>`，但前提是它还带有导出标记
+（`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`）。普通 `void` stream 函数用
+`BRIDGE_NORMAL`：
+
+```cpp
+BRIDGE_NORMAL
+void tick_stream(dcb::StreamSink<int32_t> sink, int32_t count);
+```
+
+约束：
+
+- 导出标记是门槛：只有 `StreamSink` 参数而没有导出标记的函数**不会**生成
+  （生成器会告警并跳过）
+- 可选 stream 用 `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 函数上的
+  `std::optional<dcb::StreamSink<T>>` 参数（sync 的事件在 FFI 调用返回后送达）
+
 ### BRIDGE_PERSIST
 
 标记含 DartFn 参数的函数为「持久化回调」：Dart 侧不在调用后自动注销闭包，允许 C++ 存储并反复调用。通常与 `BRIDGE_SYNC`（注册）或 `BRIDGE_NORMAL`（触发）配合使用：

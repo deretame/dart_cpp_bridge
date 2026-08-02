@@ -70,6 +70,9 @@ def _write_test_project(
     dart_dir = tmp / "lib" / "src" / "gen"
     dart_dir.mkdir(parents=True, exist_ok=True)
 
+    # Minimal pubspec so generate.py can resolve the Dart package name.
+    (tmp / "pubspec.yaml").write_text("name: test_pkg\n", encoding="utf-8")
+
     # Write main header
     (api_dir / header_name).write_text(header_content, encoding="utf-8")
 
@@ -942,6 +945,155 @@ std::int32_t dummy(std::int32_t x);
         )
 
 
+# ---------------------------------------------------------------------------
+# ST: stream export marker tests
+# ---------------------------------------------------------------------------
+def test_st01_stream_requires_marker() -> None:
+    """A StreamSink function without an export marker must not be exported."""
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include <dart_cpp_bridge/stream_sink.hpp>
+
+void unmarked_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count);
+
+BRIDGE_SYNC
+std::int32_t dummy(std::int32_t x);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "ST01: unmarked StreamSink function not exported",
+                False,
+                f"codegen failed unexpectedly: exit={r.returncode}\n{combined[:500]}",
+            )
+            return
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        fn_names = [f["name"] for f in ir.get("functions", [])]
+        passed = ("unmarked_stream" not in fn_names) and ("export marker" in combined)
+        _record(
+            "ST01: unmarked StreamSink function not exported",
+            passed,
+            f"functions in IR: {fn_names}\n"
+            f"warning present: {'export marker' in combined}",
+        )
+
+
+def test_st02_stream_marked_exported() -> None:
+    """BRIDGE_NORMAL with a StreamSink parameter is exported as a stream."""
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include <dart_cpp_bridge/stream_sink.hpp>
+
+BRIDGE_NORMAL
+void marked_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "ST02: marked stream function exported as stream",
+                False,
+                f"codegen failed unexpectedly: exit={r.returncode}\n{combined[:500]}",
+            )
+            return
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        fn = fns.get("marked_stream")
+        passed = (
+            fn is not None
+            and fn.get("kind") == "stream"
+            and "bridge::normal" in fn.get("attrs", [])
+        )
+        _record(
+            "ST02: marked stream function exported as stream",
+            passed,
+            f"entry: {fn}",
+        )
+
+
+def test_st03_optional_sink_stays_async() -> None:
+    """BRIDGE_ASYNC with std::optional<StreamSink<T>> stays async, not stream."""
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include <dart_cpp_bridge/stream_sink.hpp>
+#include <optional>
+
+BRIDGE_ASYNC
+async_simple::coro::Lazy<std::string> opt_stream(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "ST03: optional sink stays async",
+                False,
+                f"codegen failed unexpectedly: exit={r.returncode}\n{combined[:500]}",
+            )
+            return
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        fn = fns.get("opt_stream")
+        passed = fn is not None and fn.get("kind") == "async"
+        _record(
+            "ST03: optional sink stays async",
+            passed,
+            f"entry: {fn}",
+        )
+
+
+def test_st04_sync_optional_sink_stays_sync() -> None:
+    """BRIDGE_SYNC with std::optional<StreamSink<T>> stays sync, not stream."""
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include <dart_cpp_bridge/stream_sink.hpp>
+#include <optional>
+
+BRIDGE_SYNC
+std::string sync_opt(
+    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "ST04: sync optional sink stays sync",
+                False,
+                f"codegen failed unexpectedly: exit={r.returncode}\n{combined[:500]}",
+            )
+            return
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        fn = fns.get("sync_opt")
+        passed = (
+            fn is not None
+            and fn.get("kind") == "sync"
+            and "bridge::sync" in fn.get("attrs", [])
+        )
+        _record(
+            "ST04: sync optional sink stays sync",
+            passed,
+            f"entry: {fn}",
+        )
+
+
 def main() -> int:
     print("=" * 60)
     print("Codegen Parser Defensive Tests")
@@ -981,6 +1133,11 @@ def main() -> int:
         test_e01_enum_without_export_not_in_ir,
         test_e02_enum_wrong_underlying_type,
         test_e03_enum_missing_explicit_value,
+        # Stream export marker tests
+        test_st01_stream_requires_marker,
+        test_st02_stream_marked_exported,
+        test_st03_optional_sink_stays_async,
+        test_st04_sync_optional_sink_stays_sync,
     ]
 
     workers = int(os.environ.get("DCB_TEST_WORKERS", "0")) or min(len(tests), os.cpu_count() or 4)

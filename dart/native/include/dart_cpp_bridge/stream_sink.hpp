@@ -17,15 +17,18 @@ class StreamSink {
  public:
   using EncodeFn = std::function<std::vector<std::uint8_t>(const T&)>;
 
-  StreamSink(Session* session, std::uint64_t stream_id, std::uint64_t generation,
-             std::uint32_t method_id, EncodeFn encode)
+  // Holds a shared_ptr<Session> so the sink may outlive the dispatch frame and
+  // even the session close: after dispose the generation check drops late
+  // add()/end()/error() calls instead of touching a destroyed session.
+  StreamSink(std::shared_ptr<Session> session, std::uint64_t stream_id,
+             std::uint64_t generation, std::uint32_t method_id, EncodeFn encode)
       : state_(std::make_shared<State>()) {
-    state_->session = session;
+    state_->session = std::move(session);
     state_->stream_id = stream_id;
     state_->generation = generation;
     state_->method_id = method_id;
     state_->encode = std::move(encode);
-    session->set_stream_open(stream_id, true);
+    state_->session->set_stream_open(stream_id, true);
   }
 
   void add(const T& item) {
@@ -79,7 +82,7 @@ class StreamSink {
 
  private:
   struct State {
-    Session* session{nullptr};
+    std::shared_ptr<Session> session;
     std::uint64_t stream_id{0};
     std::uint64_t generation{0};
     std::uint32_t method_id{0};
@@ -107,10 +110,11 @@ class StreamSink {
   std::shared_ptr<State> state_;
 };
 
-inline StreamSink<std::int32_t> make_i32_sink(Session* session, std::uint64_t stream_id,
+inline StreamSink<std::int32_t> make_i32_sink(std::shared_ptr<Session> session,
+                                               std::uint64_t stream_id,
                                                std::uint64_t generation,
                                                std::uint32_t method_id) {
-  return StreamSink<std::int32_t>(session, stream_id, generation, method_id,
+  return StreamSink<std::int32_t>(std::move(session), stream_id, generation, method_id,
                                   [](std::int32_t v) {
                                     ByteWriter w;
                                     w.i32(v);

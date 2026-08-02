@@ -379,7 +379,9 @@
           "is_static": false,
           "to_string": false,
           "method_id": 550621099,
-          "attrs": [],
+          "attrs": [
+            "bridge::normal"
+          ],
           "args": [
             {
               "name": "sink",
@@ -900,7 +902,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
@@ -935,6 +939,41 @@
       },
       "attrs": [
         "bridge::async"
+      ],
+      "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "sync_download_with_progress",
+      "qualified": "demo::api::sync_download_with_progress",
+      "kind": "sync",
+      "method_id": 88691087,
+      "args": [
+        {
+          "name": "url",
+          "type": {
+            "kind": "string"
+          },
+          "default_value": null
+        },
+        {
+          "name": "progress",
+          "type": {
+            "kind": "optional",
+            "inner": {
+              "kind": "stream_sink",
+              "inner": {
+                "kind": "i32"
+              }
+            }
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "string"
+      },
+      "attrs": [
+        "bridge::sync"
       ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
@@ -1822,7 +1861,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\multi_runtime_api.h"
     },
     {
@@ -1956,7 +1997,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
@@ -2234,7 +2277,9 @@
       "return": {
         "kind": "void"
       },
-      "attrs": [],
+      "attrs": [
+        "bridge::normal"
+      ],
       "header": "D:\\data\\project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
     },
     {

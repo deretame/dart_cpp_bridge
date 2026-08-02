@@ -1,3 +1,26 @@
+## 1.3.0
+
+- New: `BRIDGE_SYNC` functions can now take `std::optional<dcb::StreamSink<T>>`
+  parameters. Sync calls can emit stream events (typically by spawning a
+  coroutine that sends them asynchronously); Dart receives the events from the
+  reply port queue right after the blocking FFI call returns. The generated
+  Dart API takes a `StreamController<T>?` input parameter and stays
+  synchronous, backed by the new `DartCppBridge.invokeSyncMethodWithStream`.
+- Streams: functions with a `dcb::StreamSink<T>` parameter are generated as
+  Dart `Stream<T>` when they also carry an export marker (`BRIDGE_SYNC` /
+  `BRIDGE_ASYNC` / `BRIDGE_NORMAL`, typically `BRIDGE_NORMAL`). The parser
+  warns and skips sink-only functions without an export marker.
+- `StreamSink` now holds a `std::shared_ptr<Session>`, so a long-lived sink
+  stays safe even after its session is closed: late `add()` / `end()` /
+  `error()` calls are silently dropped by the generation check instead of
+  touching a destroyed session.
+- `co::mpsc` / `co::oneshot` `recv()` awaiters now hold a `shared_ptr` to the
+  channel state, so the state stays alive even if the receiver is destroyed or
+  moved while a coroutine is suspended.
+- codegen_demo: added a `sync_download_with_progress` fixture covering sync +
+  optional `StreamSink` end to end.
+- Version aligned with `dcb_gen_tool` 1.3.0.
+
 ## 1.2.4
 
 - Fix macOS cross-architecture builds: async_simple's uthread static/shared

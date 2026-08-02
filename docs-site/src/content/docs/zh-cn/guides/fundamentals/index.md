@@ -68,6 +68,7 @@ bridge 自带一个基于 **asio + async-simple** 的运行时，业务代码通
 - [快速开始](/dart_cpp_bridge/getting-started/) — 创建项目、安装工具、生成第一批绑定
 - [架构设计](/dart_cpp_bridge/guides/fundamentals/architecture/) — 核心组件与调用流程
 - [函数标记选择指南](/dart_cpp_bridge/guides/fundamentals/markers/) — 选 `BRIDGE_SYNC` / `ASYNC` / `NORMAL` / `Stream` / `DartFn`
+- [Stream 流](/dart_cpp_bridge/guides/fundamentals/streams/) — 用 `StreamSink` 实现必需/可选 stream
 - [生命周期管理](/dart_cpp_bridge/guides/fundamentals/lifecycle/) — Runtime、Session、Opaque 对象、NativeFinalizer
 - [异常与错误处理](/dart_cpp_bridge/guides/fundamentals/errors/) — C++ ↔ Dart 异常透传规则
 - [项目目录结构](/dart_cpp_bridge/guides/fundamentals/project-structure/) — 手写文件与生成产物

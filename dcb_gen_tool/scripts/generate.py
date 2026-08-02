@@ -731,7 +731,7 @@ def _cpp_class_method_cases(
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {handle_block}
-        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session.get(), req, gen, method, []({_cpp_type(sink_inner)} v) {{
+        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session, req, gen, method, []({_cpp_type(sink_inner)} v) {{
           ByteWriter w;
           {sink_encode}
           return w.raw();
@@ -1504,10 +1504,38 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             has_dart_fn_arg = any(
                 a["type"].get("kind") == "dart_fn" for a in fn["args"]
             )
+            # Optional sink setup (read stream_id, create sink if non-zero).
+            # Mirrors the async/normal branches; the sync dispatch path needs
+            # the session too, so it is looked up from the registry.
+            sink_setup = ""
+            sync_sink_setup = ""
+            if opt_sink_arg:
+                sink_inner = opt_sink_arg["type"]["inner"]["inner"]
+                sink_encode = _cpp_write_item(sink_inner, "v")
+                sink_setup = f"""
+        const auto _stream_id = r.u64();
+        std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink;
+        if (_stream_id != 0) {{
+          sink.emplace(session, _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
+            ByteWriter w;
+            {sink_encode}
+            return w.raw();
+          }});
+        }}"""
+                sync_sink_setup = f"""
+    const auto _stream_id = r.u64();
+    std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink;
+    if (_stream_id != 0) {{
+      sink.emplace(session, _stream_id, gen, frame.method_id, []({_cpp_type(sink_inner)} v) {{
+        ByteWriter w;
+        {sink_encode}
+        return w.raw();
+      }});
+    }}"""
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
-        {reads}
+        {reads}{sink_setup}
         ByteWriter w;
         {{
           auto out = {call};
@@ -1518,7 +1546,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
       }}"""
             cases.append(body)
             session_lookup = ""
-            if has_dart_fn_arg:
+            if has_dart_fn_arg or opt_sink_arg:
                 session_lookup = (
                     "\n    auto session = dcb::SessionRegistry::instance().get(session_id);"
                     "\n    auto gen = session->generation();"
@@ -1526,7 +1554,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             sync_body = f"""
   if (frame.method_id == {mid}u) {{{session_lookup}
     ByteReader r(frame.payload.data(), frame.payload.size());
-    {sync_reads}
+    {sync_reads}{sync_sink_setup}
     try {{
       ByteWriter w;
       {{
@@ -1569,7 +1597,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         const auto _stream_id = r.u64();
         std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink;
         if (_stream_id != 0) {{
-          sink.emplace(session.get(), _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
+          sink.emplace(session, _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
             ByteWriter w;
             {sink_encode}
             return w.raw();
@@ -1628,7 +1656,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         const auto _stream_id = r.u64();
         std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink;
         if (_stream_id != 0) {{
-          sink.emplace(session.get(), _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
+          sink.emplace(session, _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
             ByteWriter w;
             {sink_encode}
             return w.raw();
@@ -1691,7 +1719,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {reads}
-        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session.get(), req, gen, method, []({_cpp_type(sink_inner)} v) {{
+        auto sink = dcb::StreamSink<{_cpp_type(sink_inner)}>(session, req, gen, method, []({_cpp_type(sink_inner)} v) {{
           ByteWriter w;
           {sink_encode}
           return w.raw();
@@ -1980,26 +2008,44 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                 f"(final _r) => {m['stream_decode_expr']});"
             )
         elif m.get("opt_sink_info"):
-            # Async method with optional StreamSink (progress events + result).
+            # Optional StreamSink (progress events + result). Async methods
+            # await the response; sync methods block in the FFI call and the
+            # stream events queued on the reply port are delivered afterwards.
             osi = m["opt_sink_info"]
             for line in payload_lines:
                 body_lines.append(f"{indent}{line}")
             decode_item = osi["decode_expr"]
             dart_item_t = osi["dart_item_type"]
             ctrl_name = osi["dart_name"]
-            if ret_t == "void":
-                body_lines.append(
-                    f"{indent}await bridge.invokeAsyncMethodWithStream<{dart_item_t}>("
-                    f"{dart_name}Id, _payload, {ctrl_name}, "
-                    f"(final _r) => {decode_item});"
-                )
+            if not m["is_async"]:
+                # Sync method with optional stream.
+                if ret_t == "void":
+                    body_lines.append(
+                        f"{indent}bridge.invokeSyncMethodWithStream<{dart_item_t}>("
+                        f"{dart_name}Id, _payload, {ctrl_name}, "
+                        f"(final _r) => {decode_item});"
+                    )
+                else:
+                    body_lines.append(
+                        f"{indent}final _bytes = bridge.invokeSyncMethodWithStream<{dart_item_t}>("
+                        f"{dart_name}Id, _payload, {ctrl_name}, "
+                        f"(final _r) => {decode_item});"
+                    )
+                    body_lines.append(f"{indent}return {read_ret};")
             else:
-                body_lines.append(
-                    f"{indent}final _bytes = await bridge.invokeAsyncMethodWithStream<{dart_item_t}>("
-                    f"{dart_name}Id, _payload, {ctrl_name}, "
-                    f"(final _r) => {decode_item});"
-                )
-                body_lines.append(f"{indent}return {read_ret};")
+                if ret_t == "void":
+                    body_lines.append(
+                        f"{indent}await bridge.invokeAsyncMethodWithStream<{dart_item_t}>("
+                        f"{dart_name}Id, _payload, {ctrl_name}, "
+                        f"(final _r) => {decode_item});"
+                    )
+                else:
+                    body_lines.append(
+                        f"{indent}final _bytes = await bridge.invokeAsyncMethodWithStream<{dart_item_t}>("
+                        f"{dart_name}Id, _payload, {ctrl_name}, "
+                        f"(final _r) => {decode_item});"
+                    )
+                    body_lines.append(f"{indent}return {read_ret};")
         else:
             for line in payload_lines:
                 body_lines.append(f"{indent}{line}")
