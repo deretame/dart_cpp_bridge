@@ -12,6 +12,17 @@ async-simple 是一个 C++20 协程库，bridge 里主要用到两个概念：
 - **`async_simple::coro::Lazy<T>`** — 一个懒启动的协程任务。函数返回 `Lazy<T>`，调用时不会立刻执行，只有被 `co_await`、`.start()` 或 `syncAwait()` 时才会启动。
 - **`async_simple::Executor`** — 协程调度器。`dcb::AsioExecutor` 和 `dcb::ForeignExecutor` 都是它的实现。协程挂起后由 executor 决定在哪个线程上恢复。
 
+## 不要使用 uthread（改用 Boost.Fiber）
+
+async-simple 还自带一个可选的栈式纤程实现 **uthread**。`dart_cpp_bridge` 刻意**不编译也不链接**它：
+
+- runtime 只使用 async-simple 的头文件部分（`Lazy`、`Executor`、`Promise`/`Future`、`Signal`），没有任何 bridge 代码引用 uthread；
+- uthread 的 static/shared 目标在 CMake 里被 `EXCLUDE_FROM_ALL` 排除（见 `dart/native/CMakeLists.txt`）；
+- uthread 不支持 Windows；
+- 它的 Darwin 汇编按 `CMAKE_SYSTEM_PROCESSOR` 选择，不认 `CMAKE_OSX_ARCHITECTURES`，macOS 跨架构 slice 会编译失败。
+
+业务代码需要纤程时，请直接使用专门的纤程库，例如 **Boost.Fiber**。不要 include `async_simple/uthread/*` 头文件，也不要链接 `async_simple` / `async_simple_static`。
+
 ## 写一个协程
 
 业务 C++ 函数只要返回 `Lazy<T>`，用 `co_await` 等待其他异步操作，用 `co_return` 返回结果：
