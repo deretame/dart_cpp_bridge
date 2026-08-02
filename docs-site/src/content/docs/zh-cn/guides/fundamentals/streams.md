@@ -87,12 +87,17 @@ async_simple::coro::Lazy<std::string> download_with_progress(
 
 ### C++ 实现
 
+协程运行在 io 线程上：事件应该作为异步工作的一部分发出（在 `co_await` 之间），
+绝不能在 io 线程上阻塞。
+
 ```cpp
 async_simple::coro::Lazy<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20); // 20, 40, 60, 80, 100
+      // 真实场景中事件来自异步工作；这里用可取消 sleep 模拟一个异步间隔。
+      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;

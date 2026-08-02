@@ -197,10 +197,12 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
 
 async_simple::coro::Lazy<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
-  // Simulate a download with 5 progress steps.
+  // Simulate a download with 5 progress steps. Events are emitted as part of
+  // the asynchronous work (between co_await points), never by blocking io.
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20);  // 20, 40, 60, 80, 100
+      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;

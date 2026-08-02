@@ -89,12 +89,18 @@ async_simple::coro::Lazy<std::string> download_with_progress(
 
 ### C++ implementation
 
+The coroutine runs on the io thread: emit events as part of the asynchronous
+work (between `co_await` points) and never block the thread.
+
 ```cpp
 async_simple::coro::Lazy<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20); // 20, 40, 60, 80, 100
+      // In real code events come from async work; a cancellable sleep
+      // simulates the async interval here.
+      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;
