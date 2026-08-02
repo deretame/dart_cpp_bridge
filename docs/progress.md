@@ -2,7 +2,7 @@
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  
-> 更新日期：2026-08-01（发布 1.2.1：可取消 sleep、ForeignExecutor 原生 timer、协作式取消；1.2.1 修复 codegen Signal.h stub）
+> 更新日期：2026-08-02（发布 1.2.2：修复 `dcb_gen_tool init` 模板与 codegen_demo 的 `file://` rootUri 路径解析；1.2.1 已于 2026-08-01 发布）
 
 ---
 
@@ -12,10 +12,10 @@
 |------|------|------|
 | **Phase 1** 手写骨架 | **基本完成** | Runtime / Session / 四通道 / DartFn io 真挂起 / Dart 包 / 测试 |
 | **Phase 2** Codegen | **完成** | 工具链 + scan/标记 + SYNC/ASYNC/NORMAL + Dart 三层 + 类型校验 + 模板；见 `examples/codegen_demo` |
-| **Phase 3** Native Assets + 生产 | **核心完成** | Native Assets hook 已接线（`hook/build.dart` + `hook/link.dart`）；codegen 仍手动；1.2.1 已发布 |
+| **Phase 3** Native Assets + 生产 | **核心完成** | Native Assets hook 已接线（`hook/build.dart` + `hook/link.dart`）；codegen 仍手动；1.2.2 已发布 |
 | **Phase 4** 业务接入 | 未开始 | 不替换任何已有 FRB 生产桥 |
 
-当前仓库已发布 **1.2.1**（`dart_cpp_bridge` 与 `dcb_gen_tool` 版本同步），
+当前仓库已发布 **1.2.2**（`dart_cpp_bridge` 与 `dcb_gen_tool` 版本同步），
 与 Breeze 等业务仓解耦。公开 API / C ABI / wire 协议已稳定，变更需遵守
 `AGENTS.md` 的兼容性政策。
 

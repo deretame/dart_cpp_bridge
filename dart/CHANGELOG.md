@@ -1,3 +1,8 @@
+## 1.2.2
+
+- Version aligned with `dcb_gen_tool` 1.2.2 (codegen `init` `file://` path
+  handling bugfix; no runtime API changes).
+
 ## 1.2.1
 
 - Version aligned with `dcb_gen_tool` 1.2.1 (codegen bugfix release; no runtime

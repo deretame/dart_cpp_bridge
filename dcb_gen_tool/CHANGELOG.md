@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2
+
+- Fixed: `dcb_gen_tool init` now generates `native/cmake/dcb_bridge.cmake`
+  with platform-aware `file://` rootUri conversion (Windows:
+  `file:///C:/...` → `C:/...`; other platforms: `file:///home/...` →
+  `/home/...`), matching `dcb_find_package.cmake`.
+- `examples/codegen_demo` CMake updated to the same path handling.
+- Version aligned with `dart_cpp_bridge` 1.2.2.
+
 ## 1.2.1
 
 - Fixed: codegen works without the CMake-fetched async-simple headers again.
