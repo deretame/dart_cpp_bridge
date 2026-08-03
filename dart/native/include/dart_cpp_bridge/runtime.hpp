@@ -15,16 +15,17 @@
 #include <cstdio>
 #include <exception>
 #include <memory>
-#include <stdexcept>
+#include <mutex>
+#include <stdexec/execution.hpp>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
 namespace dcb {
 
-// Marker type used to bridge void values through co::oneshot (which requires
-// a movable payload type). `co_await dcb::spawn_blocking(f)` for a void `f`
-// yields std::optional<Unit>.
+// Marker type used to bridge void values through senders that require a
+// movable payload (e.g. the co::oneshot channel). `co_await
+// dcb::spawn_blocking(f)` for a void `f` completes with dcb::Unit.
 struct Unit {};
 
 using DartPostFn = void (*)(std::int64_t port, const std::uint8_t* data, std::size_t len,
@@ -52,36 +53,12 @@ class Runtime {
 
   asio::io_context& io() { return io_; }
   asio::thread_pool& pool() { return *pool_; }
-  AsioScheduler* scheduler() { return scheduler_.get(); }
 
-  // Launch a sender chain on the io scheduler from a NON-coroutine context.
-  //
-  // `factory` must be callable with no arguments and return a sender. It is
-  // invoked on the io thread; the sender runs on the io scheduler (its
-  // completion is delivered back to the io thread via continues_on). Errors
-  // are logged and swallowed (fire-and-forget semantics).
-  //
-  // IMPORTANT: keep `factory` alive until the chain completes. Coroutine
-  // lambdas may reference captures from the lambda object; destroying it
-  // after start races.
-  template <class SenderFactory>
-  void spawn_on_asio(SenderFactory&& factory) {
-    ensure_running();
-    auto* sched = scheduler_.get();
-    if (!sched) {
-      throw std::runtime_error("runtime scheduler missing");
-    }
-    asio::post(io_, [factory = std::forward<SenderFactory>(factory), sched]() mutable {
-      auto holder = std::make_shared<std::decay_t<decltype(factory)>>(std::move(factory));
-      try {
-        spawn_on_scheduler((*holder)(), sched);
-      } catch (const std::exception& e) {
-        std::fprintf(stderr, "[dcb] spawn_on_asio factory error: %s\n", e.what());
-      } catch (...) {
-        std::fprintf(stderr, "[dcb] spawn_on_asio factory error: unknown\n");
-      }
-    });
-  }
+  /// The scheduler that runs on the single-threaded io_context event loop.
+  /// Business senders are launched here; completions are delivered here.
+  IoContextScheduler* io_scheduler() { return io_sched_.get(); }
+  /// The scheduler backed by the blocking thread pool (spawn_blocking work).
+  PoolScheduler* blocking_scheduler() { return pool_sched_.get(); }
 
   void set_dart_post(DartPostFn fn, void* userdata) {
     post_fn_ = fn;
@@ -103,7 +80,8 @@ class Runtime {
   ~Runtime();
 
   asio::io_context io_;
-  std::unique_ptr<AsioScheduler> scheduler_;
+  std::unique_ptr<IoContextScheduler> io_sched_;
+  std::unique_ptr<PoolScheduler> pool_sched_;
   std::unique_ptr<asio::executor_work_guard<asio::io_context::executor_type>> guard_;
   std::unique_ptr<std::thread> io_thread_;
   std::unique_ptr<asio::thread_pool> pool_;
@@ -120,16 +98,17 @@ class Runtime {
 
 namespace detail {
 
-// Environment that exposes the io scheduler as both get_scheduler and
+// Environment that exposes a scheduler as both get_scheduler and
 // get_start_scheduler. Senders that depend on a scheduler (e.g. exec::task)
 // need it to compute completion signatures and to run.
-struct io_env {
-  const AsioScheduler* sched;
+template <typename Sched>
+struct sched_env {
+  const Sched* sched;
 
-  constexpr auto query(stdexec::get_scheduler_t) const noexcept -> const AsioScheduler& {
+  constexpr auto query(stdexec::get_scheduler_t) const noexcept -> const Sched& {
     return *sched;
   }
-  constexpr auto query(stdexec::get_start_scheduler_t) const noexcept -> const AsioScheduler& {
+  constexpr auto query(stdexec::get_start_scheduler_t) const noexcept -> const Sched& {
     return *sched;
   }
 };
@@ -139,22 +118,24 @@ struct io_env {
 // return chain (guaranteed elision is not reliable through stdexec's declfn
 // wrappers), and the move constructor refreshes the address.
 template <typename Op>
-struct on_io_ctl {
+struct op_ctl {
   Op* op{nullptr};
 };
 
-// Inner receiver of on_io_opstate: forwards the completion back to the io
-// thread (asio::post) before invoking the outer receiver. The opstate must
-// outlive the completion (P2300 guarantee), so capturing it in the posted
-// lambda is safe. Its environment exposes the io scheduler so that child
-// senders that need a scheduler (e.g. exec::task) can run.
-template <typename Op>
-struct on_io_inner_receiver {
+// Inner receiver of on_scheduler_opstate: forwards the completion back onto
+// the target scheduler (post) before invoking the outer receiver. The opstate
+// must outlive the completion (P2300 guarantee), so capturing it in the
+// posted lambda is safe. Its environment exposes the scheduler so that child
+// senders that need one (e.g. exec::task) can run.
+template <typename Sched, typename Op>
+struct on_scheduler_inner_receiver {
   using receiver_concept = stdexec::receiver_tag;
 
-  std::shared_ptr<on_io_ctl<Op>> ctl_;
+  std::shared_ptr<op_ctl<Op>> ctl_;
 
-  io_env get_env() const noexcept { return io_env{ctl_->op->sched_}; }
+  sched_env<Sched> get_env() const noexcept {
+    return sched_env<Sched>{ctl_->op->sched_};
+  }
 
   template <class... As>
   void set_value(As&&... as) && noexcept {
@@ -170,29 +151,30 @@ struct on_io_inner_receiver {
   }
 };
 
-// Operation state of on_io_sender: connects the child sender, then migrates
-// its completion to the io thread.
-template <stdexec::sender S, stdexec::receiver Rcvr>
-struct on_io_opstate {
+// Operation state of on_scheduler_sender: connects the child sender, starts
+// it ON the target scheduler (starts-on semantics), then migrates its
+// completion back to that same scheduler.
+template <stdexec::sender S, typename Sched, stdexec::receiver Rcvr>
+struct on_scheduler_opstate {
   using operation_state_concept = stdexec::operation_state_tag;
 
-  using inner_rcvr_t = on_io_inner_receiver<on_io_opstate>;
+  using inner_rcvr_t = on_scheduler_inner_receiver<Sched, on_scheduler_opstate>;
   using inner_op_t = stdexec::connect_result_t<S, inner_rcvr_t>;
 
-  const AsioScheduler* sched_;
+  const Sched* sched_;
   Rcvr rcvr_;
-  std::shared_ptr<on_io_ctl<on_io_opstate>> ctl_;
+  std::shared_ptr<op_ctl<on_scheduler_opstate>> ctl_;
   inner_op_t inner_;
 
-  on_io_opstate(const AsioScheduler* sched, S sndr, Rcvr rcvr)
+  on_scheduler_opstate(const Sched* sched, S sndr, Rcvr rcvr)
     : sched_(sched),
       rcvr_(std::move(rcvr)),
-      ctl_(std::make_shared<on_io_ctl<on_io_opstate>>()),
+      ctl_(std::make_shared<op_ctl<on_scheduler_opstate>>()),
       inner_(stdexec::connect(std::move(sndr), inner_rcvr_t{ctl_})) {
     ctl_->op = this;
   }
 
-  on_io_opstate(on_io_opstate&& o) noexcept
+  on_scheduler_opstate(on_scheduler_opstate&& o) noexcept
     : sched_(o.sched_),
       rcvr_(std::move(o.rcvr_)),
       ctl_(std::move(o.ctl_)),
@@ -202,16 +184,25 @@ struct on_io_opstate {
     ctl_->op = this;
   }
 
-  on_io_opstate(const on_io_opstate&) = delete;
-  on_io_opstate& operator=(const on_io_opstate&) = delete;
-  on_io_opstate& operator=(on_io_opstate&&) = delete;
+  on_scheduler_opstate(const on_scheduler_opstate&) = delete;
+  on_scheduler_opstate& operator=(const on_scheduler_opstate&) = delete;
+  on_scheduler_opstate& operator=(on_scheduler_opstate&&) = delete;
 
-  void start() noexcept { stdexec::start(inner_); }
+  // starts-on: the child chain begins running on the scheduler's thread(s),
+  // so business code (senders, then callbacks) executes there.
+  void start() noexcept {
+    try {
+      asio::post(sched_->executor(), [op = this]() { stdexec::start(op->inner_); });
+    } catch (...) {
+      stdexec::set_error(std::move(rcvr_),
+                         std::make_exception_ptr(std::bad_alloc()));
+    }
+  }
 
   template <typename Tuple>
   void post_value(Tuple&& vals) {
     try {
-      asio::post(sched_->io(),
+      asio::post(sched_->executor(),
                  [this, vals = std::forward<Tuple>(vals)]() mutable {
                    std::apply(
                        [this](auto&&... a) {
@@ -229,7 +220,7 @@ struct on_io_opstate {
 
   void post_error(std::exception_ptr ep) {
     try {
-      asio::post(sched_->io(), [this, ep]() mutable {
+      asio::post(sched_->executor(), [this, ep]() mutable {
         stdexec::set_error(std::move(rcvr_), ep);
       });
     } catch (...) {
@@ -240,7 +231,7 @@ struct on_io_opstate {
 
   void post_stopped() {
     try {
-      asio::post(sched_->io(), [this]() mutable {
+      asio::post(sched_->executor(), [this]() mutable {
         stdexec::set_stopped(std::move(rcvr_));
       });
     } catch (...) {
@@ -250,9 +241,10 @@ struct on_io_opstate {
   }
 };
 
-// Sender wrapper that migrates the child's completion to the io thread.
-template <stdexec::sender S>
-struct on_io_sender {
+// Sender wrapper that starts the child on `sched` and migrates its
+// completion back to `sched`.
+template <stdexec::sender S, typename Sched>
+struct on_scheduler_sender {
   using sender_concept = stdexec::sender_tag;
 
   // Attributes exposed via get_env(): algorithms (then/let_value, ...) probe
@@ -268,62 +260,23 @@ struct on_io_sender {
   static constexpr auto get_env() noexcept -> attrs { return {}; }
 
   S sndr_;
-  const AsioScheduler* sched_;
+  const Sched* sched_;
 
   template <stdexec::receiver Rcvr>
-  on_io_opstate<S, Rcvr> connect(Rcvr rcvr) && {
-    return on_io_opstate<S, Rcvr>(sched_, std::move(sndr_), std::move(rcvr));
+  on_scheduler_opstate<S, Sched, Rcvr> connect(Rcvr rcvr) && {
+    return on_scheduler_opstate<S, Sched, Rcvr>(sched_, std::move(sndr_),
+                                                std::move(rcvr));
   }
 
   // Forward the child's completion signatures. The child is queried with the
-  // io scheduler injected into the environment: senders that depend on a
+  // scheduler injected into the environment: senders that depend on a
   // scheduler (e.g. exec::task) need it to compute their signatures.
   friend auto tag_invoke(stdexec::get_completion_signatures_t,
-                         const on_io_sender& self, auto env)
+                         const on_scheduler_sender& self, auto env)
       -> decltype(stdexec::get_completion_signatures(
-          self.sndr_, io_env{self.sched_})) {
-    return stdexec::get_completion_signatures(self.sndr_, io_env{self.sched_});
-  }
-};
-
-}  // namespace detail
-
-// Move the completion of `sndr` onto the runtime's io thread. The sender may
-// complete on any thread; every downstream step then runs on the io thread.
-// Requires the runtime to be started.
-template <stdexec::sender S>
-auto on_io(S&& sndr) {
-  auto& rt = Runtime::instance();
-  auto* sched = rt.scheduler();
-  if (!sched) {
-    throw std::runtime_error("runtime scheduler missing");
-  }
-  return detail::on_io_sender<std::decay_t<S>>{std::forward<S>(sndr), sched};
-}
-
-// Receiver used by spawn_on_scheduler: swallows every completion signal
-// (errors are logged to stderr). A custom receiver is used instead of
-// start_detached because continues_on always adds a
-// set_error_t(std::exception_ptr) completion (allocation failures), which
-// start_detached rejects at compile time.
-struct fire_and_forget_receiver {
-  using receiver_concept = stdexec::receiver_tag;
-
-  template <class... Vs>
-  void set_value(Vs&&...) && noexcept {
-  }
-
-  void set_error(std::exception_ptr ep) && noexcept {
-    try {
-      std::rethrow_exception(ep);
-    } catch (const std::exception& e) {
-      std::fprintf(stderr, "[dcb] spawned sender error: %s\n", e.what());
-    } catch (...) {
-      std::fprintf(stderr, "[dcb] spawned sender error: unknown\n");
-    }
-  }
-
-  void set_stopped() && noexcept {
+          self.sndr_, sched_env<Sched>{self.sched_})) {
+    return stdexec::get_completion_signatures(self.sndr_,
+                                              sched_env<Sched>{self.sched_});
   }
 };
 
@@ -370,36 +323,98 @@ struct faf_state {
     : op(stdexec::connect(std::move(sndr), rcvr_t{std::move(rcvr), self})) {}
 };
 
+// Receiver used for fire-and-forget launches: swallows every completion
+// signal (errors are logged to stderr).
+struct fire_and_forget_receiver {
+  using receiver_concept = stdexec::receiver_tag;
+
+  template <class... Vs>
+  void set_value(Vs&&...) && noexcept {
+  }
+
+  void set_error(std::exception_ptr ep) && noexcept {
+    try {
+      std::rethrow_exception(ep);
+    } catch (const std::exception& e) {
+      std::fprintf(stderr, "[dcb] sender error: %s\n", e.what());
+    } catch (...) {
+      std::fprintf(stderr, "[dcb] sender error: unknown\n");
+    }
+  }
+
+  void set_stopped() && noexcept {
+  }
+};
+
+}  // namespace detail
+
 // Start `sndr` detached, keeping the opstate alive until it completes.
 // `rcvr` receives the completion signals (on whatever thread the sender
 // completes). Errors are delivered to the receiver; nothing is rethrown.
 template <stdexec::sender S, stdexec::receiver Rcvr>
 void start_detached(S&& sndr, Rcvr rcvr) {
-  using state_t = faf_state<std::decay_t<S>, Rcvr>;
+  using state_t = detail::faf_state<std::decay_t<S>, Rcvr>;
   auto state = std::make_shared<state_t>(std::forward<S>(sndr), std::move(rcvr));
   state->self = state;
   stdexec::start(state->op);
 }
 
-// Start a sender on the io scheduler, swallowing errors (fire-and-forget).
-// Errors are logged to stderr. Sends the completion back to the io thread.
+// Launch a sender chain on `sched`: the child starts on the scheduler's
+// thread(s) and its completion is delivered back there. Fire-and-forget
+// (errors are logged and swallowed).
+template <stdexec::sender S, typename Sched>
+void start_on_scheduler(S&& sndr, const Sched* sched) {
+  auto chain = detail::on_scheduler_sender<std::decay_t<S>, Sched>{
+      std::forward<S>(sndr), sched};
+  start_detached(std::move(chain), detail::fire_and_forget_receiver{});
+}
+
+// Start a sender chain on the runtime's io scheduler (starts-on io; the
+// whole chain — connect, then callbacks, completion — runs on the io thread).
+// Fire-and-forget: errors are logged and swallowed.
 template <stdexec::sender S>
-void spawn_on_scheduler(S&& sndr, AsioScheduler* sched) {
-  auto chain = detail::on_io_sender<std::decay_t<S>>{std::forward<S>(sndr), sched};
-  start_detached(std::move(chain), fire_and_forget_receiver{});
+void start_on_io(S&& sndr) {
+  auto& rt = Runtime::instance();
+  rt.ensure_running();
+  auto* sched = rt.io_scheduler();
+  if (!sched) {
+    throw std::runtime_error("runtime scheduler missing");
+  }
+  start_on_scheduler(std::forward<S>(sndr), sched);
+}
+
+// Move the completion of `sndr` onto `sched`: the child starts on the
+// scheduler's thread(s) and every downstream step then runs there too.
+// Requires the runtime to be started (for on_io).
+template <stdexec::sender S, typename Sched>
+auto on_scheduler(S&& sndr, const Sched* sched) {
+  return detail::on_scheduler_sender<std::decay_t<S>, Sched>{
+      std::forward<S>(sndr), sched};
+}
+
+// Run a sender chain on the runtime's io scheduler (starts-on io).
+template <stdexec::sender S>
+auto on_io(S&& sndr) {
+  auto& rt = Runtime::instance();
+  auto* sched = rt.io_scheduler();
+  if (!sched) {
+    throw std::runtime_error("runtime scheduler missing");
+  }
+  return on_scheduler(std::forward<S>(sndr), sched);
 }
 
 // Block the calling thread until `sndr` completes. Returns the value or
-// rethrows the sender's error (mirrors async_simple's syncAwait).
+// rethrows the sender's error (mirrors std::exec's sync_wait semantics, with
+// a runtime deadlock guard):
 //
-//   int v = *dcb::sync_wait(dcb::spawn(add(a, b)));  // -> optional<int>
+//   int v = std::get<0>(*dcb::sync_wait(dcb::on_io(add(a, b))));
 //
 // NEVER call on the io thread: blocking the io thread while the awaited
-// sender needs it is a self-deadlock. AsioScheduler::current_thread_is_io()
+// sender needs it is a self-deadlock. IoContextScheduler::current_thread_is_io()
 // identifies the io thread and this wrapper rejects it with std::logic_error.
 template <stdexec::sender S>
 auto sync_wait(S&& sndr) {
-  auto* sched = Runtime::instance().scheduler();
+  auto* sched = Runtime::instance().io_scheduler();
   if (sched && sched->current_thread_is_io()) {
     throw std::logic_error(
       "dcb::sync_wait must not be called on the io thread (self-deadlock)");
@@ -407,49 +422,17 @@ auto sync_wait(S&& sndr) {
   return stdexec::sync_wait(std::forward<S>(sndr));
 }
 
-// Launch a sender on the runtime's io scheduler from a NON-coroutine context
-// and bind its completion back to the io thread. Returns the sender chain
-// (NOT yet started) — the caller decides how to trigger it:
-//
-//   // 1) Block a normal (non-io) thread until the result is ready:
-//   int v = *dcb::sync_wait(dcb::spawn(sndr));
-//
-//   // 2) Fire-and-forget (errors are logged and swallowed):
-//   dcb::spawn_detached(std::move(sndr));
-//
-// If you are already INSIDE a coroutine running on io, do not use spawn — just
-// `co_await dcb::on_io(std::move(sndr))` (or co_await the sender directly if
-// its completion thread is acceptable).
-template <stdexec::sender S>
-auto spawn(S&& sndr) {
-  return on_io(std::forward<S>(sndr));
-}
-
-// Fire-and-forget: launch a sender on the io scheduler and discard its result
-// (both value and exception are swallowed; exceptions are logged).
-template <stdexec::sender S>
-void spawn_detached(S&& sndr) {
-  auto& rt = Runtime::instance();
-  rt.ensure_running();
-  auto* sched = rt.scheduler();
-  if (!sched) {
-    throw std::runtime_error("runtime scheduler missing");
-  }
-  spawn_on_scheduler(std::forward<S>(sndr), sched);
-}
-
 // Run a blocking callable on the runtime's thread pool and return a sender
 // that resolves to its result. The io thread is never blocked: the callable
 // runs on a pool thread while the awaiting coroutine suspends. Completion
-// signatures: set_value_t(std::optional<T>) / set_error_t(std::exception_ptr),
-// delivered on the io thread (via on_io). Void callables are bridged through
-// dcb::Unit (optional<Unit> completes on success).
+// signatures: set_value_t(WireT) (WireT = T, or dcb::Unit for void) /
+// set_error_t(std::exception_ptr), delivered on the io thread.
 //
 //   // inside a coroutine running on io:
 //   auto v = co_await dcb::spawn_blocking([&] { return heavyComputation(); });
 //
 //   // block a normal (non-io) thread for the result:
-//   auto v = *dcb::sync_wait(dcb::spawn(dcb::spawn_blocking(f)));
+//   auto v = std::get<0>(*dcb::sync_wait(dcb::on_io(dcb::spawn_blocking(f))));
 //
 // Exceptions thrown by the callable are captured on the pool thread and
 // rethrown at the awaiter (set_error).
@@ -459,28 +442,35 @@ auto spawn_blocking(F&& f) -> stdexec::sender auto {
   using WireT = std::conditional_t<std::is_void_v<T>, Unit, T>;
   auto& rt = Runtime::instance();
   rt.ensure_running();
-  auto [tx, rx] = co::oneshot::channel<WireT>();
-  asio::post(rt.pool(), [f = std::forward<F>(f), tx = std::move(tx)]() mutable {
-    try {
-      if constexpr (std::is_void_v<T>) {
-        f();
-        tx.send(Unit{});
-      } else {
-        tx.send(f());
-      }
-    } catch (...) {
-      tx.send_error(std::current_exception());
+  auto* pool_sched = rt.blocking_scheduler();
+  if (!pool_sched) {
+    throw std::runtime_error("runtime scheduler missing");
+  }
+  // std::exec style: schedule the callable onto the blocking scheduler, then
+  // migrate the completion back to the io scheduler. Exceptions inside the
+  // callable become set_error automatically.
+  auto work = stdexec::just() | stdexec::then([f = std::forward<F>(f)]() -> WireT {
+    if constexpr (std::is_void_v<T>) {
+      f();
+      return Unit{};
+    } else {
+      return f();
     }
   });
-  return on_io(std::move(rx));
+  auto pool_side = detail::on_scheduler_sender<std::decay_t<decltype(work)>,
+                                               PoolScheduler>{
+      std::move(work), pool_sched};
+  return on_io(std::move(pool_side));
 }
 
 // Sleep for `dur` on the runtime's io scheduler (timer-based, io thread stays
-// responsive). Completion: set_value_t() on the io thread.
+// responsive). Completion: set_value_t() on the io thread. Supports
+// cancellation through the standard stop_token machinery (write_env with an
+// inplace_stop_token; a stop request completes with set_stopped).
 template <typename Rep, typename Period>
 stdexec::sender auto sleep(std::chrono::duration<Rep, Period> dur) {
   auto& rt = Runtime::instance();
-  auto* sched = rt.scheduler();
+  auto* sched = rt.io_scheduler();
   if (!sched) {
     throw std::runtime_error("runtime scheduler missing");
   }

@@ -411,7 +411,7 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
   asio::post(Runtime::instance().pool(),
              [session, gen, req, method, cb = std::move(cb)]() mutable {
                try {
-                 auto out = dcb::sync_wait(dcb::spawn(cb("Tom")));
+                 auto out = dcb::sync_wait(dcb::on_io(cb("Tom")));
                  if (!out) {
                    throw std::runtime_error("DartFn stopped");
                  }

@@ -183,11 +183,13 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
     return;
   }
   std::vector<std::uint8_t> copy(req, req + req_len);
-  dcb::Runtime::instance().spawn_on_asio(
-      [session = std::move(session), copy = std::move(copy), session_id]() -> stdexec::sender auto {
+  // std::exec style: launch a dispatch chain on the io scheduler
+  // (starts-on io; dispatch runs on the io thread, errors are swallowed).
+  auto sndr = stdexec::just() | stdexec::then(
+      [session = std::move(session), copy = std::move(copy), session_id]() {
         dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
-        return stdexec::just();
       });
+  dcb::start_on_io(std::move(sndr));
 }
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {

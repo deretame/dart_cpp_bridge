@@ -294,13 +294,13 @@ void test_dartfn_async_e2e_simulated_reply() {
 
   auto session = SessionRegistry::instance().get(sid);
   const auto gen = session->generation();
-  Runtime::instance().spawn_on_asio([session, gen]() -> stdexec::sender auto {
-    // DartFn::operator() throws synchronously if the session is missing; the
-    // spawn_on_asio factory guard reports it.
+  // Launch the DartFn reverse call on the io scheduler (starts-on io). If the
+  // session is gone, DartFn::operator() throws inside then -> set_error ->
+  // swallowed and logged by start_on_io.
+  dcb::start_on_io(stdexec::just() | stdexec::then([session, gen] {
     DartFnStringToString cb(session, gen, /*fn_id=*/1);
     dcb::start_detached(cb("Tom"), PostStringReceiver{session, gen});
-    return stdexec::just();
-  });
+  }));
 
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     SessionRegistry::instance().close_all();
@@ -344,7 +344,7 @@ void test_spawn_fire_and_forget() {
   auto fut = done->get_future();
   // Fire-and-forget: start and ignore the result; the sender chain still runs
   // and signals through the promise it captured.
-  dcb::spawn_detached(signal_and_return(done, 99));
+  dcb::start_on_io(signal_and_return(done, 99));
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn fire-and-forget timed out");
@@ -362,7 +362,7 @@ void test_spawn_wait_result() {
   Runtime::instance().start();
   // Block this (main, non-io) thread until the sender on io finishes.
   // sync_wait returns the value (as a tuple) or rethrows the sender's error.
-  auto v = dcb::sync_wait(dcb::spawn(return_value(7)));
+  auto v = dcb::sync_wait(dcb::on_io(return_value(7)));
   if (!v || std::get<0>(*v) != 7) {
     Runtime::instance().stop();
     fail("spawn wait wrong value");
@@ -382,7 +382,7 @@ void test_spawn_syncawait_exception() {
   Runtime::instance().start();
   std::string what;
   try {
-    (void)dcb::sync_wait(dcb::spawn(throw_value()));
+    (void)dcb::sync_wait(dcb::on_io(throw_value()));
     what = "no-throw";
   } catch (const std::exception& e) {
     what = e.what();
@@ -401,20 +401,18 @@ void test_syncawait_rejected_on_io_thread() {
   auto done = std::make_shared<std::promise<bool>>();
   auto fut = done->get_future();
   // Run a sender chain ON the io thread that tries to sync_wait another
-  // io-bound sender. The deadlock guard (AsioScheduler::current_thread_is_io)
+  // io-bound sender. The deadlock guard (IoContextScheduler::current_thread_is_io)
   // must reject it with std::logic_error instead of letting the io thread
   // block on itself (which would deadlock and hang the runtime).
-  Runtime::instance().spawn_on_asio([done]() -> stdexec::sender auto {
+  dcb::start_on_io(stdexec::just() | stdexec::then([done] {
     bool rejected = false;
     try {
-      (void)dcb::sync_wait(dcb::spawn(return_value(1)));
+      (void)dcb::sync_wait(dcb::on_io(return_value(1)));
     } catch (const std::logic_error&) {
       rejected = true;
     }
-    return stdexec::just(rejected) | stdexec::then([done](bool r) {
-             done->set_value(r);
-           });
-  });
+    done->set_value(rejected);
+  }));
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("sync_wait-on-io timed out (deadlock guard did not fire)");
@@ -430,21 +428,18 @@ void test_syncawait_rejected_on_io_thread() {
 void test_spawn_blocking_awaited_no_block_io() {
   using namespace dcb;
   Runtime::instance().start();
-  auto done = std::make_shared<std::promise<std::optional<int>>>();
+  auto done = std::make_shared<std::promise<int>>();
   auto fut = done->get_future();
   std::atomic<int> side_work{0};
 
   // A sender chain on io awaits spawn_blocking (150ms sleep on the pool);
   // completion is delivered back on the io thread.
-  Runtime::instance().spawn_on_asio([done]() -> stdexec::sender auto {
-    dcb::start_detached(
-        dcb::spawn_blocking([] {
-          std::this_thread::sleep_for(std::chrono::milliseconds(150));
-          return 42;
-        }),
-        PromiseValReceiver<std::optional<int>>{done});
-    return stdexec::just();
-  });
+  dcb::start_detached(
+      dcb::spawn_blocking([] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+        return 42;
+      }),
+      PromiseValReceiver<int>{done});
 
   // While the pool thread is sleeping, io must stay responsive.
   std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -461,7 +456,7 @@ void test_spawn_blocking_awaited_no_block_io() {
     fail("spawn_blocking awaited timed out");
   }
   const auto v = fut.get();
-  if (!v || *v != 42) {
+  if (v != 42) {
     Runtime::instance().stop();
     fail("spawn_blocking awaited wrong value");
   }
@@ -474,12 +469,12 @@ void test_spawn_blocking_fire_and_forget() {
   Runtime::instance().start();
   auto done = std::make_shared<std::promise<int>>();
   auto fut = done->get_future();
-  struct OptIntReceiver {
+  struct IntReceiver {
     using receiver_concept = stdexec::receiver_tag;
     std::shared_ptr<std::promise<int>> done;
-    void set_value(std::optional<int> v) && noexcept {
+    void set_value(int v) && noexcept {
       try {
-        done->set_value(*v);
+        done->set_value(v);
       } catch (...) {
       }
     }
@@ -491,14 +486,14 @@ void test_spawn_blocking_fire_and_forget() {
     }
     void set_stopped() && noexcept {}
   };
-  // Fire-and-forget: launch on the io scheduler via start_detached; the
-  // completion arrives back on the io thread.
+  // Fire-and-forget: launch via start_detached; the completion arrives back
+  // on the io thread.
   dcb::start_detached(
       dcb::spawn_blocking([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         return 123;
       }),
-      OptIntReceiver{done});
+      IntReceiver{done});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn_blocking fire-and-forget timed out");
@@ -516,31 +511,28 @@ void test_spawn_blocking_exception() {
   Runtime::instance().start();
   auto done = std::make_shared<std::promise<std::string>>();
   auto fut = done->get_future();
-  Runtime::instance().spawn_on_asio([done]() -> stdexec::sender auto {
-    struct ErrReceiver {
-      using receiver_concept = stdexec::receiver_tag;
-      std::shared_ptr<std::promise<std::string>> done;
-      void set_value(std::optional<int>) && noexcept {
-        try {
-          done->set_value("no-throw");
-        } catch (...) {
-        }
+  struct ErrReceiver {
+    using receiver_concept = stdexec::receiver_tag;
+    std::shared_ptr<std::promise<std::string>> done;
+    void set_value(int) && noexcept {
+      try {
+        done->set_value("no-throw");
+      } catch (...) {
       }
-      void set_error(std::exception_ptr ep) && noexcept {
-        try {
-          std::rethrow_exception(ep);
-        } catch (const std::exception& e) {
-          done->set_value(e.what());
-        } catch (...) {
-        }
+    }
+    void set_error(std::exception_ptr ep) && noexcept {
+      try {
+        std::rethrow_exception(ep);
+      } catch (const std::exception& e) {
+        done->set_value(e.what());
+      } catch (...) {
       }
-      void set_stopped() && noexcept {}
-    };
-    dcb::start_detached(
-        dcb::spawn_blocking([]() -> int { throw std::runtime_error("boom"); }),
-        ErrReceiver{done});
-    return stdexec::just();
-  });
+    }
+    void set_stopped() && noexcept {}
+  };
+  dcb::start_detached(
+      dcb::spawn_blocking([]() -> int { throw std::runtime_error("boom"); }),
+      ErrReceiver{done});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn_blocking exception timed out");
@@ -559,33 +551,30 @@ void test_spawn_blocking_void() {
   auto done = std::make_shared<std::promise<bool>>();
   auto fut = done->get_future();
   auto flag = std::make_shared<std::atomic<bool>>(false);
-  Runtime::instance().spawn_on_asio([done, flag]() -> stdexec::sender auto {
-    struct VoidOkReceiver {
-      using receiver_concept = stdexec::receiver_tag;
-      std::shared_ptr<std::promise<bool>> done;
-      std::shared_ptr<std::atomic<bool>> flag;
-      void set_value(std::optional<Unit>) && noexcept {
-        try {
-          done->set_value(flag->load());
-        } catch (...) {
-        }
+  struct VoidOkReceiver {
+    using receiver_concept = stdexec::receiver_tag;
+    std::shared_ptr<std::promise<bool>> done;
+    std::shared_ptr<std::atomic<bool>> flag;
+    void set_value(Unit) && noexcept {
+      try {
+        done->set_value(flag->load());
+      } catch (...) {
       }
-      void set_error(std::exception_ptr ep) && noexcept {
-        try {
-          done->set_exception(ep);
-        } catch (...) {
-        }
+    }
+    void set_error(std::exception_ptr ep) && noexcept {
+      try {
+        done->set_exception(ep);
+      } catch (...) {
       }
-      void set_stopped() && noexcept {}
-    };
-    dcb::start_detached(
-        dcb::spawn_blocking([flag] {
-          std::this_thread::sleep_for(std::chrono::milliseconds(20));
-          flag->store(true);
-        }),
-        VoidOkReceiver{done, flag});
-    return stdexec::just();
-  });
+    }
+    void set_stopped() && noexcept {}
+  };
+  dcb::start_detached(
+      dcb::spawn_blocking([flag] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        flag->store(true);
+      }),
+      VoidOkReceiver{done, flag});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn_blocking void timed out");
@@ -606,31 +595,28 @@ void test_spawn_blocking_void_exception() {
   Runtime::instance().start();
   auto done = std::make_shared<std::promise<std::string>>();
   auto fut = done->get_future();
-  Runtime::instance().spawn_on_asio([done]() -> stdexec::sender auto {
-    struct VoidErrReceiver {
-      using receiver_concept = stdexec::receiver_tag;
-      std::shared_ptr<std::promise<std::string>> done;
-      void set_value(std::optional<Unit>) && noexcept {
-        try {
-          done->set_value("no-throw");
-        } catch (...) {
-        }
+  struct VoidErrReceiver {
+    using receiver_concept = stdexec::receiver_tag;
+    std::shared_ptr<std::promise<std::string>> done;
+    void set_value(Unit) && noexcept {
+      try {
+        done->set_value("no-throw");
+      } catch (...) {
       }
-      void set_error(std::exception_ptr ep) && noexcept {
-        try {
-          std::rethrow_exception(ep);
-        } catch (const std::exception& e) {
-          done->set_value(e.what());
-        } catch (...) {
-        }
+    }
+    void set_error(std::exception_ptr ep) && noexcept {
+      try {
+        std::rethrow_exception(ep);
+      } catch (const std::exception& e) {
+        done->set_value(e.what());
+      } catch (...) {
       }
-      void set_stopped() && noexcept {}
-    };
-    dcb::start_detached(
-        dcb::spawn_blocking([]() -> void { throw std::runtime_error("void-boom"); }),
-        VoidErrReceiver{done});
-    return stdexec::just();
-  });
+    }
+    void set_stopped() && noexcept {}
+  };
+  dcb::start_detached(
+      dcb::spawn_blocking([]() -> void { throw std::runtime_error("void-boom"); }),
+      VoidErrReceiver{done});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn_blocking void exception timed out");
@@ -654,32 +640,29 @@ void test_coro_sleep_no_block_io() {
   std::atomic<int> side_work{0};
 
   auto t0 = std::chrono::steady_clock::now();
-  Runtime::instance().spawn_on_asio([done, t0]() -> stdexec::sender auto {
-    struct SleepReceiver {
-      using receiver_concept = stdexec::receiver_tag;
-      std::shared_ptr<std::promise<long long>> done;
-      std::chrono::steady_clock::time_point t0;
-      void set_value() && noexcept {
-        try {
-          auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             std::chrono::steady_clock::now() - t0)
-                             .count();
-          done->set_value(static_cast<long long>(elapsed));
-        } catch (...) {
-        }
+  struct SleepReceiver {
+    using receiver_concept = stdexec::receiver_tag;
+    std::shared_ptr<std::promise<long long>> done;
+    std::chrono::steady_clock::time_point t0;
+    void set_value() && noexcept {
+      try {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           std::chrono::steady_clock::now() - t0)
+                           .count();
+        done->set_value(static_cast<long long>(elapsed));
+      } catch (...) {
       }
-      void set_error(std::exception_ptr ep) && noexcept {
-        try {
-          done->set_exception(ep);
-        } catch (...) {
-        }
+    }
+    void set_error(std::exception_ptr ep) && noexcept {
+      try {
+        done->set_exception(ep);
+      } catch (...) {
       }
-      void set_stopped() && noexcept {}
-    };
-    dcb::start_detached(dcb::sleep(std::chrono::milliseconds(150)),
-                        SleepReceiver{done, t0});
-    return stdexec::just();
-  });
+    }
+    void set_stopped() && noexcept {}
+  };
+  dcb::start_detached(dcb::sleep(std::chrono::milliseconds(150)),
+                      SleepReceiver{done, t0});
 
   // While the sender is sleeping on the timer, io must stay responsive.
   std::this_thread::sleep_for(std::chrono::milliseconds(30));

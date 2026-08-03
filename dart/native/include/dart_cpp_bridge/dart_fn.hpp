@@ -36,7 +36,7 @@ struct dartfn_inner_receiver {
 
   std::shared_ptr<dartfn_ctl<Op>> ctl_;
 
-  io_env get_env() const noexcept { return io_env{ctl_->op->sched_}; }
+  sched_env<IoContextScheduler> get_env() const noexcept { return sched_env<IoContextScheduler>{ctl_->op->sched_}; }
 
   void set_value(std::optional<DartFnReply> reply) && noexcept {
     ctl_->op->post_reply(std::move(reply));
@@ -77,7 +77,7 @@ struct dartfn_sender {
   static constexpr auto get_env() noexcept -> attrs { return {}; }
 
   co::oneshot::Receiver<DartFnReply> rx_;
-  const AsioScheduler* sched_;
+  const IoContextScheduler* sched_;
   DecodeRet decode_;
 
   template <stdexec::receiver Rcvr>
@@ -88,13 +88,13 @@ struct dartfn_sender {
     using inner_op_t = stdexec::connect_result_t<
       co::oneshot::Receiver<DartFnReply>, inner_rcvr_t>;
 
-    const AsioScheduler* sched_;
+    const IoContextScheduler* sched_;
     Rcvr rcvr_;
     DecodeRet decode_;
     std::shared_ptr<dartfn_ctl<opstate>> ctl_;
     inner_op_t inner_;
 
-    opstate(const AsioScheduler* sched, co::oneshot::Receiver<DartFnReply> rx,
+    opstate(const IoContextScheduler* sched, co::oneshot::Receiver<DartFnReply> rx,
             Rcvr rcvr, DecodeRet decode)
       : sched_(sched),
         rcvr_(std::move(rcvr)),
@@ -121,7 +121,7 @@ struct dartfn_sender {
 
     void post_reply(std::optional<DartFnReply> reply) {
       try {
-        asio::post(sched_->io(), [this, reply = std::move(reply)]() mutable {
+        asio::post(sched_->executor(), [this, reply = std::move(reply)]() mutable {
           try {
             if (!reply) {
               throw std::runtime_error("DartFn: channel closed");
@@ -144,7 +144,7 @@ struct dartfn_sender {
 
     void post_error(std::exception_ptr ep) {
       try {
-        asio::post(sched_->io(), [this, ep]() mutable {
+        asio::post(sched_->executor(), [this, ep]() mutable {
           stdexec::set_error(std::move(rcvr_), ep);
         });
       } catch (...) {
@@ -155,7 +155,7 @@ struct dartfn_sender {
 
     void post_stopped() {
       try {
-        asio::post(sched_->io(), [this]() mutable {
+        asio::post(sched_->executor(), [this]() mutable {
           stdexec::set_error(std::move(rcvr_),
                              std::make_exception_ptr(
                                  std::runtime_error("DartFn stopped")));
@@ -193,7 +193,7 @@ struct dartfn_sender {
 // delivered as set_error(std::exception_ptr).
 //
 // For blocking contexts (thread pool, foreign threads), use sync_wait:
-//   auto r = dcb::sync_wait(dcb::spawn(fn(args...)));
+//   auto r = dcb::sync_wait(dcb::on_io(fn(args...)));
 // Do NOT sync_wait on the io thread (self-deadlock).
 template <typename>
 class DartFn;
@@ -238,14 +238,14 @@ class DartFn<Ret(Args...)> {
   // from within a sender chain setup on the io thread.
   //
   // For blocking contexts, wrap with sync_wait:
-  //   auto r = dcb::sync_wait(dcb::spawn(fn(args...)));
+  //   auto r = dcb::sync_wait(dcb::on_io(fn(args...)));
   detail::dartfn_sender<Ret> operator()(const Args&... args) const {
     if (!session_) {
       throw std::runtime_error("DartFn: empty");
     }
     ByteWriter w;
     encode_(w, args...);
-    auto* sched = Runtime::instance().scheduler();
+    auto* sched = Runtime::instance().io_scheduler();
     if (!sched) {
       throw std::runtime_error("runtime scheduler missing");
     }

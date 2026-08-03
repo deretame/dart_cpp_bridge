@@ -24,14 +24,15 @@ void Runtime::start() {
     return;
   }
   io_.restart();
-  scheduler_ = std::make_unique<AsioScheduler>(io_);
+  io_sched_ = std::make_unique<IoContextScheduler>(io_);
   pool_ = std::make_unique<asio::thread_pool>(pool_threads_);
+  pool_sched_ = std::make_unique<PoolScheduler>(pool_->get_executor());
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
   // Tell the scheduler which thread runs the io_context so that
   // current_thread_is_io() (used by sync_wait's deadlock guard) is accurate.
-  scheduler_->set_io_thread_id(io_thread_->get_id());
+  io_sched_->set_io_thread_id(io_thread_->get_id());
 }
 
 void Runtime::stop() {
@@ -52,7 +53,8 @@ void Runtime::stop() {
     pool_->join();
     pool_.reset();
   }
-  scheduler_.reset();
+  pool_sched_.reset();
+  io_sched_.reset();
 }
 
 void Session::dispose() {
