@@ -21,8 +21,9 @@ namespace dcb {
 
 namespace detail {
 
-// Shared control block holding the current opstate address; see runtime.hpp
-// on_io_ctl for why inner receivers must not hold raw opstate pointers.
+// Shared control block holding the current opstate address. Inner receivers
+// hold this instead of a raw opstate pointer: opstates may be moved by the
+// connect() return chain, and the move constructor refreshes the address.
 template <typename Op>
 struct dartfn_ctl {
   Op* op{nullptr};
@@ -36,7 +37,9 @@ struct dartfn_inner_receiver {
 
   std::shared_ptr<dartfn_ctl<Op>> ctl_;
 
-  sched_env<IoContextScheduler> get_env() const noexcept { return sched_env<IoContextScheduler>{ctl_->op->sched_}; }
+  sched_env<IoContextScheduler> get_env() const noexcept {
+    return sched_env<IoContextScheduler>{ctl_->op->sched_};
+  }
 
   void set_value(std::optional<DartFnReply> reply) && noexcept {
     ctl_->op->post_reply(std::move(reply));
@@ -99,9 +102,18 @@ struct dartfn_sender {
       : sched_(sched),
         rcvr_(std::move(rcvr)),
         decode_(std::move(decode)),
-        ctl_(std::make_shared<dartfn_ctl<opstate>>()),
-        inner_(stdexec::connect(std::move(rx), inner_rcvr_t{ctl_})) {
-      ctl_->op = this;
+        ctl_(make_ctl(this)),
+        inner_(stdexec::connect(std::move(rx), inner_rcvr_t{ctl_})) {}
+
+    // The shared control block is created with op already pointing at `this`:
+    // stdexec's connect_t queries the inner receiver's env (get_env) while
+    // the inner operation is being connected, and get_env reads
+    // ctl_->op->sched_. sched_ is initialized before ctl_/inner_ (member
+    // initialization order), so the pointer is valid at that point.
+    static std::shared_ptr<dartfn_ctl<opstate>> make_ctl(opstate* self) {
+      auto c = std::make_shared<dartfn_ctl<opstate>>();
+      c->op = self;
+      return c;
     }
 
     opstate(opstate&& o) noexcept
@@ -193,7 +205,7 @@ struct dartfn_sender {
 // delivered as set_error(std::exception_ptr).
 //
 // For blocking contexts (thread pool, foreign threads), use sync_wait:
-//   auto r = dcb::sync_wait(dcb::on_io(fn(args...)));
+//   auto r = dcb::sync_wait(fn(args...));
 // Do NOT sync_wait on the io thread (self-deadlock).
 template <typename>
 class DartFn;
@@ -238,7 +250,7 @@ class DartFn<Ret(Args...)> {
   // from within a sender chain setup on the io thread.
   //
   // For blocking contexts, wrap with sync_wait:
-  //   auto r = dcb::sync_wait(dcb::on_io(fn(args...)));
+  //   auto r = dcb::sync_wait(fn(args...));
   detail::dartfn_sender<Ret> operator()(const Args&... args) const {
     if (!session_) {
       throw std::runtime_error("DartFn: empty");

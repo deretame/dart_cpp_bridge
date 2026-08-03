@@ -138,7 +138,7 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
-target_link_libraries(dcb_runtime PUBLIC asio_iface concurrentqueue STDEXEC::stdexec)
+target_link_libraries(dcb_runtime PUBLIC asio_iface concurrentqueue STDEXEC::stdexec STDEXEC::asioexec)
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)
@@ -170,7 +170,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
-  target_link_libraries(dcb_shared PRIVATE asio_iface concurrentqueue STDEXEC::stdexec)
+  target_link_libraries(dcb_shared PRIVATE asio_iface concurrentqueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
     target_compile_options(dcb_shared PRIVATE /utf-8)

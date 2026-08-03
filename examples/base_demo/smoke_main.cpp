@@ -181,9 +181,9 @@ void test_oneshot_cross_thread_wake() {
   auto fut = done.get_future();
   auto [tx, rx] = co::oneshot::channel<int>();
 
-  // Run the oneshot receiver on the runtime io scheduler; completion returns
-  // to the io thread via dcb::on_io (std::exec style).
-  auto sndr = dcb::on_io(std::move(rx));
+  // Run the oneshot receiver on the runtime io scheduler (starts-on io); the
+  // chain's start (waiter registration) happens on the io thread.
+  auto sndr = stdexec::starts_on(*Runtime::instance().io_scheduler(), std::move(rx));
   auto op = stdexec::connect(std::move(sndr), PromiseReceiver<int>{&done});
   stdexec::start(op);
 
@@ -214,7 +214,7 @@ void test_io_not_blocked_while_awaiting() {
   std::atomic<bool> resumed{false};
   std::atomic<int> side_work{0};
 
-  auto sndr = dcb::on_io(std::move(rx));
+  auto sndr = stdexec::starts_on(*Runtime::instance().io_scheduler(), std::move(rx));
   auto op = stdexec::connect(std::move(sndr), FlagReceiver{&resumed});
   stdexec::start(op);
   std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -296,11 +296,14 @@ void test_dartfn_async_e2e_simulated_reply() {
   const auto gen = session->generation();
   // Launch the DartFn reverse call on the io scheduler (starts-on io). If the
   // session is gone, DartFn::operator() throws inside then -> set_error ->
-  // swallowed and logged by start_on_io.
-  dcb::start_on_io(stdexec::just() | stdexec::then([session, gen] {
-    DartFnStringToString cb(session, gen, /*fn_id=*/1);
-    dcb::start_detached(cb("Tom"), PostStringReceiver{session, gen});
-  }));
+  // swallowed and logged by the fire-and-forget receiver.
+  dcb::start_detached(
+      stdexec::starts_on(*Runtime::instance().io_scheduler(),
+                         stdexec::just() | stdexec::then([session, gen] {
+                           DartFnStringToString cb(session, gen, /*fn_id=*/1);
+                           dcb::start_detached(cb("Tom"), PostStringReceiver{session, gen});
+                         })),
+      dcb::detail::fire_and_forget_receiver{});
 
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     SessionRegistry::instance().close_all();
@@ -344,7 +347,9 @@ void test_spawn_fire_and_forget() {
   auto fut = done->get_future();
   // Fire-and-forget: start and ignore the result; the sender chain still runs
   // and signals through the promise it captured.
-  dcb::start_on_io(signal_and_return(done, 99));
+  dcb::start_detached(
+      stdexec::starts_on(*Runtime::instance().io_scheduler(), signal_and_return(done, 99)),
+      dcb::detail::fire_and_forget_receiver{});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn fire-and-forget timed out");
@@ -362,7 +367,7 @@ void test_spawn_wait_result() {
   Runtime::instance().start();
   // Block this (main, non-io) thread until the sender on io finishes.
   // sync_wait returns the value (as a tuple) or rethrows the sender's error.
-  auto v = dcb::sync_wait(dcb::on_io(return_value(7)));
+  auto v = dcb::sync_wait(stdexec::starts_on(*Runtime::instance().io_scheduler(), return_value(7)));
   if (!v || std::get<0>(*v) != 7) {
     Runtime::instance().stop();
     fail("spawn wait wrong value");
@@ -382,7 +387,8 @@ void test_spawn_syncawait_exception() {
   Runtime::instance().start();
   std::string what;
   try {
-    (void)dcb::sync_wait(dcb::on_io(throw_value()));
+    (void)dcb::sync_wait(
+        stdexec::starts_on(*Runtime::instance().io_scheduler(), throw_value()));
     what = "no-throw";
   } catch (const std::exception& e) {
     what = e.what();
@@ -404,15 +410,19 @@ void test_syncawait_rejected_on_io_thread() {
   // io-bound sender. The deadlock guard (IoContextScheduler::current_thread_is_io)
   // must reject it with std::logic_error instead of letting the io thread
   // block on itself (which would deadlock and hang the runtime).
-  dcb::start_on_io(stdexec::just() | stdexec::then([done] {
-    bool rejected = false;
-    try {
-      (void)dcb::sync_wait(dcb::on_io(return_value(1)));
-    } catch (const std::logic_error&) {
-      rejected = true;
-    }
-    done->set_value(rejected);
-  }));
+  dcb::start_detached(
+      stdexec::starts_on(*Runtime::instance().io_scheduler(),
+                         stdexec::just() | stdexec::then([done] {
+                           bool rejected = false;
+                           try {
+                             (void)dcb::sync_wait(stdexec::starts_on(
+                                 *Runtime::instance().io_scheduler(), return_value(1)));
+                           } catch (const std::logic_error&) {
+                             rejected = true;
+                           }
+                           done->set_value(rejected);
+                         })),
+      dcb::detail::fire_and_forget_receiver{});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("sync_wait-on-io timed out (deadlock guard did not fire)");
@@ -504,6 +514,50 @@ void test_spawn_blocking_fire_and_forget() {
   }
   Runtime::instance().stop();
   std::printf("spawn_blocking fire-and-forget ok\n");
+}
+
+void test_spawn_blocking_explicit_scheduler() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto done = std::make_shared<std::promise<int>>();
+  auto fut = done->get_future();
+  struct IntReceiver {
+    using receiver_concept = stdexec::receiver_tag;
+    std::shared_ptr<std::promise<int>> done;
+    void set_value(int v) && noexcept {
+      try {
+        done->set_value(v);
+      } catch (...) {
+      }
+    }
+    void set_error(std::exception_ptr ep) && noexcept {
+      try {
+        done->set_exception(ep);
+      } catch (...) {
+      }
+    }
+    void set_stopped() && noexcept {}
+  };
+  // Explicit scheduler: pass the blocking pool scheduler by hand; the result
+  // must still arrive back on the io thread.
+  dcb::start_detached(
+      dcb::spawn_blocking(
+          [] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            return 77;
+          },
+          Runtime::instance().blocking_scheduler()),
+      IntReceiver{done});
+  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("spawn_blocking explicit scheduler timed out");
+  }
+  if (fut.get() != 77) {
+    Runtime::instance().stop();
+    fail("spawn_blocking explicit scheduler wrong value");
+  }
+  Runtime::instance().stop();
+  std::printf("spawn_blocking explicit scheduler ok\n");
 }
 
 void test_spawn_blocking_exception() {
@@ -777,6 +831,7 @@ int main() {
   test_syncawait_rejected_on_io_thread();
   test_spawn_blocking_awaited_no_block_io();
   test_spawn_blocking_fire_and_forget();
+  test_spawn_blocking_explicit_scheduler();
   test_spawn_blocking_exception();
   test_spawn_blocking_void();
   test_spawn_blocking_void_exception();

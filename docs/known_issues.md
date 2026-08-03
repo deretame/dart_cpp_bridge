@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-08-02
+> 更新日期：2026-08-03
 
 ---
 
@@ -548,4 +548,80 @@ Available native assets: package:codegen_demo/codegen_demo.dart.
   Receiver 在协程挂起期间被销毁/移动（或对临时 `Pair` 直接 `recv()`）会 UAF；
   现改为持 `shared_ptr<state>`，状态至少活到协程恢复。
 - 相关：`include/dart_cpp_bridge/stream_sink.hpp`、`include/dart_cpp_bridge/channel.hpp`。
+
+---
+
+## 13. 【已解决】`dartfn_sender::opstate` 构造序：connect 期间 env 查询拿到空 scheduler
+
+### 13.1 现象
+
+stdexec 迁移后（`on_io` 糖层删除、改用 `stdexec::starts_on`），`examples/base_demo` 的 Dart 测试在 `Counter.callCallback`（DartFn 反向调用路径）完成后立即崩溃：
+
+```text
+===== CRASH =====
+ExceptionCode=-1073741819 (0xC0000005, access violation)
+pc 0x... dcb_base_demo.dll+0x28104
+```
+
+- `dcb_smoke.exe` 同样的 DartFn e2e 路径**不崩**（且能打印出 `get_env` 被调用、`op=null`）；
+- 单独跑 `sleepAndGet` 等后续测试不崩，只有经 `starts_on` 包装的 dartfn 链崩，稳定复现。
+
+### 13.2 根因
+
+`dartfn_sender::opstate` 构造函数中，`ctl_->op = this` 写在成员初始化**之后**的构造体里：
+
+```cpp
+opstate(const IoContextScheduler* sched, co::oneshot::Receiver<DartFnReply> rx, ...)
+  : ..., ctl_(std::make_shared<dartfn_ctl<opstate>>()),      // op == nullptr
+    inner_(stdexec::connect(std::move(rx), inner_rcvr_t{ctl_})) {
+  ctl_->op = this;   // ← 太晚！connect 已经在读 ctl_->op
+}
+```
+
+stdexec 的 `connect_t::operator()` 在 connect 期间**无条件**调用 `get_env(receiver)`（用于 `transform_sender` / completion domain 计算）。`dartfn_inner_receiver::get_env()` 读 `ctl_->op->sched_`，此时 `ctl_->op` 还是 `nullptr`，于是返回一个带 **null scheduler 的 `sched_env`**。
+
+- smoke 路径：这个 null env 只是被传入 `transform_sender(oneshot_rx, env)`，oneshot rx 是自定义 sender、不查询 env 里的 scheduler，**不崩溃**；
+- Dart 路径：dartfn 链被 `starts_on`（内部展开为 `__sequence(continues_on(just(), sched), child)`）包裹，receiver 是带 `__sched_env` 的 stdexec 内部 receiver，env 里的 null scheduler 被真正解引用 → AV。
+
+### 13.3 调试路径
+
+| 手段 | 结论 |
+|------|------|
+| 单独跑 `-n "Counter"` / `-n "sleepAndGet"` | 稳定复现/排除；确认与顺序无关、与 starts_on 包装有关 |
+| `RelWithDebInfo` + cdb `-o` 跟随子进程 + `sxe av` | 崩溃栈定位到 `dartfn_inner_receiver::get_env` ← `connect_t` ← `opstate` 构造函数 |
+| 在 `get_env` 加临时 `fprintf` | smoke 路径确实以 `op=null` 调用且不崩 → 差异在 env 消费方，不在调用方 |
+
+### 13.4 修复
+
+`ctl_->op` 在构造 `inner_`（connect）**之前**就指向 `this`。`sched_` 成员在 `ctl_`/`inner_` 之前初始化，get_env 读 `ctl_->op->sched_` 时数据已就绪：
+
+```cpp
+opstate(const IoContextScheduler* sched, co::oneshot::Receiver<DartFnReply> rx,
+        Rcvr rcvr, DecodeRet decode)
+  : sched_(sched),
+    rcvr_(std::move(rcvr)),
+    decode_(std::move(decode)),
+    ctl_(make_ctl(this)),
+    inner_(stdexec::connect(std::move(rx), inner_rcvr_t{ctl_})) {}
+
+static std::shared_ptr<dartfn_ctl<opstate>> make_ctl(opstate* self) {
+  auto c = std::make_shared<dartfn_ctl<opstate>>();
+  c->op = self;
+  return c;
+}
+```
+
+（move 构造函数里 `ctl_->op = this` 的刷新逻辑保持不变。）
+
+### 13.5 验证
+
+- `dcb_smoke.exe`：14 项全过
+- `examples/base_demo` Dart 测试：79/79 通过
+
+### 13.6 教训
+
+- **stdexec 的 `connect_t` 会在 connect 期间查询 receiver env**（`get_env` + `transform_sender`），自定义 sender 的 opstate 构造函数中，任何在 connect 之后才初始化的指针都不能被 inner receiver 的 `get_env()` 依赖。
+- 同样的 `connect` 调用在裸 receiver（smoke）与 stdexec 算法 receiver（`starts_on`/`__sequence` 内部 receiver）下行为不同：前者 env 里的坏值可能从不被读取，后者（`__sched_env`）会立即解引用。**本地最小复现（smoke）通过不代表 Dart 全链路安全。**
+- 该 bug 在迁移分支上早已存在（构造函数顺序从未对过），只是此前 `on_io`/`start_on_io` 路径从未经 stdexec 算法 receiver 连接 dartfn，迁移到 `starts_on` 后首次暴露。
+
 

@@ -393,7 +393,8 @@ template <typename T, stdexec::sender S, typename Encode>
 void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::uint64_t req,
                std::uint32_t method, S&& sndr, Encode&& encode, const char* name) {
   try {
-    auto chain = dcb::on_io(std::forward<S>(sndr));
+    auto chain = stdexec::starts_on(*Runtime::instance().io_scheduler(),
+                                    std::forward<S>(sndr));
     auto rcvr = DispatchReceiver<T>{
         session, gen, req, method, name,
         std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))};
@@ -411,7 +412,8 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
   asio::post(Runtime::instance().pool(),
              [session, gen, req, method, cb = std::move(cb)]() mutable {
                try {
-                 auto out = dcb::sync_wait(dcb::on_io(cb("Tom")));
+                 auto out = dcb::sync_wait(stdexec::starts_on(
+                     *Runtime::instance().io_scheduler(), cb("Tom")));
                  if (!out) {
                    throw std::runtime_error("DartFn stopped");
                  }
@@ -424,32 +426,6 @@ void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint6
                  post_err(session, gen, req, method, "callDartHelloSync", "unknown");
                }
              });
-}
-
-void counter_sleep_and_get(std::shared_ptr<Counter> obj, std::int32_t sleep_ms,
-                           const std::shared_ptr<Session>& session, std::uint64_t gen,
-                           std::uint64_t req, std::uint32_t method) {
-  // Normal member method: run blocking work on the thread pool, then post the result back to io.
-  auto* io = &Runtime::instance().io();
-  asio::post(Runtime::instance().pool(), [obj, sleep_ms, session, gen, req, method, io]() {
-    try {
-      std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-      const auto value = obj->value();
-      asio::post(*io, [session, gen, req, method, value]() {
-        ByteWriter w;
-        w.i32(value);
-        post_ok(session, gen, req, method, w.raw());
-      });
-    } catch (const std::exception& e) {
-      asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
-        post_err(session, gen, req, method, "Counter::sleepAndGet", msg);
-      });
-    } catch (...) {
-      asio::post(*io, [session, gen, req, method]() {
-        post_err(session, gen, req, method, "Counter::sleepAndGet", "unknown");
-      });
-    }
-  });
 }
 
 void counter_increment_stream(std::shared_ptr<Counter> obj, std::int32_t count,
@@ -738,7 +714,17 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           post_err(session, gen, req, method, "Counter::sleepAndGet", "Counter handle not found or already dropped");
           break;
         }
-        counter_sleep_and_get(obj, sleep_ms, session, gen, req, method);
+        // Normal member method: blocking work runs on the pool scheduler, the
+        // result (or exception) is delivered back on the io thread by
+        // spawn_blocking's continues_on; DispatchReceiver posts the response.
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            dcb::spawn_blocking([obj = std::move(obj), sleep_ms] {
+              std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+              return obj->value();
+            }),
+            [](ByteWriter& w, std::int32_t v) { w.i32(v); },
+            "Counter::sleepAndGet");
         break;
       }
       case MethodId::kCounterIncrementStream: {

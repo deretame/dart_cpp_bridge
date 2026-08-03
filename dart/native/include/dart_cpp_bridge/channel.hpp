@@ -22,8 +22,8 @@
 //       set_error_t(std::exception_ptr) // send_error()
 //   The completion fires on whichever thread calls send()/close()/send_error()
 //   (or on the start() thread if the channel was already settled). Use
-//   dcb::on_io() / stdexec::continues_on() to migrate completion back to the
-//   io thread.
+//   stdexec::continues_on() (or starts_on the io scheduler) to migrate
+//   completion back to the io thread.
 //
 //   auto [tx, rx] = co::oneshot::channel<int>();
 //   tx.send(1);                                    // non-blocking, any thread

@@ -24,15 +24,13 @@ void Runtime::start() {
     return;
   }
   io_.restart();
-  io_sched_ = std::make_unique<IoContextScheduler>(io_);
-  pool_ = std::make_unique<asio::thread_pool>(pool_threads_);
-  pool_sched_ = std::make_unique<PoolScheduler>(pool_->get_executor());
+  pool_ = std::make_unique<exec::asio::asio_thread_pool>(pool_threads_);
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
   // Tell the scheduler which thread runs the io_context so that
   // current_thread_is_io() (used by sync_wait's deadlock guard) is accurate.
-  io_sched_->set_io_thread_id(io_thread_->get_id());
+  io_sched_.set_io_thread_id(io_thread_->get_id());
 }
 
 void Runtime::stop() {
@@ -50,11 +48,9 @@ void Runtime::stop() {
   }
   io_thread_.reset();
   if (pool_) {
-    pool_->join();
+    // asio_thread_pool's destructor stops and joins the pool threads.
     pool_.reset();
   }
-  pool_sched_.reset();
-  io_sched_.reset();
 }
 
 void Session::dispose() {
@@ -113,7 +109,7 @@ co::oneshot::Receiver<DartFnReply> Session::invoke_dart_fn_async(
     std::lock_guard lock(dart_fn_mu_);
     dart_fn_pending_.emplace(reply_id, [tx_holder](DartFnReply r) {
       // Any thread (typically Dart FFI). The reply is moved back onto the io
-      // thread by the continues_on inside dcb::on_io (see runtime.hpp).
+      // thread by the continues_on in dartfn_sender (see dart_fn.hpp).
       (void)tx_holder->send(std::move(r));
     });
   }

@@ -189,7 +189,8 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
       [session = std::move(session), copy = std::move(copy), session_id]() {
         dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
       });
-  dcb::start_on_io(std::move(sndr));
+  auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(), std::move(sndr));
+  dcb::start_detached(std::move(chain), dcb::detail::fire_and_forget_receiver{});
 }
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {
