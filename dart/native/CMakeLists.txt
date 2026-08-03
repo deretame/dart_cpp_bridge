@@ -17,10 +17,10 @@
 #   this step but cannot be installed/distributed).
 #
 # Single source of truth for dependency versions:
-#   asio / async-simple versions are pinned only in this file. Downstream
-#   targets linking dart_cpp_bridge::runtime transitively receive both include
-#   paths and compile definitions — no need to declare them separately, no
-#   version drift.
+#   asio / async-simple / stdexec versions are pinned only in this file.
+#   Downstream targets linking dart_cpp_bridge::runtime transitively receive
+#   both include paths and compile definitions — no need to declare them
+#   separately, no version drift.
 #
 # Usage (monorepo downstream project):
 #   set(DCB_ROOT "<path-to>/dart/native")
@@ -41,7 +41,7 @@
 #     $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 project(dart_cpp_bridge LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -51,10 +51,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(FetchContent)
 
 # --- asio (header-only) ---
+# Version bumped to 1.31.0: stdexec's official standalone-asio integration
+# (STDEXEC_ENABLE_ASIO) pins asio-1-31-0 as its floor.
 FetchContent_Declare(
   asio
   GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
-  GIT_TAG        asio-1-30-2
+  GIT_TAG        asio-1-31-0
   GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(asio)
@@ -63,34 +65,12 @@ add_library(asio_iface INTERFACE)
 target_include_directories(asio_iface INTERFACE ${asio_SOURCE_DIR}/asio/include)
 target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
 
-# --- async-simple (header-only) ---
-# MakeAvailable runs its CMakeLists, providing the official
-# async_simple_header_only INTERFACE target (include dirs + Threads +
-# cxx_std_20). The upstream project also defines uthread static/shared
-# targets whose Darwin assembly is selected by CMAKE_SYSTEM_PROCESSOR (it
-# ignores CMAKE_OSX_ARCHITECTURES), which breaks macOS cross-architecture
-# slices. The runtime only uses the header-only target and never uthread —
-# uthread is also not supported on Windows; use Boost.Fiber if fibers are
-# needed — so keep the uthread libraries out of the default build.
-set(ASYNC_SIMPLE_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-set(ASYNC_SIMPLE_BUILD_DEMO_EXAMPLE OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  async_simple
-  GIT_REPOSITORY https://github.com/alibaba/async_simple.git
-  GIT_TAG        1.4
-  GIT_SHALLOW    TRUE
-  GIT_SUBMODULES  ""
-)
-FetchContent_MakeAvailable(async_simple)
-foreach(_dcb_uthread_target async_simple async_simple_static)
-  if(TARGET "${_dcb_uthread_target}")
-    get_target_property(_dcb_uthread_type "${_dcb_uthread_target}" TYPE)
-    if(NOT _dcb_uthread_type STREQUAL "INTERFACE_LIBRARY")
-      set_target_properties("${_dcb_uthread_target}"
-        PROPERTIES EXCLUDE_FROM_ALL TRUE)
-    endif()
-  endif()
-endforeach()
+# The asio repo has no CMakeLists.txt, so MakeAvailable only populates the
+# source tree — no target is created. stdexec's ConfigureASIO reuses an
+# existing target named `asio` (import_standalone_asio returns early when it
+# finds one) instead of CPM-fetching its own asio-1-31-0. Create that target
+# as an alias of asio_iface so the whole build shares one asio copy/version.
+add_library(asio ALIAS asio_iface)
 
 # --- moodycamel::ConcurrentQueue (header-only, lock-free MPMC queue) ---
 FetchContent_Declare(
@@ -101,6 +81,35 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(concurrentqueue)
 
+# --- stdexec (header-only, std::execution P2300 reference implementation) ---
+# Migration experiment (branch feat/stdexec-migration): async-simple is fully
+# replaced by stdexec senders/receivers/schedulers. Provides the
+# `STDEXEC::stdexec` INTERFACE target (include dirs + generated
+# stdexec_version_config.hpp).
+# Pinned to the nvhpc-26.05 release tag (lightweight tag → commit
+# 6d7ad689f4d4, 2026-05-11, project VERSION 0.11.0; main has no formal
+# release tags).
+# This tag's own CMakeLists requires CMake >= 3.25 (main requires 3.28),
+# hence cmake_minimum_required above. When built as a subproject
+# (STDEXEC_MAIN_PROJECT=OFF) tests/docs default OFF; examples default ON,
+# so disable them explicitly.
+set(STDEXEC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(STDEXEC_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(STDEXEC_INSTALL OFF CACHE BOOL "" FORCE)
+# Enable the Asio adapter (experimental::execution::asio): use_sender
+# completion token, asio_thread_pool (STDEXEC::asio_pool alias), etc. It is
+# header-only and links against the `asio` alias target declared above.
+set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
+set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
+FetchContent_Declare(
+  stdexec
+  GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
+  GIT_TAG        nvhpc-26.05
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(stdexec)
+
 # --- dart_api_dl (downloaded via fetch_dart_api.cmake) ---
 set(DCB_DART_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dart_api)
 if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
@@ -109,11 +118,12 @@ if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
 endif()
 
 # --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---
+# Migration note (feat/stdexec-migration): src/cbridge.cpp and
+# src/foreign_runtime.cpp are temporarily excluded from the build — they still
+# target the old async-simple runtime and will be re-ported to std::exec later.
 add_library(dcb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/object_handle.cpp
-  src/foreign_runtime.cpp
-  src/cbridge.cpp
   src/dcb_codec.c
   src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
@@ -128,7 +138,7 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
-target_link_libraries(dcb_runtime PUBLIC asio_iface async_simple_header_only concurrentqueue)
+target_link_libraries(dcb_runtime PUBLIC asio_iface concurrentqueue STDEXEC::stdexec)
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)
@@ -149,8 +159,6 @@ if(DCB_BUILD_SHARED)
   add_library(dcb_shared SHARED
     src/runtime/runtime.cpp
     src/runtime/object_handle.cpp
-    src/foreign_runtime.cpp
-    src/cbridge.cpp
     src/dcb_codec.c
     src/ffi_entry.cpp
     ${DCB_DART_API_DIR}/dart_api_dl.c
@@ -162,7 +170,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
-  target_link_libraries(dcb_shared PRIVATE asio_iface async_simple_header_only concurrentqueue)
+  target_link_libraries(dcb_shared PRIVATE asio_iface concurrentqueue STDEXEC::stdexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
     target_compile_options(dcb_shared PRIVATE /utf-8)

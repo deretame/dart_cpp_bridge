@@ -9,8 +9,6 @@
 
 #include "dart_api_dl.h"
 
-#include <async_simple/coro/Lazy.h>
-
 #include <cstdlib>
 #include <cstring>
 #include <atomic>
@@ -186,9 +184,9 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
   }
   std::vector<std::uint8_t> copy(req, req + req_len);
   dcb::Runtime::instance().spawn_on_asio(
-      [session = std::move(session), copy = std::move(copy), session_id]() -> async_simple::coro::Lazy<> {
+      [session = std::move(session), copy = std::move(copy), session_id]() -> stdexec::sender auto {
         dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
-        co_return;
+        return stdexec::just();
       });
 }
 

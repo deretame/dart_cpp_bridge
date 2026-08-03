@@ -1,177 +1,233 @@
 #pragma once
 
-#include <async_simple/Executor.h>
-#include <async_simple/Signal.h>
+#include <stdexec/execution.hpp>
+#include <stdexec/stop_token.hpp>
 
+#include <asio/error.hpp>
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
-#include <asio/dispatch.hpp>
 #include <asio/steady_timer.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <exception>
-#include <iostream>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 
 namespace dcb {
 
-// Schedule async_simple tasks onto asio::io_context (single-threaded OK).
+// Schedule stdexec work onto asio::io_context (single-threaded OK).
 //
-// Lifetime: submitted tasks capture `this` (to maintain the pending-task
-// counter), so the executor must outlive the io_context's execution. Runtime
-// guarantees this: it stops and joins the io thread before the executor is
-// destroyed.
-class AsioExecutor : public async_simple::Executor {
+// std::exec (stdexec) scheduler: `stdexec::schedule(*sched)` returns a sender
+// whose operation state posts its completion onto the io_context, so every
+// step of a sender chain bound with dcb::on_io() runs on the io thread.
+//
+// Lifetime: pending schedule operations capture `this` (the io_context&
+// reference), so the scheduler must outlive the io_context's execution.
+// Runtime guarantees this: it stops and joins the io thread before the
+// scheduler is destroyed.
+class AsioScheduler {
  public:
-  explicit AsioExecutor(asio::io_context& ioc) : ioc_(ioc) {}
+  using scheduler_concept = stdexec::scheduler_tag;
 
-  bool schedule(Func func) override {
-    pending_tasks_.fetch_add(1, std::memory_order_relaxed);
-    asio::post(ioc_, [this, fn = std::move(func)]() {
-      fn();
-      pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
-    });
-    return true;
-  }
+  explicit AsioScheduler(asio::io_context& ioc)
+    : ioc_(ioc), state_(std::make_shared<State>()) {}
 
-  bool schedule(Func func, uint64_t schedule_info) override {
-    pending_tasks_.fetch_add(1, std::memory_order_relaxed);
-    auto task = [this, fn = std::move(func)]() {
-      fn();
-      pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
+  // -------------------------------------------------------------------------
+  // Sender returned by schedule(): completes on the io thread via asio::post.
+  // -------------------------------------------------------------------------
+  struct schedule_sender {
+    using sender_concept = stdexec::sender_tag;
+    using completion_signatures =
+        stdexec::completion_signatures<stdexec::set_value_t()>;
+
+    // Attributes exposed via get_env(): the completion happens on the io
+    // thread (not inline), but stdexec algorithms probe this query to decide
+    // scheduling; mirror the official inline_scheduler attrs shape.
+    struct attrs {
+      constexpr auto query(
+          stdexec::__get_completion_behavior_t<stdexec::set_value_t>) const noexcept {
+        return stdexec::__completion_behavior::__inline_completion;
+      }
+      constexpr auto operator==(const attrs&) const noexcept -> bool = default;
     };
-    if ((schedule_info & 0xF) >=
-        static_cast<uint64_t>(async_simple::Executor::Priority::YIELD)) {
-      asio::post(ioc_, std::move(task));
-    } else {
-      asio::dispatch(ioc_, std::move(task));
-    }
-    return true;
-  }
 
-  // Return a task to the io thread. `opts.prompt` selects immediate execution
-  // (dispatch) vs deferred (post); the default (prompt=true) dispatches, which
-  // matches the previous behavior. `ctx` is ignored: there is a single
-  // io_context, so all contexts are equivalent.
-  bool checkin(Func func, Context /*ctx*/,
-               async_simple::ScheduleOptions opts) override {
-    if (opts.prompt) {
-      asio::dispatch(ioc_, std::move(func));
-    } else {
-      asio::post(ioc_, std::move(func));
-    }
-    return true;
-  }
+    static constexpr auto get_env() noexcept -> attrs { return {}; }
 
-  void* checkout() override { return &ioc_; }
+    const AsioScheduler* sched_;
 
-  // Snapshot of executor statistics. pendingTaskCount tracks work submitted
-  // through the schedule() overloads above (the dominant path); checkin/timer
-  // submissions are not counted, so treat it as a best-effort metric.
-  async_simple::ExecutorStat stat() const override {
-    async_simple::ExecutorStat s;
-    s.pendingTaskCount = pending_tasks_.load(std::memory_order_relaxed);
-    return s;
-  }
+    template <stdexec::receiver Rcvr>
+    struct opstate {
+      using operation_state_concept = stdexec::operation_state_tag;
 
-  // We do not expose a separate IOExecutor: the io_context itself drives all
-  // IO. Returning nullptr is the documented way to say "not provided".
-  async_simple::IOExecutor* getIOExecutor() override { return nullptr; }
+      const AsioScheduler* sched_;
+      Rcvr rcvr_;
 
-  // True only when the calling thread is the io thread that runs the
-  // io_context. async_simple uses this as a deadlock guard — e.g. syncAwait
-  // refuses to block a thread that the awaited Lazy depends on. Returning the
-  // real answer (instead of a conservative constant `true`) is what makes
-  // syncAwait usable from ordinary non-io threads while still rejecting it on
-  // the io thread.
-  bool currentThreadInExecutor() const override {
-    return std::this_thread::get_id() == io_thread_id_.load(std::memory_order_acquire);
-  }
-
-  size_t currentContextId() const override {
-    return reinterpret_cast<size_t>(&ioc_);
-  }
-
-  // Called by the owner (Runtime) right after it spawns the io thread, so that
-  // currentThreadInExecutor() can tell the io thread apart from other callers.
-  void set_io_thread_id(std::thread::id id) {
-    io_thread_id_.store(id, std::memory_order_release);
-  }
-
- protected:
-  // Timer schedule used by executor->after() / async_simple::coro::sleep. Runs
-  // `func` on the io thread after `dur` via a steady_timer, so no thread
-  // blocks while waiting (unlike the base implementation, which spawns a
-  // thread and sleeps on it). The 2-arg schedule(Func, Duration) inherited
-  // from the base delegates here, so both paths use the timer.
-  //
-  // When `slot` is non-null (async_simple::coro::sleep inherits the Slot from
-  // the coroutine's signal chain, e.g. via Lazy::setLazyLocal), a
-  // SignalType::Terminate handler is registered that cancels the timer.
-  // TimeAwaiter::await_resume() then sees the fired signal and throws
-  // SignalException, so `co_await async_simple::coro::sleep(...)` is
-  // interruptible by cancellation. The handler is consumed/cleared by
-  // TimeAwaiter's checkHasCanceled, so no explicit cleanup is needed here.
-  //
-  // `schedule_info` (priority) is ignored: asio timers fire on the io thread
-  // regardless.
-  void schedule(Func func, Duration dur, uint64_t /*schedule_info*/,
-                async_simple::Slot* slot) override {
-    auto timer = std::make_shared<asio::steady_timer>(ioc_, dur);
-    if (slot != nullptr) {
-      const bool registered =
-          async_simple::signalHelper{async_simple::SignalType::Terminate}
-              .tryEmplace(slot, [timer](async_simple::SignalType,
-                                        async_simple::Signal*) {
-                // Runs on the thread that emits the signal (e.g. a Dart
-                // caller thread); asio timer cancellation is thread-safe.
-                try {
-                  timer->cancel();
-                } catch (const std::exception& e) {
-                  // Signal handlers run inside Signal::emits() (noexcept).
-                  // A failed cancel is not fatal: the timer fires normally and
-                  // TimeAwaiter::await_resume() still throws, but log it so
-                  // the failure is not invisible.
-                  std::cerr << "[dcb] AsioExecutor: failed to cancel sleep "
-                               "timer from signal handler: "
-                            << e.what() << std::endl;
-                } catch (...) {
-                  std::cerr << "[dcb] AsioExecutor: failed to cancel sleep "
-                               "timer from signal handler: unknown exception"
-                            << std::endl;
-                }
-              });
-      if (!registered) {
-        // The signal fired between TimeAwaiter::await_ready() and our
-        // emplace. Cancel immediately; the pending handler below resumes the
-        // coroutine and await_resume() throws SignalException.
+      void start() noexcept {
+        // `this` (the opstate) is kept alive by the caller until the
+        // completion signal fires (P2300 guarantee), so capturing it in the
+        // posted lambda is safe.
         try {
-          timer->cancel();
-        } catch (const std::exception& e) {
-          std::cerr << "[dcb] AsioExecutor: failed to cancel sleep timer "
-                       "(signal fired before emplace): "
-                    << e.what() << std::endl;
+          asio::post(sched_->ioc_, [op = this]() {
+            stdexec::set_value(std::move(op->rcvr_));
+          });
         } catch (...) {
-          std::cerr << "[dcb] AsioExecutor: failed to cancel sleep timer "
-                       "(signal fired before emplace): unknown exception"
-                    << std::endl;
+          // asio::post only throws on allocation failure; deliver it as an
+          // error rather than letting the exception escape start().
+          stdexec::set_error(std::move(rcvr_),
+                             std::make_exception_ptr(std::bad_alloc()));
         }
       }
+    };
+
+    template <stdexec::receiver Rcvr>
+    opstate<Rcvr> connect(Rcvr rcvr) && {
+      return opstate<Rcvr>{sched_, std::move(rcvr)};
     }
-    timer->async_wait([fn = std::move(func), timer](const asio::error_code&) {
-      // Resume even when the timer was cancelled (operation_aborted):
-      // TimeAwaiter::await_resume() decides whether to throw.
-      fn();
-    });
+  };
+
+  // -------------------------------------------------------------------------
+  // Sender returned by schedule_at(): completes on the io thread after `dur`.
+  // Cancellation: if the connected receiver's environment provides an
+  // inplace_stop_token, a stop request cancels the timer and completes with
+  // set_stopped().
+  // -------------------------------------------------------------------------
+  template <typename Duration>
+  struct schedule_at_sender {
+    using sender_concept = stdexec::sender_tag;
+    using completion_signatures = stdexec::completion_signatures<
+      stdexec::set_value_t(),
+      stdexec::set_error_t(std::exception_ptr),
+      stdexec::set_stopped_t()>;
+
+    const AsioScheduler* sched_;
+    Duration dur_;
+
+    // Stop callback that cancels the shared timer. Runs on the thread that
+    // requests the stop; asio timer cancellation is thread-safe.
+    struct cancel_timer_fn {
+      std::shared_ptr<asio::steady_timer> timer;
+      void operator()() const noexcept {
+        try {
+          timer->cancel();
+        } catch (...) {
+        }
+      }
+    };
+
+    template <stdexec::receiver Rcvr>
+    struct opstate {
+      using operation_state_concept = stdexec::operation_state_tag;
+
+      const AsioScheduler* sched_;
+      Duration dur_;
+      std::shared_ptr<asio::steady_timer> timer_;
+      Rcvr rcvr_;
+      std::optional<stdexec::inplace_stop_callback<cancel_timer_fn>> stop_cb_;
+
+      opstate(const AsioScheduler* sched, Duration dur, Rcvr rcvr)
+        : sched_(sched), dur_(dur), rcvr_(std::move(rcvr)) {}
+
+      void start() noexcept
+      {
+        // The opstate must outlive the completion (P2300 guarantee); the
+        // timer object is kept alive by shared_ptr so a cancellation or io
+        // shutdown never touches freed memory.
+        timer_ = std::make_shared<asio::steady_timer>(sched_->ioc_, dur_);
+        auto timer = timer_;
+        auto* op = this;
+
+        // Honour an inplace_stop_token from the receiver's environment:
+        // request_stop() cancels the timer and completes with set_stopped().
+        if constexpr (stdexec::__callable<stdexec::get_stop_token_t,
+                                          decltype(stdexec::get_env(rcvr_))>) {
+          auto token = stdexec::get_stop_token(stdexec::get_env(rcvr_));
+          if constexpr (std::same_as<std::decay_t<decltype(token)>,
+                                     stdexec::inplace_stop_token>) {
+            if (token.stop_requested()) {
+              stdexec::set_stopped(std::move(rcvr_));
+              return;
+            }
+            op->stop_cb_.emplace(token, cancel_timer_fn{timer});
+          }
+        }
+
+        try {
+          timer->async_wait([op, timer](const asio::error_code& ec) {
+            (void)timer;  // keep the timer alive until the callback runs
+            if (ec == asio::error::operation_aborted) {
+              // Cancelled via the stop token: complete stopped.
+              stdexec::set_stopped(std::move(op->rcvr_));
+              return;
+            }
+            if (ec) {
+              stdexec::set_error(
+                  std::move(op->rcvr_),
+                  std::make_exception_ptr(std::runtime_error(ec.message())));
+              return;
+            }
+            stdexec::set_value(std::move(op->rcvr_));
+          });
+        } catch (...) {
+          stdexec::set_error(std::move(rcvr_),
+                             std::make_exception_ptr(std::bad_alloc()));
+        }
+      }
+    };
+
+    template <stdexec::receiver Rcvr>
+    schedule_at_sender::opstate<Rcvr> connect(Rcvr rcvr) && {
+      return schedule_at_sender::opstate<Rcvr>{sched_, dur_, std::move(rcvr)};
+    }
+  };
+
+  stdexec::sender auto schedule() const noexcept { return schedule_sender{this}; }
+
+  template <typename Rep, typename Period>
+  stdexec::sender auto schedule_at(std::chrono::duration<Rep, Period> dur) const noexcept {
+    return schedule_at_sender<std::chrono::duration<Rep, Period>>{this, dur};
+  }
+
+  asio::io_context& io() const noexcept { return ioc_; }
+
+  // True only when the calling thread is the io thread that runs the
+  // io_context. Used by dcb::sync_wait as a deadlock guard — it refuses to
+  // block a thread that the awaited sender depends on.
+  bool current_thread_is_io() const noexcept {
+    return std::this_thread::get_id() ==
+           state_->io_thread_id.load(std::memory_order_acquire);
+  }
+
+  // Called by the owner (Runtime) right after it spawns the io thread.
+  void set_io_thread_id(std::thread::id id) {
+    state_->io_thread_id.store(id, std::memory_order_release);
+  }
+
+  // Two schedulers are equal when they wrap the same io_context (asio types
+  // have no operator==, so compare addresses / shared state manually).
+  bool operator==(const AsioScheduler& o) const noexcept {
+    return &ioc_ == &o.ioc_ && state_ == o.state_;
   }
 
  private:
+  // Shared mutable state: keeps the scheduler copyable (std::atomic is
+  // non-copyable, and the scheduler concept requires copy constructibility).
+  struct State {
+    std::atomic<std::thread::id> io_thread_id{};
+  };
+
   asio::io_context& ioc_;
-  std::atomic<std::thread::id> io_thread_id_{};
-  std::atomic<size_t> pending_tasks_{0};
+  std::shared_ptr<State> state_;
 };
+
+// Block the calling thread until `sndr` completes; returns the value or
+// rethrows the sender's error. NEVER call on the io thread (self-deadlock).
+// Implemented in runtime.hpp where the runtime singleton is available.
+template <stdexec::sender S>
+auto sync_wait(S&& sndr);
 
 }  // namespace dcb

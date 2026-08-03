@@ -3,7 +3,7 @@
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 
-#include <async_simple/coro/Lazy.h>
+#include <stdexec/execution.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -46,9 +46,13 @@ class Session {
   void set_stream_open(std::uint64_t stream_id, bool open);
   bool stream_open(std::uint64_t stream_id) const;
 
-  // True async: co_await on io (requires Lazy .via(AsioExecutor)).
-  // Suspends the coroutine; does not block the io thread.
-  async_simple::coro::Lazy<std::vector<std::uint8_t>> invoke_dart_fn_async(
+  // True async: returns the receiver side of an internal oneshot channel that
+  // resolves to the raw Dart reply payload. Suspends without blocking the io
+  // thread. May throw synchronously if the session generation is expired
+  // (call on a thread where a throw is caught, i.e. inside a sender chain's
+  // setup on the io thread). The caller is responsible for migrating the
+  // completion to the io thread (e.g. via detail::dartfn_sender).
+  co::oneshot::Receiver<DartFnReply> invoke_dart_fn_async(
       std::uint64_t generation, std::uint64_t fn_id, std::vector<std::uint8_t> args_payload);
 
   void complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <async_simple/coro/Lazy.h>
-#include <async_simple/coro/Sleep.h>
+#include <exec/task.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -13,7 +12,16 @@
 #include <utility>
 #include <vector>
 
-// Tokio-style asynchronous stream abstraction built on async_simple::coro::Lazy.
+namespace dcb {
+// Defined in runtime.hpp (needs the Runtime singleton's scheduler). Forward
+// declaration so stream.hpp can use it without a runtime dependency.
+template <typename Rep, typename Period>
+stdexec::sender auto sleep(std::chrono::duration<Rep, Period> dur);
+}  // namespace dcb
+
+// Tokio-style asynchronous stream abstraction built on std::exec.
+// Coroutine bodies are exec::task (which is itself a sender), so a Stream can
+// be consumed with co_await or composed as a sender chain.
 //
 //   auto s = co::stream::from_vector({1, 2, 3})
 //     .map([](int x) { return x * 2; })
@@ -39,7 +47,7 @@ class Stream;
 template <typename T>
 struct StreamImpl {
   virtual ~StreamImpl() = default;
-  virtual async_simple::coro::Lazy<std::optional<T>> next() = 0;
+  virtual exec::task<std::optional<T>> next() = 0;
 };
 
 template <typename T>
@@ -60,7 +68,7 @@ class Stream {
   explicit operator bool() const noexcept { return impl_ != nullptr; }
 
   // Core async pull. Returns std::nullopt when the stream ends.
-  async_simple::coro::Lazy<std::optional<T>> next()
+  exec::task<std::optional<T>> next()
   {
     if (!impl_) {
       co_return std::nullopt;
@@ -80,7 +88,7 @@ class Stream {
       std::size_t pos = 0;
       explicit Impl(std::vector<T> v) : values(std::move(v)) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         if (pos >= values.size()) {
           co_return std::nullopt;
@@ -92,8 +100,8 @@ class Stream {
     return Stream<T>(std::make_unique<Impl>(std::move(values)));
   }
 
-  // Stream that yields value every `period` via async_simple::coro::sleep.
-  // The yielded values are 0, 1, 2, ...
+  // Stream that yields value every `period` via dcb::sleep. The yielded
+  // values are 0, 1, 2, ...
   static Stream<T> interval(std::chrono::milliseconds period)
   {
     static_assert(std::is_integral_v<T>, "interval requires integral type");
@@ -102,9 +110,9 @@ class Stream {
       T counter = 0;
       explicit Impl(std::chrono::milliseconds p) : period(p) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
-        co_await async_simple::coro::sleep(period);
+        co_await dcb::sleep(period);
         co_return counter++;
       }
 
@@ -133,7 +141,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      async_simple::coro::Lazy<std::optional<U>> next() override
+      exec::task<std::optional<U>> next() override
       {
         auto v = co_await upstream.next();
         if (!v) {
@@ -155,7 +163,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         while (true) {
           auto v = co_await upstream.next();
@@ -184,7 +192,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      async_simple::coro::Lazy<std::optional<U>> next() override
+      exec::task<std::optional<U>> next() override
       {
         while (true) {
           if (current) {
@@ -215,7 +223,7 @@ class Stream {
 
       Impl(Stream<T> s, std::size_t n) : upstream(std::move(s)), remaining(n) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         if (remaining == 0) {
           co_return std::nullopt;
@@ -237,7 +245,7 @@ class Stream {
 
       Impl(Stream<T> s, std::size_t n) : upstream(std::move(s)), remaining(n) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         if (!skipped) {
           skipped = true;
@@ -265,7 +273,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         if (done) {
           co_return std::nullopt;
@@ -292,7 +300,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         if (skipping) {
           skipping = false;
@@ -326,7 +334,7 @@ class Stream {
         : upstream(std::move(s)), acc(std::move(a)), f(std::forward<F>(fn))
       {}
 
-      async_simple::coro::Lazy<std::optional<Acc>> next() override
+      exec::task<std::optional<Acc>> next() override
       {
         auto v = co_await upstream.next();
         if (!v) {
@@ -351,7 +359,7 @@ class Stream {
 
       Impl(Stream<T> a, Stream<U> b) : first(std::move(a)), second(std::move(b)) {}
 
-      async_simple::coro::Lazy<std::optional<std::pair<T, U>>> next() override
+      exec::task<std::optional<std::pair<T, U>>> next() override
       {
         auto a = co_await first.next();
         if (!a) {
@@ -383,7 +391,7 @@ class Stream {
 
       Impl(Stream<T> a, Stream<T> b) : first(std::move(a)), second(std::move(b)) {}
 
-      async_simple::coro::Lazy<std::optional<T>> next() override
+      exec::task<std::optional<T>> next() override
       {
         // Alternate between streams to avoid starvation.
         pull_first = !pull_first;
@@ -405,7 +413,7 @@ class Stream {
   // Terminators
   // ---------------------------------------------------------------------------
 
-  async_simple::coro::Lazy<std::vector<T>> collect()
+  exec::task<std::vector<T>> collect()
   {
     std::vector<T> out;
     while (auto v = co_await next()) {
@@ -415,7 +423,7 @@ class Stream {
   }
 
   template <typename F>
-  async_simple::coro::Lazy<void> for_each(F&& f)
+  exec::task<void> for_each(F&& f)
   {
     while (auto v = co_await next()) {
       f(std::move(*v));
@@ -423,9 +431,9 @@ class Stream {
     co_return;
   }
 
-  async_simple::coro::Lazy<std::optional<T>> first() { co_return co_await next(); }
+  exec::task<std::optional<T>> first() { co_return co_await next(); }
 
-  async_simple::coro::Lazy<std::size_t> count()
+  exec::task<std::size_t> count()
   {
     std::size_t n = 0;
     while (auto v = co_await next()) {
@@ -436,7 +444,7 @@ class Stream {
   }
 
   template <typename Acc, typename F>
-  async_simple::coro::Lazy<Acc> fold(Acc init, F&& f)
+  exec::task<Acc> fold(Acc init, F&& f)
   {
     Acc acc = std::move(init);
     while (auto v = co_await next()) {

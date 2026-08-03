@@ -7,21 +7,22 @@
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
-#include <async_simple/coro/Lazy.h>
-#include <async_simple/coro/SyncAwait.h>
+#include <stdexec/execution.hpp>
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <thread>
-#include <utility>
-#include <vector>
-#include <algorithm>
-#include <array>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 namespace dcb {
 namespace demo {
@@ -72,7 +73,13 @@ enum class MethodId : std::uint32_t {
 
 std::int32_t bridge_version() { return 1; }
 
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b) { co_return a + b; }
+// ---------------------------------------------------------------------------
+// Async business functions — std::exec style: each returns a *sender*.
+// Errors (exceptions inside then/functions) are delivered as set_error and
+// surface via the dispatch receiver.
+// ---------------------------------------------------------------------------
+
+stdexec::sender auto add(std::int32_t a, std::int32_t b) { return stdexec::just(a + b); }
 
 std::string sleep_test() {
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -94,50 +101,38 @@ void ticks(I32Sink sink, std::int32_t count, std::int32_t interval_ms) {
              });
 }
 
-async_simple::coro::Lazy<std::string> echo(std::string s) { co_return s; }
+stdexec::sender auto echo(std::string s) { return stdexec::just(std::move(s)); }
 
-async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
-    std::optional<std::int32_t> input) {
-  if (input.has_value()) {
-    co_return input.value() * 2;
-  }
-  co_return std::nullopt;
+stdexec::sender auto maybe_double(std::optional<std::int32_t> input) {
+  return stdexec::just(input.has_value()
+                           ? std::optional<std::int32_t>(input.value() * 2)
+                           : std::optional<std::int32_t>());
 }
 
-async_simple::coro::Lazy<std::int32_t> sum_vec(std::vector<std::int32_t> values) {
-  std::int32_t sum = 0;
-  for (const auto v : values) {
-    sum += v;
-  }
-  co_return sum;
+stdexec::sender auto sum_vec(std::vector<std::int32_t> values) {
+  return stdexec::just(std::accumulate(values.begin(), values.end(), 0));
 }
 
-async_simple::coro::Lazy<std::vector<std::uint8_t>> reverse_bytes(
-    std::vector<std::uint8_t> input) {
+stdexec::sender auto reverse_bytes(std::vector<std::uint8_t> input) {
   std::reverse(input.begin(), input.end());
-  co_return input;
+  return stdexec::just(std::move(input));
 }
 
 enum class StatusCode : std::int32_t { kOk = 0, kNotFound = 1, kServerError = 2 };
 
-async_simple::coro::Lazy<StatusCode> next_status(StatusCode current) {
+stdexec::sender auto next_status(StatusCode current) {
   switch (current) {
     case StatusCode::kOk:
-      co_return StatusCode::kNotFound;
+      return stdexec::just(StatusCode::kNotFound);
     case StatusCode::kNotFound:
-      co_return StatusCode::kServerError;
+      return stdexec::just(StatusCode::kServerError);
     default:
-      co_return StatusCode::kOk;
+      return stdexec::just(StatusCode::kOk);
   }
 }
 
-async_simple::coro::Lazy<std::int32_t> sum_fixed_four(
-    std::array<std::int32_t, 4> values) {
-  std::int32_t sum = 0;
-  for (const auto v : values) {
-    sum += v;
-  }
-  co_return sum;
+stdexec::sender auto sum_fixed_four(std::array<std::int32_t, 4> values) {
+  return stdexec::just(std::accumulate(values.begin(), values.end(), 0));
 }
 
 struct Person {
@@ -145,53 +140,47 @@ struct Person {
   std::int32_t age;
 };
 
-async_simple::coro::Lazy<std::string> greet(Person person) {
-  co_return std::string("Hello, ") + person.name + "! You are " +
-            std::to_string(person.age);
+stdexec::sender auto greet(Person person) {
+  return stdexec::just(std::string("Hello, ") + person.name + "! You are " +
+                       std::to_string(person.age));
 }
 
-async_simple::coro::Lazy<std::int32_t> score_total(
-    std::unordered_map<std::string, std::int32_t> scores) {
+stdexec::sender auto score_total(std::unordered_map<std::string, std::int32_t> scores) {
   std::int32_t sum = 0;
   for (const auto& [name, score] : scores) {
     sum += score;
   }
-  co_return sum;
+  return stdexec::just(sum);
 }
 
-async_simple::coro::Lazy<std::int32_t> set_sum(std::unordered_set<std::int32_t> values) {
-  std::int32_t sum = 0;
-  for (const auto v : values) {
-    sum += v;
-  }
-  co_return sum;
+stdexec::sender auto set_sum(std::unordered_set<std::int32_t> values) {
+  return stdexec::just(std::accumulate(values.begin(), values.end(), 0));
 }
 
-async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
-    std::pair<std::int32_t, std::string> input) {
-  co_return input;
+stdexec::sender auto pair_echo(std::pair<std::int32_t, std::string> input) {
+  return stdexec::just(std::move(input));
 }
 
-async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
-    std::tuple<std::int32_t, std::string, bool> input) {
-  co_return input;
+stdexec::sender auto tuple_echo(std::tuple<std::int32_t, std::string, bool> input) {
+  return stdexec::just(std::move(input));
 }
 
-async_simple::coro::Lazy<Int128> echo_i128(Int128 v) {
-  co_return v;
-}
+stdexec::sender auto echo_i128(Int128 v) { return stdexec::just(v); }
 
-async_simple::coro::Lazy<std::int32_t> total_ages(std::vector<Person> people) {
+stdexec::sender auto total_ages(std::vector<Person> people) {
   std::int32_t sum = 0;
   for (const auto& p : people) {
     sum += p.age;
   }
-  co_return sum;
+  return stdexec::just(sum);
 }
 
-async_simple::coro::Lazy<std::int32_t> fail_async(std::string message) {
-  throw std::runtime_error(message.empty() ? "fail_async" : message);
-  co_return 0;
+stdexec::sender auto fail_async(std::string message) {
+  // throw inside then -> set_error(std::exception_ptr) -> dispatch receiver
+  // posts a responseErr frame.
+  return stdexec::just(0) | stdexec::then([message = std::move(message)](int) -> int {
+           throw std::runtime_error(message.empty() ? "fail_async" : message);
+         });
 }
 
 void fail_stream(I32Sink sink, std::string message) {
@@ -330,11 +319,16 @@ std::int32_t counter_static_sum(std::int32_t a, std::int32_t b) {
   return a + b;
 }
 
-async_simple::coro::Lazy<std::string> counter_call_dart_fn(
-    std::shared_ptr<Counter> obj, DartFnStringToString cb) {
+stdexec::sender auto counter_call_dart_fn(std::shared_ptr<Counter> obj,
+                                          DartFnStringToString cb) {
   // DartFn callback method: pass the current value as a string to Dart.
-  co_return co_await cb(std::to_string(obj->value()));
+  // operator() returns a sender that resolves on the io thread.
+  return cb(std::to_string(obj->value()));
 }
+
+// ---------------------------------------------------------------------------
+// Response plumbing — std::exec receiver style.
+// ---------------------------------------------------------------------------
 
 namespace {
 
@@ -351,15 +345,78 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
 }
 
+// Receiver that turns a sender's completion into a Dart response frame.
+// set_value -> responseOk; set_error -> responseErr; set_stopped -> responseErr.
+template <typename T>
+struct DispatchReceiver {
+  using receiver_concept = stdexec::receiver_tag;
+
+  std::shared_ptr<Session> session;
+  std::uint64_t gen{0};
+  std::uint64_t req{0};
+  std::uint32_t method{0};
+  std::string name;
+  std::function<void(ByteWriter&, const T&)> encode;
+
+  void set_value(T v) && noexcept {
+    try {
+      ByteWriter w;
+      encode(w, v);
+      post_ok(session, gen, req, method, w.raw());
+    } catch (const std::exception& e) {
+      post_err(session, gen, req, method, name.c_str(), e.what());
+    } catch (...) {
+      post_err(session, gen, req, method, name.c_str(), "unknown");
+    }
+  }
+
+  void set_error(std::exception_ptr ep) && noexcept {
+    std::string msg = "unknown";
+    try {
+      std::rethrow_exception(ep);
+    } catch (const std::exception& e) {
+      msg = e.what();
+    } catch (...) {
+    }
+    post_err(session, gen, req, method, name.c_str(), msg);
+  }
+
+  void set_stopped() && noexcept {
+    post_err(session, gen, req, method, name.c_str(), "sender stopped");
+  }
+};
+
+// Run a sender chain on the io scheduler; route its completion into a
+// response frame. The business sender's value type must be T. The opstate is
+// kept alive until completion (start_detached semantics).
+template <typename T, stdexec::sender S, typename Encode>
+void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::uint64_t req,
+               std::uint32_t method, S&& sndr, Encode&& encode, const char* name) {
+  try {
+    auto chain = dcb::on_io(std::forward<S>(sndr));
+    auto rcvr = DispatchReceiver<T>{
+        session, gen, req, method, name,
+        std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))};
+    dcb::start_detached(std::move(chain), std::move(rcvr));
+  } catch (const std::exception& e) {
+    post_err(session, gen, req, method, name, e.what());
+  } catch (...) {
+    post_err(session, gen, req, method, name, "unknown");
+  }
+}
+
 void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint64_t gen,
                              std::uint64_t req, std::uint32_t method, DartFnStringToString cb) {
-  // Offload to pool thread — syncAwait on io would self-deadlock.
+  // Offload to pool thread — sync_wait on io would self-deadlock.
   asio::post(Runtime::instance().pool(),
              [session, gen, req, method, cb = std::move(cb)]() mutable {
                try {
-                 auto out = async_simple::coro::syncAwait(dcb::spawn(cb("Tom")));
+                 auto out = dcb::sync_wait(dcb::spawn(cb("Tom")));
+                 if (!out) {
+                   throw std::runtime_error("DartFn stopped");
+                 }
                  ByteWriter w;
-                 w.str(out);
+                 w.str(std::get<0>(*out));
                  post_ok(session, gen, req, method, w.raw());
                } catch (const std::exception& e) {
                  post_err(session, gen, req, method, "callDartHelloSync", e.what());
@@ -448,20 +505,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto a = r.i32();
         const auto b = r.i32();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, a, b]() -> async_simple::coro::Lazy<> {
-              try {
-                const auto sum = co_await add(a, b);
-                ByteWriter w;
-                w.i32(sum);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "add", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "add", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, add(a, b),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "add");
         break;
       }
       case MethodId::kSleepTest: {
@@ -497,119 +543,53 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case MethodId::kEcho: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto s = r.str();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, s = std::move(s)]() -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await echo(std::move(s));
-                ByteWriter w;
-                w.str(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "echo", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "echo", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::string>(session, gen, req, method, echo(std::move(s)),
+                               [](ByteWriter& w, const std::string& v) { w.str(v); },
+                               "echo");
         break;
       }
       case MethodId::kMaybeDouble: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto input = r.opt<std::int32_t>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, input = std::move(input)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await maybe_double(input);
-                ByteWriter w;
-                w.opt<std::int32_t>(out, [&w](std::int32_t v) { w.i32(v); });
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "maybeDouble", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "maybeDouble", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::optional<std::int32_t>>(
+            session, gen, req, method, maybe_double(input),
+            [](ByteWriter& w, const std::optional<std::int32_t>& v) {
+              w.opt<std::int32_t>(v, [&w](std::int32_t x) { w.i32(x); });
+            },
+            "maybeDouble");
         break;
       }
       case MethodId::kSumVec: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto values = r.vec<std::int32_t>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, values = std::move(values)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await sum_vec(values);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "sumVec", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "sumVec", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, sum_vec(values),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "sumVec");
         break;
       }
       case MethodId::kReverseBytes: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto input = r.u8vec();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, input = std::move(input)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await reverse_bytes(input);
-                ByteWriter w;
-                w.u8vec(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "reverseBytes", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "reverseBytes", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::vector<std::uint8_t>>(
+            session, gen, req, method, reverse_bytes(input),
+            [](ByteWriter& w, const std::vector<std::uint8_t>& v) { w.u8vec(v); },
+            "reverseBytes");
         break;
       }
       case MethodId::kNextStatus: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto current = r.enume<StatusCode>();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, current]() -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await next_status(current);
-                ByteWriter w;
-                w.enume(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "nextStatus", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "nextStatus", "unknown");
-              }
-              co_return;
-            });
+        run_async<StatusCode>(session, gen, req, method, next_status(current),
+                              [](ByteWriter& w, const StatusCode& v) { w.enume(v); },
+                              "nextStatus");
         break;
       }
       case MethodId::kSumFixedFour: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto values = r.arr<std::int32_t, 4>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, values = std::move(values)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await sum_fixed_four(values);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "sumFixedFour", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "sumFixedFour", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, sum_fixed_four(values),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "sumFixedFour");
         break;
       }
       case MethodId::kGreet: {
@@ -617,123 +597,60 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         Person person;
         person.name = r.str();
         person.age = r.i32();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, person = std::move(person)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await greet(person);
-                ByteWriter w;
-                w.str(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "greet", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "greet", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::string>(session, gen, req, method, greet(std::move(person)),
+                               [](ByteWriter& w, const std::string& v) { w.str(v); },
+                               "greet");
         break;
       }
       case MethodId::kScoreTotal: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto scores = r.map<std::string, std::int32_t>(
             [&r]() { return r.str(); }, [&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, scores = std::move(scores)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await score_total(scores);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "scoreTotal", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "scoreTotal", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, score_total(scores),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "scoreTotal");
         break;
       }
       case MethodId::kSetSum: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto values = r.set<std::int32_t>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, values = std::move(values)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await set_sum(values);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "setSum", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "setSum", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, set_sum(values),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "setSum");
         break;
       }
       case MethodId::kPairEcho: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto input = r.pair<std::int32_t, std::string>([&r]() { return r.i32(); }, [&r]() { return r.str(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, input = std::move(input)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await pair_echo(input);
-                ByteWriter w;
-                w.pair(out, [&w](std::int32_t v) { w.i32(v); }, [&w](const std::string& s) { w.str(s); });
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "pairEcho", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "pairEcho", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::pair<std::int32_t, std::string>>(
+            session, gen, req, method, pair_echo(std::move(input)),
+            [](ByteWriter& w, const std::pair<std::int32_t, std::string>& v) {
+              w.pair(v, [&w](std::int32_t x) { w.i32(x); },
+                     [&w](const std::string& s) { w.str(s); });
+            },
+            "pairEcho");
         break;
       }
       case MethodId::kTupleEcho: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto input = r.tuple<std::int32_t, std::string, bool>(
             [&r]() { return r.i32(); }, [&r]() { return r.str(); }, [&r]() { return r.u8() != 0; });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, input = std::move(input)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await tuple_echo(input);
-                ByteWriter w;
-                w.tuple(out, [&w](std::int32_t v) { w.i32(v); },
-                        [&w](const std::string& s) { w.str(s); }, [&w](bool b) { w.u8(b ? 1 : 0); });
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "tupleEcho", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "tupleEcho", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::tuple<std::int32_t, std::string, bool>>(
+            session, gen, req, method, tuple_echo(std::move(input)),
+            [](ByteWriter& w, const std::tuple<std::int32_t, std::string, bool>& v) {
+              w.tuple(v, [&w](std::int32_t x) { w.i32(x); },
+                      [&w](const std::string& s) { w.str(s); },
+                      [&w](bool b) { w.u8(b ? 1 : 0); });
+            },
+            "tupleEcho");
         break;
       }
       case MethodId::kNextI128: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto input = r.i128();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, input]() -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await echo_i128(input);
-                ByteWriter w;
-                w.i128(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "echoI128", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "echoI128", "unknown");
-              }
-              co_return;
-            });
+        run_async<Int128>(session, gen, req, method, echo_i128(input),
+                          [](ByteWriter& w, const Int128& v) { w.i128(v); },
+                          "echoI128");
         break;
       }
       case MethodId::kTotalAges: {
@@ -744,21 +661,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           p.age = r.i32();
           return p;
         });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, people = std::move(people)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await total_ages(people);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "totalAges", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "totalAges", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, total_ages(people),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "totalAges");
         break;
       }
       case MethodId::kCounterCreate: {
@@ -780,39 +685,17 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handle = r.u64();
         auto delta = r.i32();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle, delta]() -> async_simple::coro::Lazy<> {
-              try {
-                auto out = counter_increment(handle, delta);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "Counter::increment", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "Counter::increment", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, stdexec::just(counter_increment(handle, delta)),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "Counter::increment");
         break;
       }
       case MethodId::kCounterGetValue: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handle = r.u64();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle]() -> async_simple::coro::Lazy<> {
-              try {
-                auto out = counter_get_value(handle);
-                ByteWriter w;
-                w.i32(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "Counter::getValue", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "Counter::getValue", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, stdexec::just(counter_get_value(handle)),
+                                [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+                                "Counter::getValue");
         break;
       }
       case MethodId::kCounterDrop: {
@@ -830,7 +713,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
       case MethodId::kCounterCallDartFn: {
-        // True async on io: co_await oneshot; io thread free while Dart runs.
+        // True async on io: co_await the DartFn sender; io thread free while Dart runs.
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
         const auto fn_id = r.u64();
@@ -840,21 +723,10 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           break;
         }
         DartFnStringToString cb(session, gen, fn_id);
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, obj = std::move(obj), cb = std::move(cb)]() mutable
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await counter_call_dart_fn(obj, cb);
-                ByteWriter w;
-                w.str(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "Counter::callDartFn", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "Counter::callDartFn", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::string>(
+            session, gen, req, method, counter_call_dart_fn(obj, cb),
+            [](ByteWriter& w, const std::string& v) { w.str(v); },
+            "Counter::callDartFn");
         break;
       }
       case MethodId::kCounterSleepAndGet: {
@@ -913,43 +785,30 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
         const auto values = r.vec<std::int32_t>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle, values = std::move(values)]()
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto obj = counter_checked_get(handle, "addList");
-                obj->add_list(values);
-                ByteWriter w;
-                w.i32(obj->value());
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "Counter::addList", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "Counter::addList", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            stdexec::just(counter_checked_get(handle, "addList")) | stdexec::then(
+                [values = std::move(values)](std::shared_ptr<Counter> obj) {
+                  obj->add_list(values);
+                  return obj->value();
+                }),
+            [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+            "Counter::addList");
         break;
       }
       case MethodId::kCounterSetValue: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
         const auto value = r.opt<std::int32_t>([&r]() { return r.i32(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle, value]() -> async_simple::coro::Lazy<> {
-              try {
-                auto obj = counter_checked_get(handle, "setValue");
-                obj->set_value(value);
-                ByteWriter w;
-                w.i32(obj->value());
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "Counter::setValue", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "Counter::setValue", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            stdexec::just(counter_checked_get(handle, "setValue")) | stdexec::then(
+                [value](std::shared_ptr<Counter> obj) {
+                  obj->set_value(value);
+                  return obj->value();
+                }),
+            [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+            "Counter::setValue");
         break;
       }
       case MethodId::kCounterDuplicate: {
@@ -971,59 +830,32 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle_a = r.u64();
         const auto handle_b = r.u64();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle_a, handle_b]() -> async_simple::coro::Lazy<> {
-              try {
-                const auto result = counter_add_values(handle_a, handle_b);
-                ByteWriter w;
-                w.i32(result);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "counterAddValues", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "counterAddValues", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            stdexec::just(counter_add_values(handle_a, handle_b)),
+            [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+            "counterAddValues");
         break;
       }
       case MethodId::kCounterTransferValue: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle_src = r.u64();
         const auto handle_dst = r.u64();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handle_src, handle_dst]() -> async_simple::coro::Lazy<> {
-              try {
-                const auto result = counter_transfer_value(handle_src, handle_dst);
-                ByteWriter w;
-                w.i32(result);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "counterTransferValue", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "counterTransferValue", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            stdexec::just(counter_transfer_value(handle_src, handle_dst)),
+            [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+            "counterTransferValue");
         break;
       }
       case MethodId::kCounterSumHandles: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handles = r.vec<std::uint64_t>([&r]() { return r.u64(); });
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, handles = std::move(handles)]() -> async_simple::coro::Lazy<> {
-              try {
-                const auto result = counter_sum_handles(handles);
-                ByteWriter w;
-                w.i32(result);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "counterSumHandles", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "counterSumHandles", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(
+            session, gen, req, method,
+            stdexec::just(counter_sum_handles(handles)),
+            [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
+            "counterSumHandles");
         break;
       }
       case MethodId::kCounterCloneFrom: {
@@ -1059,18 +891,9 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case MethodId::kFailAsync: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto msg = r.str();
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, msg = std::move(msg)]() -> async_simple::coro::Lazy<> {
-              try {
-                co_await fail_async(std::move(msg));
-                post_ok(session, gen, req, method, {});
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "failAsync", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "failAsync", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::int32_t>(session, gen, req, method, fail_async(std::move(msg)),
+                                [](ByteWriter& w, const std::int32_t&) { w.i32(0); },
+                                "failAsync");
         break;
       }
       case MethodId::kFailStream: {
@@ -1081,29 +904,17 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
       case MethodId::kCallDartHello: {
-        // True async on io: co_await oneshot; io thread free while Dart runs.
+        // True async on io: co_await the DartFn sender; io thread free while Dart runs.
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
         DartFnStringToString cb(session, gen, fn_id);
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, cb = std::move(cb)]() mutable
-            -> async_simple::coro::Lazy<> {
-              try {
-                auto out = co_await cb("Tom");
-                ByteWriter w;
-                w.str(out);
-                post_ok(session, gen, req, method, w.raw());
-              } catch (const std::exception& e) {
-                post_err(session, gen, req, method, "callDartHello", e.what());
-              } catch (...) {
-                post_err(session, gen, req, method, "callDartHello", "unknown");
-              }
-              co_return;
-            });
+        run_async<std::string>(session, gen, req, method, cb("Tom"),
+                               [](ByteWriter& w, const std::string& v) { w.str(v); },
+                               "callDartHello");
         break;
       }
       case MethodId::kCallDartHelloSync: {
-        // Blocking path: offloaded to pool thread (syncAwait on io = deadlock).
+        // Blocking path: offloaded to pool thread (sync_wait on io = deadlock).
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
         DartFnStringToString cb(session, gen, fn_id);

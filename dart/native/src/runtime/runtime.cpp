@@ -24,14 +24,14 @@ void Runtime::start() {
     return;
   }
   io_.restart();
-  executor_ = std::make_unique<AsioExecutor>(io_);
+  scheduler_ = std::make_unique<AsioScheduler>(io_);
   pool_ = std::make_unique<asio::thread_pool>(pool_threads_);
   guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
       asio::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
-  // Tell the executor which thread runs the io_context so that
-  // currentThreadInExecutor() (used by syncAwait's deadlock guard) is accurate.
-  executor_->set_io_thread_id(io_thread_->get_id());
+  // Tell the scheduler which thread runs the io_context so that
+  // current_thread_is_io() (used by sync_wait's deadlock guard) is accurate.
+  scheduler_->set_io_thread_id(io_thread_->get_id());
 }
 
 void Runtime::stop() {
@@ -52,7 +52,7 @@ void Runtime::stop() {
     pool_->join();
     pool_.reset();
   }
-  executor_.reset();
+  scheduler_.reset();
 }
 
 void Session::dispose() {
@@ -97,7 +97,7 @@ bool Session::stream_open(std::uint64_t stream_id) const {
   return it != streams_open_.end() && it->second;
 }
 
-async_simple::coro::Lazy<std::vector<std::uint8_t>> Session::invoke_dart_fn_async(
+co::oneshot::Receiver<DartFnReply> Session::invoke_dart_fn_async(
     std::uint64_t generation, std::uint64_t fn_id, std::vector<std::uint8_t> args_payload) {
   if (!alive(generation)) {
     throw std::runtime_error("DartFn: session generation expired");
@@ -110,7 +110,8 @@ async_simple::coro::Lazy<std::vector<std::uint8_t>> Session::invoke_dart_fn_asyn
   {
     std::lock_guard lock(dart_fn_mu_);
     dart_fn_pending_.emplace(reply_id, [tx_holder](DartFnReply r) {
-      // Any thread (typically Dart FFI). oneshot schedules resume onto waiter_ex.
+      // Any thread (typically Dart FFI). The reply is moved back onto the io
+      // thread by the continues_on inside dcb::on_io (see runtime.hpp).
       (void)tx_holder->send(std::move(r));
     });
   }
@@ -123,14 +124,11 @@ async_simple::coro::Lazy<std::vector<std::uint8_t>> Session::invoke_dart_fn_asyn
   auto frame = make_frame(MsgType::kDartFnCall, reply_id, /*method_id=*/0, payload.raw());
   try_post(generation, frame);
 
-  auto reply_opt = co_await rx.recv();
-  if (!reply_opt) {
-    throw std::runtime_error("DartFn: channel closed");
-  }
-  if (!reply_opt->ok) {
-    throw std::runtime_error(reply_opt->error.empty() ? "DartFn failed" : reply_opt->error);
-  }
-  co_return std::move(reply_opt->payload);
+  // Completion: set_value(std::optional<DartFnReply>) — std::nullopt if the
+  // channel was closed (e.g. session disposed); set_error if send_error was
+  // used. The reply completes on whichever thread called complete_dart_fn;
+  // detail::dartfn_sender migrates it back to the io thread.
+  return std::move(rx);
 }
 
 void Session::complete_dart_fn(std::uint64_t reply_id, bool ok, std::vector<std::uint8_t> payload,
