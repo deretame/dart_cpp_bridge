@@ -21,43 +21,10 @@ namespace dcb {
 
 namespace detail {
 
-// Shared control block holding the current opstate address. Inner receivers
-// hold this instead of a raw opstate pointer: opstates may be moved by the
-// connect() return chain, and the move constructor refreshes the address.
-template <typename Op>
-struct dartfn_ctl {
-  Op* op{nullptr};
-};
-
-// Inner receiver of a dartfn_sender opstate; forwards the oneshot completion
-// to the io thread before invoking the outer receiver.
-template <typename Op>
-struct dartfn_inner_receiver {
-  using receiver_concept = stdexec::receiver_tag;
-
-  std::shared_ptr<dartfn_ctl<Op>> ctl_;
-
-  sched_env<IoContextScheduler> get_env() const noexcept {
-    return sched_env<IoContextScheduler>{ctl_->op->sched_};
-  }
-
-  void set_value(std::optional<DartFnReply> reply) && noexcept {
-    ctl_->op->post_reply(std::move(reply));
-  }
-
-  void set_error(std::exception_ptr ep) && noexcept {
-    ctl_->op->post_error(std::move(ep));
-  }
-
-  void set_stopped() && noexcept {
-    ctl_->op->post_stopped();
-  }
-};
-
-// Sender that performs a DartFn reverse call: waits for the Dart reply
-// (oneshot channel), decodes the payload, and completes with Ret on the io
-// thread. Errors (channel closed, Dart-side failure, decode failure) are
-// delivered as set_error(std::exception_ptr).
+// Sender that performs a DartFn reverse call: posts to Dart, waits for the
+// oneshot reply, migrates the completion to the io thread, decodes the
+// payload, and completes with Ret. Errors (channel closed, Dart-side failure,
+// decode failure) are delivered as set_error(std::exception_ptr).
 template <typename Ret>
 struct dartfn_sender {
   using sender_concept = stdexec::sender_tag;
@@ -67,122 +34,44 @@ struct dartfn_sender {
 
   using DecodeRet = std::function<Ret(const std::uint8_t*, std::size_t)>;
 
-  // Attributes exposed via get_env(): algorithms probe the completion
-  // behavior of their child sender.
-  struct attrs {
-    constexpr auto query(
-        stdexec::__get_completion_behavior_t<stdexec::set_value_t>) const noexcept {
-      return stdexec::__completion_behavior::__inline_completion;
-    }
-    constexpr auto operator==(const attrs&) const noexcept -> bool = default;
-  };
+  // Decode step: unwraps the optional reply and decodes the payload.
+  struct decode_fn {
+    DecodeRet decode;
 
-  static constexpr auto get_env() noexcept -> attrs { return {}; }
-
-  co::oneshot::Receiver<DartFnReply> rx_;
-  const IoContextScheduler* sched_;
-  DecodeRet decode_;
-
-  template <stdexec::receiver Rcvr>
-  struct opstate {
-    using operation_state_concept = stdexec::operation_state_tag;
-
-    using inner_rcvr_t = dartfn_inner_receiver<opstate>;
-    using inner_op_t = stdexec::connect_result_t<
-      co::oneshot::Receiver<DartFnReply>, inner_rcvr_t>;
-
-    const IoContextScheduler* sched_;
-    Rcvr rcvr_;
-    DecodeRet decode_;
-    std::shared_ptr<dartfn_ctl<opstate>> ctl_;
-    inner_op_t inner_;
-
-    opstate(const IoContextScheduler* sched, co::oneshot::Receiver<DartFnReply> rx,
-            Rcvr rcvr, DecodeRet decode)
-      : sched_(sched),
-        rcvr_(std::move(rcvr)),
-        decode_(std::move(decode)),
-        ctl_(make_ctl(this)),
-        inner_(stdexec::connect(std::move(rx), inner_rcvr_t{ctl_})) {}
-
-    // The shared control block is created with op already pointing at `this`:
-    // stdexec's connect_t queries the inner receiver's env (get_env) while
-    // the inner operation is being connected, and get_env reads
-    // ctl_->op->sched_. sched_ is initialized before ctl_/inner_ (member
-    // initialization order), so the pointer is valid at that point.
-    static std::shared_ptr<dartfn_ctl<opstate>> make_ctl(opstate* self) {
-      auto c = std::make_shared<dartfn_ctl<opstate>>();
-      c->op = self;
-      return c;
-    }
-
-    opstate(opstate&& o) noexcept
-      : sched_(o.sched_),
-        rcvr_(std::move(o.rcvr_)),
-        decode_(std::move(o.decode_)),
-        ctl_(std::move(o.ctl_)),
-        inner_(std::move(o.inner_)) {
-      ctl_->op = this;
-    }
-
-    opstate(const opstate&) = delete;
-    opstate& operator=(const opstate&) = delete;
-    opstate& operator=(opstate&&) = delete;
-
-    void start() noexcept { stdexec::start(inner_); }
-
-    void post_reply(std::optional<DartFnReply> reply) {
-      try {
-        asio::post(sched_->executor(), [this, reply = std::move(reply)]() mutable {
-          try {
-            if (!reply) {
-              throw std::runtime_error("DartFn: channel closed");
-            }
-            if (!reply->ok) {
-              throw std::runtime_error(reply->error.empty() ? "DartFn failed"
-                                                            : reply->error);
-            }
-            stdexec::set_value(std::move(rcvr_),
-                               decode_(reply->payload.data(), reply->payload.size()));
-          } catch (...) {
-            stdexec::set_error(std::move(rcvr_), std::current_exception());
-          }
-        });
-      } catch (...) {
-        stdexec::set_error(std::move(rcvr_),
-                           std::make_exception_ptr(std::bad_alloc()));
+    Ret operator()(std::optional<DartFnReply> reply) const {
+      if (!reply) {
+        throw std::runtime_error("DartFn: channel closed");
       }
-    }
-
-    void post_error(std::exception_ptr ep) {
-      try {
-        asio::post(sched_->executor(), [this, ep]() mutable {
-          stdexec::set_error(std::move(rcvr_), ep);
-        });
-      } catch (...) {
-        stdexec::set_error(std::move(rcvr_),
-                           std::make_exception_ptr(std::bad_alloc()));
+      if (!reply->ok) {
+        throw std::runtime_error(reply->error.empty() ? "DartFn failed" : reply->error);
       }
-    }
-
-    void post_stopped() {
-      try {
-        asio::post(sched_->executor(), [this]() mutable {
-          stdexec::set_error(std::move(rcvr_),
-                             std::make_exception_ptr(
-                                 std::runtime_error("DartFn stopped")));
-        });
-      } catch (...) {
-        stdexec::set_error(std::move(rcvr_),
-                           std::make_exception_ptr(std::bad_alloc()));
-      }
+      return decode(reply->payload.data(), reply->payload.size());
     }
   };
 
+  using base_sender_t = decltype(
+    std::declval<co::oneshot::Receiver<DartFnReply>>()
+    | stdexec::continues_on(std::declval<const IoContextScheduler&>())
+    | stdexec::then(std::declval<decode_fn>()));
+
+  base_sender_t base_;
+
+  dartfn_sender(co::oneshot::Receiver<DartFnReply> rx, const IoContextScheduler& sched,
+                DecodeRet decode)
+    : base_(std::move(rx)
+            | stdexec::continues_on(sched)
+            | stdexec::then(decode_fn{std::move(decode)})) {}
+
+  dartfn_sender(dartfn_sender&&) = default;
+  dartfn_sender& operator=(dartfn_sender&&) = default;
+  dartfn_sender(const dartfn_sender&) = delete;
+  dartfn_sender& operator=(const dartfn_sender&) = delete;
+
+  auto get_env() const noexcept { return base_.get_env(); }
+
   template <stdexec::receiver Rcvr>
-  opstate<Rcvr> connect(Rcvr rcvr) && {
-    return opstate<Rcvr>(sched_, std::move(rx_), std::move(rcvr),
-                         std::move(decode_));
+  auto connect(Rcvr rcvr) && {
+    return stdexec::connect(std::move(base_), std::move(rcvr));
   }
 };
 
@@ -263,7 +152,7 @@ class DartFn<Ret(Args...)> {
     }
     auto rx =
         session_->invoke_dart_fn_async(generation_, fn_id_, w.raw());
-    return detail::dartfn_sender<Ret>{std::move(rx), sched, decode_};
+    return detail::dartfn_sender<Ret>{std::move(rx), *sched, decode_};
   }
 
  private:
@@ -273,7 +162,5 @@ class DartFn<Ret(Args...)> {
   EncodeArgs encode_;
   DecodeRet decode_;
 };
-
-using DartFnStringToString = DartFn<std::string(std::string)>;
 
 }  // namespace dcb

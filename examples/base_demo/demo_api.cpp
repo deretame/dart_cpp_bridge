@@ -5,9 +5,11 @@
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/start_with_receiver.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
 
 #include <algorithm>
 #include <array>
@@ -74,6 +76,27 @@ enum class MethodId : std::uint32_t {
 std::int32_t bridge_version() { return 1; }
 
 // ---------------------------------------------------------------------------
+// Fire-and-forget sugar over the official exec::start_detached (docs §5.2):
+// the official built-in receiver terminates on set_error, so every detached
+// chain must swallow errors first. This wrapper appends an upon_error that
+// logs the error instead of crashing, so callers can pass any sender.
+// ---------------------------------------------------------------------------
+template <stdexec::sender S>
+void start_detached_safe(S&& sndr) {
+  exec::start_detached(
+      std::forward<S>(sndr)
+      | stdexec::upon_error([](std::exception_ptr ep) noexcept {
+          try {
+            std::rethrow_exception(ep);
+          } catch (const std::exception& e) {
+            std::fprintf(stderr, "[dcb] detached sender error: %s\n", e.what());
+          } catch (...) {
+            std::fprintf(stderr, "[dcb] detached sender error: unknown\n");
+          }
+        }));
+}
+
+// ---------------------------------------------------------------------------
 // Async business functions — std::exec style: each returns a *sender*.
 // Errors (exceptions inside then/functions) are delivered as set_error and
 // surface via the dispatch receiver.
@@ -89,16 +112,18 @@ std::string sleep_test() {
 using I32Sink = decltype(make_i32_sink(nullptr, 0, 0, 0));
 
 void ticks(I32Sink sink, std::int32_t count, std::int32_t interval_ms) {
-  asio::post(Runtime::instance().pool(),
-             [sink = std::move(sink), count, interval_ms]() mutable {
-               for (std::int32_t i = 0; i < count; ++i) {
-                 sink.add(i);
-                 if (interval_ms > 0) {
-                   std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-                 }
-               }
-               sink.end();
-             });
+  // Blocking loop runs on the blocking pool via spawn_blocking; the io thread
+  // stays responsive. Sink events are legal from pool threads.
+  start_detached_safe(
+      dcb::spawn_blocking([sink = std::move(sink), count, interval_ms]() mutable {
+        for (std::int32_t i = 0; i < count; ++i) {
+          sink.add(i);
+          if (interval_ms > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+          }
+        }
+        sink.end();
+      }));
 }
 
 stdexec::sender auto echo(std::string s) { return stdexec::just(std::move(s)); }
@@ -184,11 +209,11 @@ stdexec::sender auto fail_async(std::string message) {
 }
 
 void fail_stream(I32Sink sink, std::string message) {
-  asio::post(Runtime::instance().pool(),
-             [sink = std::move(sink), message = std::move(message)]() mutable {
-               sink.add(1);
-               sink.error(message.empty() ? "fail_stream" : message);
-             });
+  start_detached_safe(
+      dcb::spawn_blocking([sink = std::move(sink), message = std::move(message)]() mutable {
+        sink.add(1);
+        sink.error(message.empty() ? "fail_stream" : message);
+      }));
 }
 
 // Counter fixture for hand-written class-method export test.
@@ -320,7 +345,7 @@ std::int32_t counter_static_sum(std::int32_t a, std::int32_t b) {
 }
 
 stdexec::sender auto counter_call_dart_fn(std::shared_ptr<Counter> obj,
-                                          DartFnStringToString cb) {
+                                          dcb::DartFn<std::string(std::string)> cb) {
   // DartFn callback method: pass the current value as a string to Dart.
   // operator() returns a sender that resolves on the io thread.
   return cb(std::to_string(obj->value()));
@@ -388,7 +413,7 @@ struct DispatchReceiver {
 
 // Run a sender chain on the io scheduler; route its completion into a
 // response frame. The business sender's value type must be T. The opstate is
-// kept alive until completion (start_detached semantics).
+// kept alive until completion (connect + start, §5.4).
 template <typename T, stdexec::sender S, typename Encode>
 void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::uint64_t req,
                std::uint32_t method, S&& sndr, Encode&& encode, const char* name) {
@@ -398,7 +423,7 @@ void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::
     auto rcvr = DispatchReceiver<T>{
         session, gen, req, method, name,
         std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))};
-    dcb::start_detached(std::move(chain), std::move(rcvr));
+    dcb::start_with_receiver(std::move(chain), std::move(rcvr));
   } catch (const std::exception& e) {
     post_err(session, gen, req, method, name, e.what());
   } catch (...) {
@@ -406,47 +431,28 @@ void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::
   }
 }
 
-void run_dart_hello_blocking(const std::shared_ptr<Session>& session, std::uint64_t gen,
-                             std::uint64_t req, std::uint32_t method, DartFnStringToString cb) {
-  // Offload to pool thread — sync_wait on io would self-deadlock.
-  asio::post(Runtime::instance().pool(),
-             [session, gen, req, method, cb = std::move(cb)]() mutable {
-               try {
-                 auto out = dcb::sync_wait(stdexec::starts_on(
-                     *Runtime::instance().io_scheduler(), cb("Tom")));
-                 if (!out) {
-                   throw std::runtime_error("DartFn stopped");
-                 }
-                 ByteWriter w;
-                 w.str(std::get<0>(*out));
-                 post_ok(session, gen, req, method, w.raw());
-               } catch (const std::exception& e) {
-                 post_err(session, gen, req, method, "callDartHelloSync", e.what());
-               } catch (...) {
-                 post_err(session, gen, req, method, "callDartHelloSync", "unknown");
-               }
-             });
-}
-
 void counter_increment_stream(std::shared_ptr<Counter> obj, std::int32_t count,
                               std::int32_t interval_ms, I32Sink sink) {
-  // Stream member method: increment the counter on the thread pool and emit each new value.
-  asio::post(Runtime::instance().pool(), [obj, count, interval_ms, sink = std::move(sink)]() mutable {
-    try {
-      for (std::int32_t i = 0; i < count; ++i) {
-        obj->increment(1);
-        sink.add(obj->value());
-        if (interval_ms > 0) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+  // Stream member method: increment the counter on the blocking pool and emit
+  // each new value; errors are routed to the sink's error channel.
+  start_detached_safe(
+      dcb::spawn_blocking([obj = std::move(obj), count, interval_ms,
+                           sink = std::move(sink)]() mutable {
+        try {
+          for (std::int32_t i = 0; i < count; ++i) {
+            obj->increment(1);
+            sink.add(obj->value());
+            if (interval_ms > 0) {
+              std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
+            }
+          }
+          sink.end();
+        } catch (const std::exception& e) {
+          sink.error(e.what());
+        } catch (...) {
+          sink.error("unknown");
         }
-      }
-      sink.end();
-    } catch (const std::exception& e) {
-      sink.error(e.what());
-    } catch (...) {
-      sink.error("unknown");
-    }
-  });
+      }));
 }
 
 }  // namespace
@@ -487,25 +493,12 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         break;
       }
       case MethodId::kSleepTest: {
-        auto* io = &Runtime::instance().io();
-        asio::post(Runtime::instance().pool(), [session, gen, req, method, io]() {
-          try {
-            auto out = sleep_test();
-            asio::post(*io, [session, gen, req, method, out = std::move(out)]() {
-              ByteWriter w;
-              w.str(out);
-              post_ok(session, gen, req, method, w.raw());
-            });
-          } catch (const std::exception& e) {
-            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {
-              post_err(session, gen, req, method, "sleepTest", msg);
-            });
-          } catch (...) {
-            asio::post(*io, [session, gen, req, method]() {
-              post_err(session, gen, req, method, "sleepTest", "unknown");
-            });
-          }
-        });
+        // Blocking sleep offloaded to the blocking pool; spawn_blocking
+        // migrates the completion back to the io thread, where
+        // DispatchReceiver posts the response frame.
+        run_async<std::string>(
+            session, gen, req, method, dcb::spawn_blocking(sleep_test),
+            [](ByteWriter& w, const std::string& v) { w.str(v); }, "sleepTest");
         break;
       }
       case MethodId::kTicks: {
@@ -698,7 +691,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
           post_err(session, gen, req, method, "Counter::callDartFn", "Counter handle not found or already dropped");
           break;
         }
-        DartFnStringToString cb(session, gen, fn_id);
+        dcb::DartFn<std::string(std::string)> cb(session, gen, fn_id);
         run_async<std::string>(
             session, gen, req, method, counter_call_dart_fn(obj, cb),
             [](ByteWriter& w, const std::string& v) { w.str(v); },
@@ -893,18 +886,31 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         // True async on io: co_await the DartFn sender; io thread free while Dart runs.
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
-        DartFnStringToString cb(session, gen, fn_id);
+        dcb::DartFn<std::string(std::string)> cb(session, gen, fn_id);
         run_async<std::string>(session, gen, req, method, cb("Tom"),
                                [](ByteWriter& w, const std::string& v) { w.str(v); },
                                "callDartHello");
         break;
       }
       case MethodId::kCallDartHelloSync: {
-        // Blocking path: offloaded to pool thread (sync_wait on io = deadlock).
+        // Blocking path: the whole wait runs on a pool thread inside
+        // spawn_blocking (sync_wait on io = self-deadlock); the reply is
+        // posted back on the io thread by spawn_blocking's continues_on.
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto fn_id = r.u64();
-        DartFnStringToString cb(session, gen, fn_id);
-        run_dart_hello_blocking(session, gen, req, method, std::move(cb));
+        dcb::DartFn<std::string(std::string)> cb(session, gen, fn_id);
+        run_async<std::string>(
+            session, gen, req, method,
+            dcb::spawn_blocking([cb = std::move(cb)]() -> std::string {
+              auto out = dcb::sync_wait(
+                  stdexec::starts_on(*Runtime::instance().io_scheduler(), cb("Tom")));
+              if (!out) {
+                throw std::runtime_error("DartFn stopped");
+              }
+              return std::get<0>(*out);
+            }),
+            [](ByteWriter& w, const std::string& v) { w.str(v); },
+            "callDartHelloSync");
         break;
       }
       default:

@@ -170,7 +170,7 @@ internals and the documented coroutine-type switch.
 │   │   │   ├── runtime.hpp    # Singleton Runtime, spawn_on_asio
 │   │   │   ├── session.hpp    # Session, SessionRegistry, DartFnReply
 │   │   │   ├── channel.hpp    # co::mpsc / co::oneshot coroutine channels
-│   │   │   ├── dart_fn.hpp    # DartFnStringToString (sync/async reverse call)
+│   │   │   ├── dart_fn.hpp    # DartFn<Ret(Args...)> reverse callback sender
 │   │   │   ├── stream_sink.hpp # StreamSink<T>
 │   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
 │   │   │   ├── ffi.h          # C ABI exported by the shared library
@@ -285,7 +285,7 @@ dart test
 ### C++ side
 
 - **Public headers** (`dart/native/include/dart_cpp_bridge/`): the runtime surface. Business code and generated wire include these.
-- **Runtime** (`dart/native/src/runtime/runtime.cpp`): process-wide `Runtime`, per-isolate `Session`, `SessionRegistry`, `DartFnStringToString` async implementation.
+- **Runtime** (`dart/native/src/runtime/runtime.cpp`): process-wide `Runtime`, per-isolate `Session`, `SessionRegistry`, DartFn reverse-callback async implementation.
 - **Wire** (`examples/base_demo/demo_api.cpp` or generated `wire_dispatch.cpp`): frame dispatch, method routing, codec, scheduling. This is the only place that knows about `request_id`, `method_id`, and port posting.
 - **FFI entry** (`dart/native/src/ffi_entry.cpp`): C ABI exports used by Dart. This is the dynamic-library boundary.
 

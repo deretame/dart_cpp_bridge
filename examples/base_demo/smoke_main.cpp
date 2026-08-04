@@ -4,8 +4,10 @@
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/start_with_receiver.hpp"
 
 #include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
 
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
@@ -50,6 +52,19 @@ std::shared_ptr<std::promise<int>> g_add_done;
 void fail(const char* msg) {
   std::fprintf(stderr, "FAIL: %s\n", msg);
   std::exit(1);
+}
+
+// Error handler for exec::start_detached chains: errors must never reach the
+// built-in receiver (which terminates), so every detached chain ends with
+// `| upon_error(log_detached_error)`.
+void log_detached_error(std::exception_ptr ep) noexcept {
+  try {
+    std::rethrow_exception(ep);
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "[smoke] detached sender error: %s\n", e.what());
+  } catch (...) {
+    std::fprintf(stderr, "[smoke] detached sender error: unknown\n");
+  }
 }
 
 // Generic receiver completing a std::promise<V> with the sender's value.
@@ -296,14 +311,14 @@ void test_dartfn_async_e2e_simulated_reply() {
   const auto gen = session->generation();
   // Launch the DartFn reverse call on the io scheduler (starts-on io). If the
   // session is gone, DartFn::operator() throws inside then -> set_error ->
-  // swallowed and logged by the fire-and-forget receiver.
-  dcb::start_detached(
+  // logged by upon_error (exec::start_detached would terminate on errors).
+  exec::start_detached(
       stdexec::starts_on(*Runtime::instance().io_scheduler(),
                          stdexec::just() | stdexec::then([session, gen] {
-                           DartFnStringToString cb(session, gen, /*fn_id=*/1);
-                           dcb::start_detached(cb("Tom"), PostStringReceiver{session, gen});
-                         })),
-      dcb::detail::fire_and_forget_receiver{});
+                           dcb::DartFn<std::string(std::string)> cb(session, gen, /*fn_id=*/1);
+                           dcb::start_with_receiver(cb("Tom"), PostStringReceiver{session, gen});
+                         }))
+      | stdexec::upon_error(log_detached_error));
 
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     SessionRegistry::instance().close_all();
@@ -347,9 +362,9 @@ void test_spawn_fire_and_forget() {
   auto fut = done->get_future();
   // Fire-and-forget: start and ignore the result; the sender chain still runs
   // and signals through the promise it captured.
-  dcb::start_detached(
-      stdexec::starts_on(*Runtime::instance().io_scheduler(), signal_and_return(done, 99)),
-      dcb::detail::fire_and_forget_receiver{});
+  exec::start_detached(
+      stdexec::starts_on(*Runtime::instance().io_scheduler(), signal_and_return(done, 99))
+      | stdexec::upon_error(log_detached_error));
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("spawn fire-and-forget timed out");
@@ -410,7 +425,7 @@ void test_syncawait_rejected_on_io_thread() {
   // io-bound sender. The deadlock guard (IoContextScheduler::current_thread_is_io)
   // must reject it with std::logic_error instead of letting the io thread
   // block on itself (which would deadlock and hang the runtime).
-  dcb::start_detached(
+  exec::start_detached(
       stdexec::starts_on(*Runtime::instance().io_scheduler(),
                          stdexec::just() | stdexec::then([done] {
                            bool rejected = false;
@@ -421,8 +436,8 @@ void test_syncawait_rejected_on_io_thread() {
                              rejected = true;
                            }
                            done->set_value(rejected);
-                         })),
-      dcb::detail::fire_and_forget_receiver{});
+                         }))
+      | stdexec::upon_error(log_detached_error));
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
     Runtime::instance().stop();
     fail("sync_wait-on-io timed out (deadlock guard did not fire)");
@@ -444,7 +459,7 @@ void test_spawn_blocking_awaited_no_block_io() {
 
   // A sender chain on io awaits spawn_blocking (150ms sleep on the pool);
   // completion is delivered back on the io thread.
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
         return 42;
@@ -496,9 +511,9 @@ void test_spawn_blocking_fire_and_forget() {
     }
     void set_stopped() && noexcept {}
   };
-  // Fire-and-forget: launch via start_detached; the completion arrives back
+  // Fire-and-forget: launch via connect + start; the completion arrives back
   // on the io thread.
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         return 123;
@@ -540,7 +555,7 @@ void test_spawn_blocking_explicit_scheduler() {
   };
   // Explicit scheduler: pass the blocking pool scheduler by hand; the result
   // must still arrive back on the io thread.
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking(
           [] {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -584,7 +599,7 @@ void test_spawn_blocking_exception() {
     }
     void set_stopped() && noexcept {}
   };
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking([]() -> int { throw std::runtime_error("boom"); }),
       ErrReceiver{done});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
@@ -623,7 +638,7 @@ void test_spawn_blocking_void() {
     }
     void set_stopped() && noexcept {}
   };
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking([flag] {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         flag->store(true);
@@ -668,7 +683,7 @@ void test_spawn_blocking_void_exception() {
     }
     void set_stopped() && noexcept {}
   };
-  dcb::start_detached(
+  dcb::start_with_receiver(
       dcb::spawn_blocking([]() -> void { throw std::runtime_error("void-boom"); }),
       VoidErrReceiver{done});
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
@@ -715,7 +730,7 @@ void test_coro_sleep_no_block_io() {
     }
     void set_stopped() && noexcept {}
   };
-  dcb::start_detached(dcb::sleep(std::chrono::milliseconds(150)),
+  dcb::start_with_receiver(dcb::sleep(std::chrono::milliseconds(150)),
                       SleepReceiver{done, t0});
 
   // While the sender is sleeping on the timer, io must stay responsive.

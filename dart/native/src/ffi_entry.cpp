@@ -9,6 +9,9 @@
 
 #include "dart_api_dl.h"
 
+#include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
+
 #include <cstdlib>
 #include <cstring>
 #include <atomic>
@@ -185,12 +188,15 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
   std::vector<std::uint8_t> copy(req, req + req_len);
   // std::exec style: launch a dispatch chain on the io scheduler
   // (starts-on io; dispatch runs on the io thread, errors are swallowed).
+  // noexcept: dispatch_request fully guards its body (see dispatch impls), so
+  // the chain never completes with set_error — the exec::start_detached
+  // contract (no error completion) holds.
   auto sndr = stdexec::just() | stdexec::then(
-      [session = std::move(session), copy = std::move(copy), session_id]() {
+      [session = std::move(session), copy = std::move(copy), session_id]() noexcept {
         dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
       });
   auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(), std::move(sndr));
-  dcb::start_detached(std::move(chain), dcb::detail::fire_and_forget_receiver{});
+  exec::start_detached(std::move(chain));
 }
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {

@@ -840,14 +840,6 @@ def _type_ir(
                     ],
                     "return": _type_ir(ret_s, enum_by_qualified, enum_by_name),
                 }
-        # Legacy string-to-string alias.
-        if s in ("dcb::DartFnStringToString", "DartFnStringToString"):
-            return {
-                "kind": "dart_fn",
-                "signature": "std::string(std::string)",
-                "args": [{"kind": "string"}],
-                "return": {"kind": "string"},
-            }
 
     # enum references
     if enum_by_qualified and s in enum_by_qualified:

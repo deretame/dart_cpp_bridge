@@ -118,72 +118,6 @@ struct sched_env {
   }
 };
 
-// Fire-and-forget opstate holder: heap-allocated so the opstate outlives
-// start() until completion (P2300 requirement — an opstate must not be
-// destroyed before the completion signal fires). Released on completion.
-//
-// The opstate member is constructed in-place (no moves): stdexec's sexpr
-// opstates are immovable, so any make_unique/emplace forwarding that forces a
-// move would fail to compile.
-template <stdexec::sender S, typename Rcvr>
-struct faf_state {
-  // Use the exact connect return type (connect_result_t may decay cv/refs).
-  struct rcvr_t : Rcvr {
-    std::shared_ptr<faf_state>& self_ref;
-
-    rcvr_t(Rcvr rcvr, std::shared_ptr<faf_state>& sref)
-      : Rcvr(std::move(rcvr)), self_ref(sref) {}
-
-    template <class... As>
-    void set_value(As&&... as) && noexcept {
-      static_cast<Rcvr&&>(*this).set_value(std::forward<As>(as)...);
-      self_ref.reset();
-    }
-
-    void set_error(std::exception_ptr ep) && noexcept {
-      static_cast<Rcvr&&>(*this).set_error(ep);
-      self_ref.reset();
-    }
-
-    void set_stopped() && noexcept {
-      static_cast<Rcvr&&>(*this).set_stopped();
-      self_ref.reset();
-    }
-  };
-
-  using op_t = decltype(stdexec::connect(std::declval<S>(),
-                                         std::declval<rcvr_t>()));
-
-  op_t op;
-  std::shared_ptr<faf_state> self;
-
-  faf_state(S sndr, Rcvr rcvr)
-    : op(stdexec::connect(std::move(sndr), rcvr_t{std::move(rcvr), self})) {}
-};
-
-// Receiver used for fire-and-forget launches: swallows every completion
-// signal (errors are logged to stderr).
-struct fire_and_forget_receiver {
-  using receiver_concept = stdexec::receiver_tag;
-
-  template <class... Vs>
-  void set_value(Vs&&...) && noexcept {
-  }
-
-  void set_error(std::exception_ptr ep) && noexcept {
-    try {
-      std::rethrow_exception(ep);
-    } catch (const std::exception& e) {
-      std::fprintf(stderr, "[dcb] sender error: %s\n", e.what());
-    } catch (...) {
-      std::fprintf(stderr, "[dcb] sender error: unknown\n");
-    }
-  }
-
-  void set_stopped() && noexcept {
-  }
-};
-
 // The default scheduler for spawn_blocking: the runtime's blocking pool.
 // Lives in a function (rather than inline in the default argument) so the
 // stopped-runtime guard runs before the pool is dereferenced.
@@ -194,17 +128,6 @@ inline auto default_blocking_scheduler() {
 }
 
 }  // namespace detail
-
-// Start `sndr` detached, keeping the opstate alive until it completes.
-// `rcvr` receives the completion signals (on whatever thread the sender
-// completes). Errors are delivered to the receiver; nothing is rethrown.
-template <stdexec::sender S, stdexec::receiver Rcvr>
-void start_detached(S&& sndr, Rcvr rcvr) {
-  using state_t = detail::faf_state<std::decay_t<S>, Rcvr>;
-  auto state = std::make_shared<state_t>(std::forward<S>(sndr), std::move(rcvr));
-  state->self = state;
-  stdexec::start(state->op);
-}
 
 // Block the calling thread until `sndr` completes. Returns the value or
 // rethrows the sender's error (mirrors std::exec's sync_wait semantics, with
@@ -256,7 +179,7 @@ auto spawn_blocking(F&& f, Sched sched = detail::default_blocking_scheduler())
   // std::exec style: schedule the callable onto the given scheduler, then
   // migrate the completion back to the io scheduler. Exceptions inside the
   // callable become set_error automatically.
-  auto work = stdexec::just() | stdexec::then([f = std::forward<F>(f)]() -> WireT {
+  auto work = stdexec::just() | stdexec::then([f = std::forward<F>(f)]() mutable -> WireT {
     if constexpr (std::is_void_v<T>) {
       f();
       return Unit{};

@@ -155,8 +155,6 @@ class DartFn<Ret(Args...)> {
   std::uint64_t fn_id() const;
 };
 
-using DartFnStringToString = DartFn<std::string(std::string)>;
-
 }  // namespace dcb
 ```
 
