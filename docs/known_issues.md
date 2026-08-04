@@ -1,7 +1,7 @@
 # 已知问题与技术债
 
 > 记录实现过程中已确认的卡点，避免重复踩坑。  
-> 更新日期：2026-08-03
+> 更新日期：2026-08-04
 
 ---
 
@@ -625,3 +625,155 @@ static std::shared_ptr<dartfn_ctl<opstate>> make_ctl(opstate* self) {
 - 该 bug 在迁移分支上早已存在（构造函数顺序从未对过），只是此前 `on_io`/`start_on_io` 路径从未经 stdexec 算法 receiver 连接 dartfn，迁移到 `starts_on` 后首次暴露。
 
 
+
+---
+
+## 14. 【已解决】stdexec（nvhpc-26.05）自定义 scheduler/sender 的编译期陷阱
+
+> 背景：feat/stdexec-migration 分支将 runtime 从 async-simple 迁移到 stdexec
+> （P2300 参考实现，锁 
+vhpc-26.05 tag，MSVC 19.51 / VS2026）。以下问题均为
+> 自定义 scheduler / sender 在 MSVC 下遇到的编译期失败，全部已解决，列此备查。
+
+### 14.1 自定义 sender 必须提供 connect 成员
+
+- **现象**：自写的 schedule_sender（照抄官方 inline_scheduler 样板但漏了 connect）
+  作为 child 参与 continues_on 等组合时，stdexec::connect_t 报
+  C3889: 对类类型 connect_t 的对象的调用未找到匹配的调用运算符。
+- **根因**：__connectable_to 要求 sender 满足 __with_static_member /
+  __with_member / __with_co_await / __with_legacy_tag_invoke 之一；
+  自定义 sender 只有 sender_concept + completion_signatures 不够，还必须提供
+  connect(receiver)（成员或 __static_connect）。
+- **修复**：照 inline_scheduler 样板补 connect 成员。注意 sender 若持有成员
+  数据（如 sched_），connect 必须是**非静态成员**（&& 限定），因为要读取
+  	his 的数据。
+
+### 14.2 scheduler 概念要求可复制；std::atomic 成员会破坏它
+
+- **现象**：AsioScheduler 含 std::atomic<std::thread::id> 成员（io 线程 id 追踪），
+  导致类不可复制 → 不满足 stdexec::scheduler 概念 → 组合全部编译失败。
+- **修复**：把 atomic 移入 shared_ptr<State>，scheduler 变为可复制。
+- **衍生坑**：defaulted operator== 会逐成员比较，sio::io_context 没有
+  operator== → 编译失败。须手写 operator==（比较 io_context 地址 + shared_ptr）。
+
+### 14.3 schedule() 必须是 const 成员
+
+- **现象**：schedule() 非 const 时，continues_on 的完成签名计算
+  （schedule_result_t<Scheduler>）失败 → sender_in 概念失败。
+- **修复**：schedule()/schedule_at() 声明为 const noexcept；sender 里存
+  const Scheduler*（通过 const 对象的引用成员 io_context& 仍可 post，无碍）。
+
+### 14.4 自定义 sender 的 env 需要 __get_completion_behavior 查询
+
+- **现象**：	hen/let_value 等适配器组合自定义 sender 时，__sync_attrs 查询
+  child 的 __get_completion_behavior_t<set_value_t>，缺失则组合失败。
+- **修复**：照 inline_scheduler 的 __inline_attrs 样板，给 sender 加
+  get_env() 返回提供该查询的 attrs 结构（返回 __inline_completion）。
+
+### 14.5 stdexec 适配器（then/let_value/...）只接受 sexpr（basic-sender）child
+
+- **现象**：自定义 sender | stdexec::then(...) 报
+  __then.hpp(57): static_assert(__sender_for<_Sender, then_t>) 失败。
+- **根因**：0.11 的适配器基于 sexpr + transform_sender 机制，非 sexpr 的
+  自定义 sender 不能作为 child 组合。
+- **对策**：自定义 sender（on_scheduler_sender、dartfn_sender）只作为
+  **最外层** sender 使用；需要后续处理的逻辑（如 DartFn 的 decode）放进 sender
+  内部（inner receiver 完成时处理），不再 | then(...)。
+
+### 14.6 sexpr opstate 不可移动：emplace / make_unique 强制 move 会编译失败
+
+- **现象**：std::optional<op_t>::emplace(connect(...)) 与
+  std::make_unique<op_t>(connect(...)) 都报
+  C2665: opstate 没有重载函数可以转换所有参数。
+- **根因**：sexpr 的 opstate 是 immovable（STDEXEC_IMMOVABLE）；mplace/
+  make_unique 的 std::forward 会把 prvalue 变成 xvalue 强制走 move 构造。
+- **修复**：opstate 成员**就地构造**（构造函数的成员初始化列表里直接
+  op(connect(...))，靠 guaranteed elision，不触发 move）。
+- **衍生坑**：connect_result_t 与 decltype(connect(...)) 可能有 cv/引用差异，
+  存 opstate 的类型要用 decltype(stdexec::connect(...)) 精确匹配，否则同样报
+  C2665（MSVC 下 connect_result_t 对自定义 sender 的求值不可靠）。
+
+### 14.7 其它零散编译期约束
+
+| 问题 | 说明 |
+|------|------|
+| stdexec::start 要求 **lvalue** opstate | start_t::operator()(_Op&)；start(connect(...)) 临时对象编译失败，必须 uto op = connect(...); start(op); 两步 |
+| sync_wait 返回 optional<tuple<...>> | 单值也要 std::get<0>(*v)，不是 optional<T> |
+| receiver 的 set_value 必须 noexcept | stdexec 有 static_assert；oneshot 完成若从 const& 拷贝值（如 DartFnReply 含 vector/string，拷贝非 noexcept）会触发，完成值必须 **move 传递** |
+| start_detached 编译期拒绝带 set_error 的 sender | __never_sends<set_error_t> 约束；continues_on 等总会引入 set_error_t(exception_ptr)（分配失败）→ 自定义 receiver 吞错误 |
+| auto 返回类型的成员函数不能跨 TU 定义 | C3779；invoke_dart_fn_async 从 sender auto 改为显式返回类型 |
+| 模板参数顺序 | un_async<T, S, Encode> 显式给 T 时 S 必须可推导，写反会全部 C2672 |
+| 局部类不能有成员模板 | fire-and-forget receiver 的模板 set_value 必须在命名空间作用域 |
+
+### 14.8 调试方法备忘
+
+MSVC 的概念失败信息极差（只有 C3889/C2338，无约束链）。有效手段：
+- **独立探针工程**（只 include 头文件、不链接 runtime），二分最小复现；
+- static_assert(stdexec::sender_to<S, R>) 逐个概念细分（sender / receiver /
+  sender_in / sender_to 分开断言）；
+- 	ypeid(T).name() 打印 sender 类型，对比 connect_result_t 与
+  decltype(connect(...)) 是否一致。
+
+---
+
+## 15. 【已绕过】MSVC 下 stdexec 算法（continues_on / on / exec::task）运行期不可用
+
+### 15.1 continues_on / on：connect 后运行期 AV
+
+- **现象**：continues_on(oneshot_rx, sched) + connect + start 后，send 触发
+  完成时直接 access violation（0xC0000005），探针可稳定复现；编译期完全正常。
+- **定位**：完成链进入 schedule_from/sexpr 内部 receiver 时崩溃，疑似 MSVC
+  对 stdexec 0.11 sexpr/transform 机制的运行期布局问题（未深挖到根因）。
+- **对策**：**手写 on_scheduler_sender 包装**（connect child + inner receiver +
+  sio::post 回目标调度器），只依赖 connect/set_value/start 稳定 API，
+  运行期验证通过。continues_on 从 runtime 中移除。
+
+### 15.2 xec::task（协程）与自定义 env 不兼容
+
+- **现象**：on_io(exec::task<int>{...}) 编译失败：
+  get_completion_signatures(task, env) 无匹配重载。
+- **根因**：task 的完成签名计算依赖 env 提供 get_scheduler/
+  get_start_scheduler（__start_scheduler_type），即便注入 scheduler 仍失败
+  （nvhpc-26.05 的 task 对 env 的约束过紧，MSVC 下不可用）。
+- **对策**：smoke 全部改 receiver/sender 组合（不再用协程）；stream.hpp 的
+  xec::task 接口保留但**未被实例化**（未使用则不报错）——后续若要用协程，
+  需升级 stdexec 版本或换实现。
+
+### 15.3 影响面
+
+| 组件 | 状态 |
+|------|------|
+| 手写 on_scheduler/on_io/dartfn_sender | ✓ 运行期验证通过 |
+| stdexec::continues_on / stdexec::on | ✗ 弃用（MSVC AV） |
+| xec::task 协程 | ✗ 弃用（签名计算失败） |
+| stdexec::just / 	hen / write_env / sync_wait / stop_token | ✓ 正常 |
+
+---
+
+## 16. 【已解决】opstate 生命周期与指针悬挂（P2300 语义细节）
+
+### 16.1 inner receiver 持裸 opstate 指针 → connect 返回链 move 后悬挂
+
+- **现象**：DartFn 反向调用"卡死"（oneshot send() 返回 true 但无任何后续），
+  无崩溃；加日志发现 settle 时 waiter == nullptr。
+- **根因**：stdexec::connect 的返回链经过 __declfn 包装，**不保证 guaranteed
+  elision**——opstate 可能被 move，而 inner receiver 持有的 Op* 仍指向
+  构造时的旧地址（旧对象已析构）→ use-after-free（未崩是因为内存未复用）。
+- **修复**：inner receiver 不存裸指针，改存 **shared control block**
+  （op_ctl<Op>{ Op* op; }），opstate 的 move 构造里刷新 ctl_->op = this。
+- **衍生坑（构造序）**：ctl_->op = this 必须在 inner_（connect）**之前**
+  就位——stdexec 的 connect_t 会在 connect 期间调用 get_env(receiver)，
+  inner receiver 的 get_env() 读 ctl_->op->sched_，晚初始化会拿到
+  null scheduler（smoke 路径不崩、starts_on 路径 AV，见第 13 节）。
+
+### 16.2 fire-and-forget 场景 opstate 未完成即析构 → 回复静默丢失
+
+- **现象**：dispatch（DartFn）回复"卡死"；oneshot 的 opstate 析构函数把
+  waiter 注销，send() 时无 waiter → 值被静默丢弃。
+- **根因**：P2300 要求 opstate 在 start() 后必须存活到完成信号发出；局部
+  uto op = connect(...) 在函数（如 io 上执行的 factory）返回时析构，而
+  业务 sender（DartFn）尚未完成。
+- **修复**：dcb::start_detached(sndr, rcvr) —— 堆分配 af_state
+  （opstate 成员就地构造 + rcvr 包装持 self 引用），完成时 self.reset()
+  释放，未完成时由 self 循环引用保活（fire-and-forget 的代价：永不完成的
+  sender 会泄漏）。
