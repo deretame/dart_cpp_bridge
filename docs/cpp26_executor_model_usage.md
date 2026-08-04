@@ -93,6 +93,7 @@ target_link_libraries(your_target PRIVATE STDEXEC::stdexec)
   但官方推荐走 CMake target，因为 1.1 里那些编译选项由 target 自动设置。
 - 可选组件（默认均 OFF，详见 `third_party/stdexec/CMakeLists.txt`）：
   `STDEXEC_BUILD_PARALLEL_SCHEDULER`（系统级并行调度器，见 [12.4](#124-系统级并行调度器get_parallel_scheduler)）、
+  `STDEXEC_ENABLE_ASIO`（Asio 适配器 `exec::asio`，见 12.6.6）、
   `STDEXEC_BUILD_MODULES`、`STDEXEC_ENABLE_CUDA`、`STDEXEC_ENABLE_IO_URING` 等。
   Windows 上 `STDEXEC_ENABLE_WINDOWS_THREAD_POOL` 按 `windows.h` 探测自动开启（见 [12.5](#125-windows-线程池后端windows_thread_pool)）。
 
@@ -188,6 +189,9 @@ stdexec 里有两层命名空间：
 #include <exec/create.hpp>                // exec::create（把回调包成 sender）
 #include <exec/materialize.hpp>           // exec::materialize / dematerialize
 #include <exec/trampoline_scheduler.hpp>  // exec::trampoline_scheduler（防递归栈溢出）
+#include <exec/asio/use_sender.hpp>       // exec::asio::use_sender（Asio 完成令牌 → sender）
+#include <exec/asio/asio_thread_pool.hpp> // exec::asio::asio_thread_pool（Asio 版线程池）
+                                         //   ↑ exec::asio 需 STDEXEC_ENABLE_ASIO=ON（见 12.6.6）
 #include <stdexec/stop_token.hpp>         // inplace_stop_source / inplace_stop_token / inplace_stop_callback
 ```
 
@@ -1065,6 +1069,8 @@ sync_wait(exec::schedule_at(tsch, exec::now(tsch) + 200ms) | then([] { /* ... */
   `schedule_after` 是 CPO，scheduler 没有对应成员时自动用 `schedule_at(now + d)` 兜底。
 - 定时 sender 的完成签名是 `set_value_t()` / `set_stopped_t()`——可以被取消。
 - 与取消组合做超时的完整例子见 [8.5](#85-超时与竞速用-when_any-实现trigger-取消)。
+- 已经维护着自己的 `asio::io_context` 时，定时也可以直接用
+  `steady_timer + async_wait(use_sender)`（见 12.6.3），不必引入定时线程。
 
 ### 12.2 trampoline_scheduler：防递归 schedule 栈溢出
 
@@ -1138,6 +1144,123 @@ auto sch = pool.get_scheduler();                    // 成员含 schedule() / no
 
 注意它在 `__win32` 子命名空间（实现细节命名空间），接口可能随版本调整；
 要写可移植代码还是用 `exec::static_thread_pool`。
+
+### 12.6 Asio 适配：exec::asio
+
+stdexec 自带 Asio 适配层（`exec::asio` 命名空间），两件套：`use_sender` 完成令牌
+（Asio 异步操作 → sender）和 `asio_thread_pool`（Asio 版线程池 scheduler）。
+像本项目这样已经围绕 `asio::io_context` 事件循环构建的代码，主要用前者把
+io_context 包成 scheduler，而不用另起线程池。
+
+#### 12.6.1 use_sender：把 Asio 异步操作变成 sender
+
+```cpp
+#include <exec/asio/use_sender.hpp>
+
+asio::steady_timer timer{ioc, 200ms};
+sender auto s = timer.async_wait(exec::asio::use_sender);
+// socket.async_read_some(buf, exec::asio::use_sender) → sender of (bytes_transferred)
+```
+
+任何接受完成令牌的 Asio 异步操作都能套。完成映射（`error_code` 参数被剥掉）：
+
+| Asio 完成                                     | sender 完成                                        |
+| --------------------------------------------- | -------------------------------------------------- |
+| `ec == 0`                                     | `set_value(args...)`                               |
+| `operation_aborted` / `operation_canceled`    | `set_stopped()`                                    |
+| 其他非零 `ec`                                 | `set_error(std::exception_ptr)`（包成 `system_error`） |
+
+完成签名 = 值形态（剥掉 `error_code`）+ `set_error_t(std::exception_ptr)` +
+`set_stopped_t()`。外层 stop token 请求停止时，适配器会对 Asio 操作
+`emit(cancellation_type::all)`（走 Asio 的 `cancellation_slot` 机制）。
+
+#### 12.6.2 把现有 io_context 包成 scheduler
+
+"在事件循环上跑一次"的 sender 就是 `post(ioc, use_sender)`，包一层即得 scheduler：
+
+```cpp
+class io_context_scheduler
+{
+ public:
+  using scheduler_concept = stdexec::scheduler_tag;
+
+  explicit io_context_scheduler(asio::io_context& ioc) : ioc_(&ioc) {}
+
+  stdexec::sender auto schedule() const noexcept
+  {
+    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
+  }
+
+  bool operator==(const io_context_scheduler&) const noexcept = default;
+
+ private:
+  asio::io_context* ioc_;
+};
+```
+
+- `asio_impl` 是**生成的**命名空间别名：standalone 时 = `::asio`，boost 时 =
+  `::boost::asio`（`asio_config.hpp`，见 12.6.6）。
+- 之后 `starts_on(sched, ...)` / `on(sched, ...)` / `continues_on(sched)` 都能把
+  链路搬上 io 线程；协程里 `co_await exec::reschedule_coroutine_on(sched)` 也行。
+- 生命周期：schedule() 的 sender 捕获 io_context 的引用，**scheduler 不得比
+  io_context 活得久**（本项目由 Runtime 的成员声明顺序保证）。
+- 驱动侧：`io_context::run()` 在队列变空时就会返回——常驻事件循环要用
+  `asio::make_work_guard(ioc)` 保活，退出前 `guard.reset()` 让 `run()` 收尾。
+
+#### 12.6.3 定时：steady_timer + use_sender（可取消 sleep）
+
+```cpp
+// timer 必须活得比操作久：用 shared_ptr 保活到完成
+sender auto sleep_on(asio::io_context& ioc, std::chrono::milliseconds d)
+{
+  auto timer = std::make_shared<asio::steady_timer>(ioc, d);
+  return timer->async_wait(exec::asio::use_sender)
+       | then([timer] {});
+}
+```
+
+- 效果等价于 12.1 的 `schedule_after`，但跑在**你自己的事件循环**上，不需要另开
+  定时线程。请求停止 → timer 被 cancel → `operation_aborted` → `set_stopped`。
+- 反模式：局部变量 timer 直接 `async_wait` 后函数返回——timer 析构即取消操作。
+
+#### 12.6.4 asio_thread_pool：Asio 版线程池
+
+```cpp
+#include <exec/asio/asio_thread_pool.hpp>
+
+exec::asio::asio_thread_pool pool{4};        // 默认构造 = hardware_concurrency
+auto sch = pool.get_scheduler();             // 继承 thread_pool_base：支持 bulk
+sync_wait(schedule(sch) | then([] { return 42; }));
+```
+
+- 接口与 `exec::static_thread_pool` 一致（同继承 `thread_pool_base`），底层是
+  `asio::thread_pool`；`get_executor()` 可取底层 Asio executor 与 Asio 生态互操作。
+- 析构自动 stop + join。
+
+#### 12.6.5 executor_with_default / as_default_on：默认完成令牌
+
+给 io 对象绑定默认完成令牌，省去每次传 `use_sender`（`use_sender` 是令牌实例，
+对应类型是 `use_sender_t`）：
+
+```cpp
+auto timer2 = exec::asio::use_sender.as_default_on(asio::steady_timer{ioc, 100ms});
+sender auto s = timer2.async_wait();        // 不再需要显式传 token
+```
+
+（等价底层形式：`exec::asio::as_default_on<exec::asio::use_sender_t>(io_obj)`，
+以及手写的 `executor_with_default<Executor, Token>`。）
+
+#### 12.6.6 CMake 接入（重要：必须走 CMake）
+
+`exec::asio` 的头文件依赖**生成的** `asio_config.hpp`（选择 standalone/boost 命名
+空间），不能像其他头一样纯 `-I` 使用：
+
+```cmake
+set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
+set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)  # 或 "boost"（默认）
+# standalone 模式由 stdexec 自动拉取 asio-1.31.0
+target_link_libraries(your_target PRIVATE STDEXEC::asioexec)  # 兼容别名：STDEXEC::asio_pool
+```
 
 ---
 
@@ -1297,6 +1420,10 @@ stdexec::inline_scheduler{};                   // 内联（立即）执行
 exec::timed_thread_context timer;              // 定时线程；auto tsch = timer.get_scheduler();
 exec::trampoline_scheduler tramp;              // 防递归 schedule 压栈
 stdexec::get_parallel_scheduler();             // 系统级并行调度器（12.4，需开 build 选项）
+exec::asio::asio_thread_pool apool{N};         // Asio 版线程池（需 STDEXEC_ENABLE_ASIO）
+// 把现有 asio::io_context 包成 scheduler：schedule() 返回
+//   exec::asio::asio_impl::post(ioc, exec::asio::use_sender)（见 12.6.2）
+// Asio 定时：steady_timer + async_wait(exec::asio::use_sender)（见 12.6.3）
 ```
 
 ### 迁移
