@@ -815,6 +815,45 @@ auto guarded() -> exec::task<int>
 - 父协程或外层 `when_any` 请求停止时，内层 sender 得到 `set_stopped`，停止沿
   promise 链向上传播（精确语义见 6.2）。
 
+### 8.7 channel 的协作取消（co::mpsc，已验证）
+
+`co::mpsc` 的 `send()` / `recv()` park 路径原生支持 stop token（完整设计与语义见
+`docs/channel_stop_token_design.md`）。注入 token 的三种形态（均已验证）：
+
+```cpp
+auto [tx, rx] = co::mpsc::bounded<int>(1);
+stdexec::inplace_stop_source src;
+
+// 形态 1：sender 链上用 write_env 注入（注意 sender 在前）
+auto result = stdexec::sync_wait(
+  stdexec::write_env(tx.send(v),
+                     stdexec::prop{stdexec::get_stop_token, src.get_token()}));
+// src.request_stop() 后：parked 的 send 以 set_stopped 完成，sync_wait 返回空 optional，
+// 值被撤回、不落通道。
+
+// 形态 2：自定义 receiver —— get_env() 返回
+//   stdexec::env{stdexec::prop{stdexec::get_stop_token, tok}}
+
+// 形态 3：exec::task 里 co_await —— 外层 receiver env 里的 token 会被 task 转发到
+// co_await 的 channel 操作（透传已验证）。顶层启动一个可取消的 task
+// （exec::task 要求 env 里有调度器）：
+auto op = stdexec::connect(
+  stdexec::starts_on(stdexec::inline_scheduler{},
+    stdexec::write_env(task(), stdexec::prop{stdexec::get_stop_token, src.get_token()})),
+  my_receiver{});
+```
+
+- **撤回语义（tokio cancel-safety）**：值在交付（claimed）前始终属于发送方 opstate；
+  取消（stop 请求，或销毁 opstate 的兜底路径）⟹ 值不落通道。认领与 stop 并发时先到
+  先得（通道锁下裁决），认领后 stop 认输。
+- **`exec::task` 遇 `set_stopped` 的表现（已验证）**：`co_await` 的 sender 以 stopped
+  完成时，协程**不再恢复**（对称转移到 promise 的 `unhandled_stopped`），task 自身以
+  `set_stopped` 完成，`co_await` 之后的语句不执行。需要区分「关闭」与「取消」的
+  调用方用 `stopped_as_optional` 或 receiver 的 `set_stopped` 分支处理。
+- **生命周期**：`inplace_stop_source` 必须比注册在它上面的 opstate 活得久——先析构
+  opstate，再析构 source。
+- `co::oneshot` 有意不接 stop token（DartFn 回执等场景走析构即取消的兜底路径）。
+
 ---
 
 ## 9. 编排（组合子）

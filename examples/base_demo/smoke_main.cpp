@@ -818,6 +818,293 @@ void test_sleep_cancellation() {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// Bounded mpsc channel (backpressure)
+// ---------------------------------------------------------------------------
+
+// Receiver completing a std::promise<bool> (bounded send results).
+struct BoolPromiseReceiver {
+  using receiver_concept = stdexec::receiver_tag;
+
+  std::promise<bool>* done;
+
+  void set_value(bool v) && noexcept {
+    try {
+      done->set_value(v);
+    } catch (...) {
+    }
+  }
+
+  void set_error(std::exception_ptr ep) && noexcept {
+    try {
+      done->set_exception(ep);
+    } catch (...) {
+    }
+  }
+
+  void set_stopped() && noexcept {
+    try {
+      done->set_exception(std::make_exception_ptr(std::runtime_error("stopped")));
+    } catch (...) {
+    }
+  }
+};
+
+// The bounded channel applies backpressure: with capacity 2, the third send
+// must park (no thread blocked) until a recv() frees a slot; sends after
+// close fail with false; the receiver drains buffered values then reports
+// the close.
+void test_bounded_mpsc_backpressure() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto* io = Runtime::instance().io_scheduler();
+
+  auto [tx, rx] = co::mpsc::bounded<int>(2);
+
+  // Two values fit immediately.
+  bool ok1 = std::get<0>(*dcb::sync_wait(stdexec::starts_on(*io, tx.send(1))));
+  bool ok2 = std::get<0>(*dcb::sync_wait(stdexec::starts_on(*io, tx.send(2))));
+  if (!ok1 || !ok2) {
+    Runtime::instance().stop();
+    fail("bounded send fast path failed");
+  }
+  if (tx.remaining_capacity() != 0) {
+    Runtime::instance().stop();
+    fail("bounded remaining_capacity should be 0 after filling");
+  }
+
+  // Third send must park: start it on io and verify it does NOT complete.
+  std::promise<bool> send3_done;
+  auto send3_fut = send3_done.get_future();
+  auto sndr3 = stdexec::starts_on(*io, tx.send(3));
+  auto op3 = stdexec::connect(std::move(sndr3), BoolPromiseReceiver{&send3_done});
+  stdexec::start(op3);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  if (send3_fut.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("bounded send(3) should be parked when full");
+  }
+
+  // recv(1) frees a slot -> parked send(3) resumes and completes with true.
+  std::promise<int> recv1_done;
+  auto recv1_fut = recv1_done.get_future();
+  auto rop1 =
+      stdexec::connect(stdexec::starts_on(*io, rx.recv()), PromiseReceiver<int>{&recv1_done});
+  stdexec::start(rop1);
+  if (recv1_fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("bounded recv(1) timed out");
+  }
+  int recv1_val = recv1_fut.get();
+  if (recv1_val != 1) {
+    Runtime::instance().stop();
+    fail("bounded recv(1) wrong value");
+  }
+  if (send3_fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("parked bounded send(3) not resumed");
+  }
+  if (!send3_fut.get()) {
+    Runtime::instance().stop();
+    fail("parked bounded send(3) failed");
+  }
+
+  // FIFO drain: 2, then 3.
+  std::promise<int> recv2_done;
+  auto recv2_fut = recv2_done.get_future();
+  auto rop2 =
+      stdexec::connect(stdexec::starts_on(*io, rx.recv()), PromiseReceiver<int>{&recv2_done});
+  stdexec::start(rop2);
+  if (recv2_fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("bounded recv(2) timed out");
+  }
+  int recv2_val = recv2_fut.get();
+  if (recv2_val != 2) {
+    Runtime::instance().stop();
+    std::printf("bounded recv(2) got %d, waiting for 2\n", recv2_val);
+    fail("bounded recv(2) wrong value");
+  }
+
+  std::promise<int> recv3_done;
+  auto recv3_fut = recv3_done.get_future();
+  auto rop3 =
+      stdexec::connect(stdexec::starts_on(*io, rx.recv()), PromiseReceiver<int>{&recv3_done});
+  stdexec::start(rop3);
+  if (recv3_fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    Runtime::instance().stop();
+    fail("bounded recv(3) timed out");
+  }
+  if (recv3_fut.get() != 3) {
+    Runtime::instance().stop();
+    fail("bounded recv(3) wrong value");
+  }
+
+  // Sends after close fail immediately.
+  tx.close();
+  bool ok4 = std::get<0>(*dcb::sync_wait(stdexec::starts_on(*io, tx.send(4))));
+  if (ok4) {
+    Runtime::instance().stop();
+    fail("bounded send after close should fail");
+  }
+
+  // Empty + closed -> recv reports the close (PromiseReceiver raises).
+  std::promise<int> recv4_done;
+  auto recv4_fut = recv4_done.get_future();
+  auto rop4 =
+      stdexec::connect(stdexec::starts_on(*io, rx.recv()), PromiseReceiver<int>{&recv4_done});
+  stdexec::start(rop4);
+  try {
+    (void)recv4_fut.get();
+    Runtime::instance().stop();
+    fail("bounded recv after drain should report closed");
+  } catch (const std::exception&) {
+    // expected: channel closed
+  }
+
+  Runtime::instance().stop();
+  std::printf("bounded mpsc backpressure ok\n");
+}
+
+// Cross-thread strict FIFO: two producer threads send values taken from a
+// shared monotonically increasing counter through a small bounded channel
+// (forcing park/wake contention). The consumer must observe a strictly
+// increasing sequence — any cross-thread reordering would show up as an
+// inversion (this is the guarantee rigtorp's MPMCQueue provides and
+// moodycamel's did not).
+void test_bounded_mpsc_cross_thread_fifo() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto* io = Runtime::instance().io_scheduler();
+
+  constexpr int kPerProducer = 100;
+  constexpr int kTotal = 2 * kPerProducer;
+  auto [tx, rx] = co::mpsc::bounded<int>(8);
+  std::atomic<int> next{1};
+  std::atomic<bool> prod_failed{false};
+
+  auto producer = [&tx, &next, &prod_failed]() {
+    for (int i = 0; i < kPerProducer; ++i) {
+      int n = next.fetch_add(1, std::memory_order_relaxed);
+      bool ok = std::get<0>(*dcb::sync_wait(
+        stdexec::starts_on(*Runtime::instance().io_scheduler(), tx.send(n))));
+      if (!ok) {
+        prod_failed.store(true, std::memory_order_relaxed);
+      }
+    }
+  };
+  std::thread p1(producer);
+  std::thread p2(producer);
+
+  // Delivery order matches send() call order, not the shared fetch_add
+  // order (threads can be preempted between fetch_add and send), so assert
+  // completeness/uniqueness rather than monotonicity.
+  std::vector<bool> seen(static_cast<std::size_t>(kTotal) + 1, false);
+  int bad = 0;
+  for (int i = 0; i < kTotal; ++i) {
+    std::promise<int> done;
+    auto fut = done.get_future();
+    auto rop =
+        stdexec::connect(stdexec::starts_on(*io, rx.recv()), PromiseReceiver<int>{&done});
+    stdexec::start(rop);
+    if (fut.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+      Runtime::instance().stop();
+      fail("cross-thread fifo recv timed out");
+    }
+    int v = fut.get();
+    if (v < 1 || v > kTotal || seen[static_cast<std::size_t>(v)]) {
+      ++bad;
+    } else {
+      seen[static_cast<std::size_t>(v)] = true;
+    }
+  }
+  p1.join();
+  p2.join();
+
+  for (int v = 1; v <= kTotal; ++v) {
+    if (!seen[static_cast<std::size_t>(v)]) {
+      ++bad;
+    }
+  }
+  if (bad != 0) {
+    Runtime::instance().stop();
+    fail("bounded mpsc cross-thread lost/duplicated values");
+  }
+  if (prod_failed.load(std::memory_order_relaxed)) {
+    Runtime::instance().stop();
+    fail("bounded mpsc producer send failed");
+  }
+  Runtime::instance().stop();
+  std::printf("bounded mpsc cross-thread FIFO ok\n");
+}
+
+// Unbounded cross-thread completeness: same uniqueness assertion as the
+// bounded variant, but the senders are synchronous. Regression test: the
+// deque push used to sit outside the channel mutex, silently dropping
+// values under multi-producer contention (data race on the deque).
+void test_unbounded_mpsc_cross_thread() {
+  using namespace dcb;
+  Runtime::instance().start();
+
+  constexpr int kPerProducer = 10000;
+  constexpr int kTotal = 2 * kPerProducer;
+  auto [tx, rx] = co::mpsc::unbounded<int>();
+  std::atomic<int> next{1};
+  std::atomic<bool> prod_failed{false};
+
+  auto producer = [&tx, &next, &prod_failed]() {
+    for (int i = 0; i < kPerProducer; ++i) {
+      int n = next.fetch_add(1, std::memory_order_relaxed);
+      if (!tx.send(n)) {
+        prod_failed.store(true, std::memory_order_relaxed);
+      }
+    }
+  };
+  std::thread p1(producer);
+  std::thread p2(producer);
+
+  // Delivery order only matches send() call order (fetch_add order != send
+  // order under preemption), so assert completeness, not monotonicity.
+  std::vector<bool> seen(static_cast<std::size_t>(kTotal) + 1, false);
+  int bad = 0;
+  for (int i = 0; i < kTotal; ++i) {
+    std::promise<int> done;
+    auto fut = done.get_future();
+    auto rop =
+        stdexec::connect(stdexec::starts_on(*Runtime::instance().io_scheduler(), rx.recv()),
+                         PromiseReceiver<int>{&done});
+    stdexec::start(rop);
+    if (fut.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+      Runtime::instance().stop();
+      fail("unbounded fifo recv timed out");
+    }
+    int v = fut.get();
+    if (v < 1 || v > kTotal || seen[static_cast<std::size_t>(v)]) {
+      ++bad;
+    } else {
+      seen[static_cast<std::size_t>(v)] = true;
+    }
+  }
+  p1.join();
+  p2.join();
+
+  for (int v = 1; v <= kTotal; ++v) {
+    if (!seen[static_cast<std::size_t>(v)]) {
+      ++bad;
+    }
+  }
+  if (bad != 0) {
+    Runtime::instance().stop();
+    fail("unbounded mpsc cross-thread lost/duplicated values");
+  }
+  if (prod_failed.load(std::memory_order_relaxed)) {
+    Runtime::instance().stop();
+    fail("unbounded mpsc producer send failed");
+  }
+  Runtime::instance().stop();
+  std::printf("unbounded mpsc cross-thread FIFO ok\n");
+}
+
 int main() {
   using namespace dcb;
   setvbuf(stdout, nullptr, _IONBF, 0);
@@ -837,6 +1124,9 @@ int main() {
   test_spawn_blocking_void_exception();
   test_coro_sleep_no_block_io();
   test_sleep_cancellation();
+  test_bounded_mpsc_backpressure();
+  test_bounded_mpsc_cross_thread_fifo();
+  test_unbounded_mpsc_cross_thread();
   // TODO(stdexec migration): ForeignExecutor tests will be re-ported once the
   // foreign runtime lands on std::exec.
 

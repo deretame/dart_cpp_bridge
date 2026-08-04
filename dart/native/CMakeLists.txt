@@ -72,14 +72,17 @@ target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECAT
 # as an alias of asio_iface so the whole build shares one asio copy/version.
 add_library(asio ALIAS asio_iface)
 
-# --- moodycamel::ConcurrentQueue (header-only, lock-free MPMC queue) ---
+# --- rigtorp::MPMCQueue (header-only, lock-free bounded MPMC queue) ---
+# Strict-FIFO bounded queue (ring buffer, atomic ticket order) used as the
+# buffer of co::mpsc::bounded channels. Pinned to commit b9808ede (master,
+# 2024-05). MIT license.
 FetchContent_Declare(
-  concurrentqueue
-  GIT_REPOSITORY https://github.com/cameron314/concurrentqueue.git
-  GIT_TAG        v1.0.4
+  mpmcqueue
+  GIT_REPOSITORY https://github.com/rigtorp/MPMCQueue.git
+  GIT_TAG        b9808ede08f26fa9df4df4e081d19cace8f6c6ea
   GIT_SHALLOW    TRUE
 )
-FetchContent_MakeAvailable(concurrentqueue)
+FetchContent_MakeAvailable(mpmcqueue)
 
 # --- stdexec (header-only, std::execution P2300 reference implementation) ---
 # Migration experiment (branch feat/stdexec-migration): async-simple is fully
@@ -138,7 +141,7 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
-target_link_libraries(dcb_runtime PUBLIC asio_iface concurrentqueue STDEXEC::stdexec STDEXEC::asioexec)
+target_link_libraries(dcb_runtime PUBLIC asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)
@@ -170,7 +173,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
-  target_link_libraries(dcb_shared PRIVATE asio_iface concurrentqueue STDEXEC::stdexec STDEXEC::asioexec)
+  target_link_libraries(dcb_shared PRIVATE asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
     target_compile_options(dcb_shared PRIVATE /utf-8)

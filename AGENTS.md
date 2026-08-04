@@ -60,8 +60,8 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
 
 **Migration touchpoints (where async-simple lives today):**
 
-- `dart/native/include/dart_cpp_bridge/`: `asio_executor.hpp`,
-  `cbridge_wait.hpp`, `channel.hpp`, `dart_fn.hpp`, `runtime.hpp`,
+- `dart/native/include/dart_cpp_bridge/`: `cbridge_wait.hpp`,
+  `channel.hpp`, `dart_fn.hpp`, `runtime.hpp`,
   `session.hpp`, `foreign_executor.hpp`, `foreign_runtime.h`, `stream*.hpp`
 - `dart/native/src/`: `cbridge.cpp`, `runtime/runtime.cpp`
 - `dcb_gen_tool/` (see rule 4 above)
@@ -174,7 +174,7 @@ internals and the documented coroutine-type switch.
 │   │   │   ├── stream_sink.hpp # StreamSink<T>
 │   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
 │   │   │   ├── ffi.h          # C ABI exported by the shared library
-│   │   │   ├── asio_executor.hpp # AsioExecutor for async-simple (migration target)
+│   │   │   ├── asio_executor.hpp # IoContextScheduler (stdexec scheduler over the asio io_context)
 │   │   │   ├── foreign_executor.hpp # ForeignExecutor for async-simple (migration target)
 │   │   │   └── annotate.h     # BRIDGE_* / DCB_* codegen markers
 │   │   ├── src/
@@ -427,6 +427,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 | `README.zh-CN.md`                   | Chinese overview.                                               |
 | `docs/frb_and_cpp_bridge_design.md` | Full design, FRB comparison, codegen model (Chinese).           |
 | `docs/cpp26_executor_model_usage.md`| stdexec / P2300 usage guide, migration reference (Chinese, compile-verified). |
+| `docs/channel_stop_token_design.md` | Channel 取消语义与 stop token 改造（中文，已实施：值撤回 + stop token 协作取消）。 |
 | `docs/progress.md`                  | Landed checklist, current phase, next steps.                    |
 | `docs/known_issues.md`              | Resolved issues (DartFn oneshot, etc.) and accepted trade-offs. |
 | `dcb_gen_tool/README.md`            | Codegen toolchain, `dart_cpp_bridge.yaml`, generated layers.    |

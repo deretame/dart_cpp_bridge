@@ -46,6 +46,7 @@ C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、Dar
 | **DartFn 反向调用（参数式）** | ✅ | 见下表 |
 | oneshot channel（`co::oneshot`） | ✅ | `include/dart_cpp_bridge/channel.hpp` |
 | channel awaiter 持 shared state | ✅ | `recv()` 的 awaitable/awaiter 持 `shared_ptr<state>`，Receiver 先销毁/移动也不悬垂 |
+| mpsc channel 节点化 + stop token 取消 | ✅ | send/recv park 改侵入式节点；tokio 式值撤回；stop token 协作取消；见 channel_stop_token_design.md |
 | `StreamSink` 持 `shared_ptr<Session>` | ✅ | sink 可长期持有；session 关闭后 add/end/error 经 generation 检查静默丢弃 |
 
 #### DartFn 仿函数模式

@@ -59,7 +59,7 @@ void main() async {
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — architecture and product shape inspiration
 - [Asio](https://think-async.com/Asio/) — event loop and asynchronous I/O
 - [async-simple](https://github.com/alibaba/async_simple) — C++20 coroutine runtime
-- [concurrentqueue](https://github.com/cameron314/concurrentqueue) — lock-free concurrent queue
+- [MPMCQueue](https://github.com/rigtorp/MPMCQueue) — lock-free bounded MPMC queue (strict FIFO), the buffer of `co::mpsc::bounded` channels
 - Dart / Flutter team — FFI, Isolate, NativeFinalizer, and the broader Dart native ecosystem
 
 ## License
