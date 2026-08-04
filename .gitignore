@@ -59,6 +59,11 @@ Desktop.ini
 _deps/
 **/_deps/
 
+# Vendored stdexec: local clone kept out of the repo on purpose (see
+# AGENTS.md "Current initiative"). Anchored to the repo root so the tracked
+# dart/native/third_party/ (Dart API headers) is unaffected.
+/third_party/
+
 # Test / coverage
 coverage/
 .nyc_output/
