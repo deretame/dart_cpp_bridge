@@ -170,12 +170,20 @@ class UvScheduler {
   explicit UvScheduler(std::shared_ptr<UvSchedState> st = {}) : st_(std::move(st)) {}
 
   stdexec::sender auto schedule() const noexcept {
+    // Contract: the operation state must not be destroyed while its node is
+    // claimed-but-not-yet-run (P2300 whole-tree destruction mid-flight).
+    // All trees in this codebase are start_detached-owned and destroyed only
+    // after completion, so do not place this sender in stop_when /
+    // take_until-style trees that destroy started children.
     return schedule_sender{st_};
   }
 
   // Timer: completes with set_value() on the loop thread after `d` elapses.
   // Cancellable: a stop request wins the claim and completes with
-  // set_stopped(); destroying the operation state cancels silently.
+  // set_stopped(); destroying the operation state cancels silently. A timer
+  // still pending when the worker stops is completed with set_stopped() from
+  // the close callback (see TimerState::on_close), so sender trees are never
+  // leaked by stop().
   stdexec::sender auto schedule_after(std::chrono::milliseconds d) const noexcept {
     return timer_sender{st_, d};
   }
@@ -395,6 +403,17 @@ struct TimerState : TimerStateBase {
 
   static void on_close(uv_handle_t* h) {
     auto* ts = static_cast<TimerState*>(h->data);
+    int expected = kPending;
+    if (ts->claim.compare_exchange_strong(expected, kStopped)) {
+      // Nobody claimed this timer before it was closed: this is the
+      // teardown path (UvWorker::stop() closes every remaining handle while
+      // a schedule_after is still pending). Complete the receiver so the
+      // owning sender tree is released instead of leaking.
+      auto rcvr = std::move(ts->rcvr);
+      ts->self.reset();
+      stdexec::set_stopped(std::move(*rcvr));
+      return;
+    }
     ts->self.reset();  // may destroy `ts`; do not touch it afterwards
   }
 };
