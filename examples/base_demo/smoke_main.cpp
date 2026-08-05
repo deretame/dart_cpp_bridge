@@ -30,6 +30,7 @@
 namespace dcb::demo {
 std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id, const std::uint8_t* data, std::size_t len);
+void test_cbridge_api();
 }  // namespace dcb::demo
 
 // Demo method ids (same as demo_api.cpp).
@@ -1127,6 +1128,7 @@ int main() {
   test_oneshot_cross_thread_wake();
   test_io_not_blocked_while_awaiting();
   test_dartfn_async_e2e_simulated_reply();
+  dcb::demo::test_cbridge_api();
   test_spawn_fire_and_forget();
   test_spawn_wait_result();
   test_spawn_syncawait_exception();

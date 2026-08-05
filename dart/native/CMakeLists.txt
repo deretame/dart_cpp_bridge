@@ -121,12 +121,14 @@ if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
 endif()
 
 # --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---
-# Migration note (feat/stdexec-migration): src/cbridge.cpp and
-# src/foreign_runtime.cpp are temporarily excluded from the build — they still
-# target the old async-simple runtime and will be re-ported to std::exec later.
+# Migration note (feat/stdexec-migration): src/cbridge.cpp has been re-ported to
+# std::exec (stdexec starts_on + exec::task, see docs/cpp26_executor_model_usage.md)
+# and is built again. src/foreign_runtime.cpp remains temporarily excluded — it
+# still targets the old async-simple runtime and will be re-ported later.
 add_library(dcb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/object_handle.cpp
+  src/cbridge.cpp
   src/dcb_codec.c
   src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
@@ -162,6 +164,7 @@ if(DCB_BUILD_SHARED)
   add_library(dcb_shared SHARED
     src/runtime/runtime.cpp
     src/runtime/object_handle.cpp
+    src/cbridge.cpp
     src/dcb_codec.c
     src/ffi_entry.cpp
     ${DCB_DART_API_DIR}/dart_api_dl.c

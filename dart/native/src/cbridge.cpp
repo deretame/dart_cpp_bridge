@@ -3,6 +3,12 @@
 // Provides two categories of functionality:
 //   1. dcb_invoke_dart_fn — call a registered Dart callback from arbitrary C/C++ code
 //   2. dcb_async_*       — let C++ coroutines await external C async operations non-blockingly
+//
+// Both are built on the stdexec migration (see docs/cpp26_executor_model_usage.md):
+// the async ops registry holds co::oneshot channels whose receiver side is a
+// stdexec sender; dcb_invoke_dart_fn launches an exec::task on the runtime's io
+// scheduler (starts_on) and the task reschedules back to the io thread after the
+// Dart reply lands, so the C callback fires on the io thread as documented.
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/cbridge_wait.hpp"
@@ -10,10 +16,14 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 
-#include <async_simple/coro/Lazy.h>
+#include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
+#include <exec/task.hpp>
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -61,9 +71,26 @@ co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id) {
 
 // ─── DartFn call internal coroutine ───────────────────────────────────────────
 
+// Invoke the C callback, never letting a throwing user callback escape the
+// coroutine: an escaping exception would complete the exec::task with set_error
+// and re-enter the error path below, double-firing the callback (and the
+// noexcept error lambda would then std::terminate on a second throw).
+static void fire_dartfn_callback(dcb_dart_fn_callback callback, void* userdata, int ok,
+                                 const std::uint8_t* data, std::uint32_t data_len,
+                                 const char* error) {
+  try {
+    callback(userdata, ok, data, data_len, error);
+  } catch (...) {
+    std::fprintf(stderr, "[cbridge] dartfn user callback threw\n");
+  }
+}
+
 // MSVC 19.51 coroutine lambda capture bug workaround:
 // Use a static coroutine function and pass all variables as parameters.
-static async_simple::coro::Lazy<> cbridge_invoke_coro(
+// exec::task: home scheduler = the io scheduler it is starts_on'd from, so the
+// callback below always runs on the io thread (the oneshot reply may fire on
+// whichever thread called complete_dart_fn; exec::task reschedules back home).
+static exec::task<void> cbridge_invoke_coro(
     std::shared_ptr<dcb::Session> session,
     std::uint64_t generation,
     std::uint64_t fn_id,
@@ -71,12 +98,20 @@ static async_simple::coro::Lazy<> cbridge_invoke_coro(
     dcb_dart_fn_callback callback,
     void* userdata) {
   try {
-    auto payload = co_await session->invoke_dart_fn_async(generation, fn_id, std::move(args));
-    callback(userdata, 1, payload.data(), static_cast<uint32_t>(payload.size()), nullptr);
+    auto rx = session->invoke_dart_fn_async(generation, fn_id, std::move(args));
+    auto reply = co_await std::move(rx);
+    if (!reply) {
+      throw std::runtime_error("DartFn: channel closed");
+    }
+    if (!reply->ok) {
+      throw std::runtime_error(reply->error.empty() ? "DartFn failed" : reply->error);
+    }
+    fire_dartfn_callback(callback, userdata, 1, reply->payload.data(),
+                         static_cast<uint32_t>(reply->payload.size()), nullptr);
   } catch (const std::exception& e) {
-    callback(userdata, 0, nullptr, 0, e.what());
+    fire_dartfn_callback(callback, userdata, 0, nullptr, 0, e.what());
   } catch (...) {
-    callback(userdata, 0, nullptr, 0, "unknown error");
+    fire_dartfn_callback(callback, userdata, 0, nullptr, 0, "unknown error");
   }
   co_return;
 }
@@ -158,6 +193,11 @@ DCB_API int dcb_invoke_dart_fn(
   if (!dcb::Runtime::instance().running()) {
     return -1;
   }
+  // Note: the running() check above is inherently TOCTOU against a concurrent
+  // Runtime::stop() — if the runtime stops right after this check, the io task
+  // is dropped and the callback never fires (exactly-once becomes exactly-zero).
+  // This matches the pre-migration behaviour; callers that need a hard guarantee
+  // must not race stop() with in-flight dcb_invoke_dart_fn calls.
 
   const auto generation = session->generation();
   std::vector<std::uint8_t> args_copy;
@@ -165,14 +205,36 @@ DCB_API int dcb_invoke_dart_fn(
     args_copy.assign(args, args + args_len);
   }
 
-  dcb::Runtime::instance().spawn_on_asio(
-      [session = std::move(session), generation, fn_id,
-       args = std::move(args_copy), callback, userdata]() mutable
-      -> async_simple::coro::Lazy<> {
-        co_await cbridge_invoke_coro(
-            std::move(session), generation, fn_id, std::move(args), callback, userdata);
-        co_return;
-      });
+  // Launch the reverse-call coroutine on the io thread. The exec::task reschedules
+  // back to the io scheduler after the Dart reply, so the C callback runs on the io
+  // thread (documented contract of dcb_dart_fn_callback). The coroutine body catches
+  // every exception, so set_error/set_stopped below are defensive (normally
+  // unreachable — the oneshot channel has no set_stopped and start_detached has no
+  // stop source); they still fire the callback (ok=0) rather than dropping it, to
+  // honour cbridge.h's "callback is guaranteed to be called exactly once". Both
+  // lambdas run on the io thread (task completion site).
+  exec::start_detached(
+      stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                         cbridge_invoke_coro(std::move(session), generation, fn_id,
+                                             std::move(args_copy), callback, userdata))
+      | stdexec::upon_error([callback, userdata](std::exception_ptr ep) noexcept {
+          // Log a static message only: the exception text may embed Dart-supplied
+          // error strings, which should not be echoed to stderr. The callback
+          // still receives the original error text (that is the C API contract).
+          try {
+            std::rethrow_exception(ep);
+          } catch (const std::exception& e) {
+            std::fprintf(stderr, "[cbridge] dartfn coroutine error\n");
+            fire_dartfn_callback(callback, userdata, 0, nullptr, 0, e.what());
+          } catch (...) {
+            std::fprintf(stderr, "[cbridge] dartfn coroutine error: unknown\n");
+            fire_dartfn_callback(callback, userdata, 0, nullptr, 0, "unknown error");
+          }
+        })
+      | stdexec::upon_stopped([callback, userdata]() noexcept {
+          std::fprintf(stderr, "[cbridge] dartfn coroutine stopped\n");
+          fire_dartfn_callback(callback, userdata, 0, nullptr, 0, "DartFn: stopped");
+        }));
 
   return 0;
 }

@@ -1,3 +1,5 @@
+#include "dart_cpp_bridge/cbridge.h"
+#include "dart_cpp_bridge/cbridge_wait.hpp"
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/dispatch.hpp"
@@ -15,12 +17,16 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
+#include <future>
 #include <memory>
 #include <numeric>
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -966,6 +972,266 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t /*session_id*/, const std:
     w.str(dcb::error::format("dispatch_sync", "unknown"));
     return make_frame(MsgType::kResponseErr, req, method, w.raw());
   }
+}
+
+// ---------------------------------------------------------------------------
+// C bridge (cbridge.h / cbridge_wait.hpp) hand-written tests.
+//
+// These exercise the pure C ABI directly — not the wire dispatch above — and
+// are invoked from dcb_smoke (smoke_main.cpp, `test_cbridge_api()`). The C
+// side of each op completes on a worker thread after the awaiting coroutine
+// has parked, mimicking real "C library calls dcb_async_complete later" usage.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+[[noreturn]] void cbridge_test_fail(const char* msg) {
+  std::fprintf(stderr, "FAIL: %s\n", msg);
+  std::exit(1);
+}
+
+// Result slot for the dcb_invoke_dart_fn callbacks: payload/error plus a flag
+// recorded on the callback thread to assert the io-thread delivery contract
+// (cbridge.h: "Invoked on the bridge's io thread").
+struct CbridgeDartFnResult {
+  bool on_io_thread{false};
+  std::promise<std::pair<int, std::string>> done;
+};
+
+// Session id used by the simulated Dart side (dart_post handler) to reply to
+// dcb_invoke_dart_fn calls. Set before each invoke test. Atomic: the handler
+// runs on the io thread while the test thread writes it.
+std::atomic<std::uint64_t> g_cbridge_sid{0};
+
+// Simulated Dart side for dcb_invoke_dart_fn: on a kDartFnCall frame, parse the
+// fn_id + argument, then complete the reply from a worker thread.
+// fn_id 42 -> success, echo:arg; fn_id 43 -> failure with error "dart boom".
+void cbridge_dart_post(std::int64_t, const std::uint8_t* data, std::size_t len, void*) {
+  try {
+    auto h = parse_frame(data, len);
+    if (h.type != MsgType::kDartFnCall) {
+      return;
+    }
+    const auto reply_id = h.request_id;
+    ByteReader r(h.payload.data(), h.payload.size());
+    const auto fn_id = r.u64();
+    // cbridge args are raw wire bytes (not str-encoded); take the tail verbatim.
+    std::size_t arg_len = 0;
+    const auto* arg_ptr = r.remaining(&arg_len);
+    std::string arg(reinterpret_cast<const char*>(arg_ptr), arg_len);
+    const auto sid = g_cbridge_sid.load(std::memory_order_acquire);
+    std::thread([sid, reply_id, fn_id, arg = std::move(arg)]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      auto session = SessionRegistry::instance().get(sid);
+      if (!session) {
+        return;
+      }
+      if (fn_id == 43) {
+        session->complete_dart_fn(reply_id, /*ok=*/false, {}, "dart boom");
+        return;
+      }
+      // cbridge contract: the reply payload is opaque wire bytes owned by the
+      // caller's convention — here the raw string bytes, no length prefix.
+      std::string reply = std::string("echo:") + arg;
+      session->complete_dart_fn(reply_id, /*ok=*/true,
+                                std::vector<std::uint8_t>(reply.begin(), reply.end()), {});
+    }).detach();
+  } catch (const std::exception& e) {
+    std::fprintf(stderr, "[cbridge] dart post error: %s\n", e.what());
+  }
+}
+
+}  // namespace
+
+void test_cbridge_api() {
+  using namespace dcb;
+  Runtime::instance().start();
+
+  // 1) dcb_async_complete from another thread -> payload delivered to async_wait.
+  //    Timing contract: the awaiting coroutine must take the receiver (park) BEFORE
+  //    the C side completes — dcb_async_complete moves the sender out of the registry,
+  //    so a complete-before-await loses the value (async_wait -> "invalid op_id").
+  //    The 50ms sleep is a smoke-test heuristic (io-thread coroutine startup is
+  //    sub-millisecond on an idle runtime), not a handshake.
+  {
+    const auto op = dcb_async_create();
+    std::thread([op] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      const std::uint8_t payload[] = {0x11, 0x22, 0x33};
+      dcb_async_complete(op, payload, sizeof(payload));
+    }).detach();
+    auto res = sync_wait(
+        stdexec::starts_on(*Runtime::instance().io_scheduler(), async_wait(op)));
+    if (!res) {
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge complete: async_wait returned nullopt");
+    }
+    const auto& data = std::get<0>(*res);
+    if (data.size() != 3 || data[0] != 0x11 || data[1] != 0x22 || data[2] != 0x33) {
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge complete: wrong payload");
+    }
+    std::printf("cbridge complete ok\n");
+  }
+
+  // 2) dcb_async_fail -> async_wait throws the given error message.
+  {
+    const auto op = dcb_async_create();
+    std::thread([op] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      dcb_async_fail(op, "boom");
+    }).detach();
+    try {
+      (void)sync_wait(
+          stdexec::starts_on(*Runtime::instance().io_scheduler(), async_wait(op)));
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge fail: expected exception");
+    } catch (const std::runtime_error& e) {
+      if (std::string(e.what()) != "boom") {
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge fail: wrong error message");
+      }
+    }
+    std::printf("cbridge fail ok\n");
+  }
+
+  // 3) dcb_async_cancel -> async_wait throws "operation cancelled".
+  {
+    const auto op = dcb_async_create();
+    std::thread([op] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      dcb_async_cancel(op);
+    }).detach();
+    try {
+      (void)sync_wait(
+          stdexec::starts_on(*Runtime::instance().io_scheduler(), async_wait(op)));
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge cancel: expected exception");
+    } catch (const std::runtime_error& e) {
+      if (std::string(e.what()) != "async_wait: operation cancelled") {
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge cancel: wrong error message");
+      }
+    }
+    std::printf("cbridge cancel ok\n");
+  }
+
+  // 4) invalid op id -> async_wait throws "invalid op_id".
+  {
+    try {
+      (void)sync_wait(stdexec::starts_on(*Runtime::instance().io_scheduler(),
+                                         async_wait(0xDEADBEEFull)));
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge invalid op: expected exception");
+    } catch (const std::runtime_error& e) {
+      if (std::string(e.what()) != "async_wait: invalid op_id") {
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge invalid op: wrong error message");
+      }
+    }
+    std::printf("cbridge invalid op ok\n");
+  }
+
+  // 5) dcb_invoke_dart_fn: success and failure, callback fires on the io thread
+  //    with the reply payload (fn_id 42 -> success, 43 -> failure).
+  {
+    const auto sid = SessionRegistry::instance().open(/*reply_port=*/77);
+    g_cbridge_sid = sid;
+    Runtime::instance().set_dart_post(&cbridge_dart_post, nullptr);
+
+    {
+      auto res = std::make_shared<CbridgeDartFnResult>();
+      auto fut = res->done.get_future();
+      const std::uint8_t args[] = {'T', 'o', 'm'};
+      const int rc = dcb_invoke_dart_fn(
+          sid, /*fn_id=*/42, args, sizeof(args),
+          [](void* userdata, int ok, const std::uint8_t* data, std::uint32_t data_len,
+             const char* /*error*/) {
+            auto* p = static_cast<CbridgeDartFnResult*>(userdata);
+            p->on_io_thread = Runtime::instance().io_scheduler()->current_thread_is_io();
+            try {
+              p->done.set_value({ok, std::string(reinterpret_cast<const char*>(data), data_len)});
+            } catch (...) {
+            }
+          },
+          res.get());
+      if (rc != 0) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn: dcb_invoke_dart_fn returned -1");
+      }
+      if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn: callback timed out");
+      }
+      const auto [ok, payload] = fut.get();
+      if (ok != 1 || payload != "echo:Tom") {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn: wrong callback result");
+      }
+      if (!res->on_io_thread) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn: callback not on io thread");
+      }
+      std::printf("cbridge dartfn ok: %s\n", payload.c_str());
+    }
+
+    {
+      auto res = std::make_shared<CbridgeDartFnResult>();
+      auto fut = res->done.get_future();
+      const int rc = dcb_invoke_dart_fn(
+          sid, /*fn_id=*/43, nullptr, 0,
+          [](void* userdata, int ok, const std::uint8_t* /*data*/, std::uint32_t /*data_len*/,
+             const char* error) {
+            auto* p = static_cast<CbridgeDartFnResult*>(userdata);
+            p->on_io_thread = Runtime::instance().io_scheduler()->current_thread_is_io();
+            try {
+              p->done.set_value({ok, error ? std::string(error) : std::string()});
+            } catch (...) {
+            }
+          },
+          res.get());
+      if (rc != 0) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn fail: dcb_invoke_dart_fn returned -1");
+      }
+      if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn fail: callback timed out");
+      }
+      const auto [ok, err] = fut.get();
+      if (ok != 0 || err != "dart boom") {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn fail: wrong callback result");
+      }
+      if (!res->on_io_thread) {
+        SessionRegistry::instance().close_all();
+        Runtime::instance().set_dart_post(nullptr, nullptr);
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge dartfn fail: callback not on io thread");
+      }
+      std::printf("cbridge dartfn fail ok: %s\n", err.c_str());
+    }
+
+    SessionRegistry::instance().close_all();
+    Runtime::instance().set_dart_post(nullptr, nullptr);
+    g_cbridge_sid = 0;
+  }
+
+  Runtime::instance().stop();
 }
 
 }  // namespace demo

@@ -24,6 +24,9 @@ out/
 *.user
 *.suo
 .vs/
+
+# Agent tooling
+.reasonix/
 CMakeSettings.json
 CMakeUserPresets.json
 

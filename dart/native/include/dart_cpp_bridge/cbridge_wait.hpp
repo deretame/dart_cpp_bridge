@@ -12,11 +12,18 @@
 //   external_c_lib_start_work(op, on_done);  // C lib calls dcb_async_complete(op, ...) when done
 //   auto result = co_await dcb::async_wait(op);
 //   // result is payload bytes; throws std::runtime_error on failure
+//
+// async_wait returns an exec::task, so the awaiting environment must answer
+// get_start_scheduler (a stdexec::starts_on(...) chain, dcb::sync_wait, an outer
+// exec::task, or a scope). The completion of the C-side dcb_async_complete / fail /
+// cancel fires on whichever thread called it; exec::task then reschedules the
+// coroutine back to its home scheduler (the awaited sender completes on the home
+// scheduler), so downstream code keeps running in the original execution context.
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/channel.hpp"
 
-#include <async_simple/coro/Lazy.h>
+#include <exec/task.hpp>
 
 #include <cstdint>
 #include <stdexcept>
@@ -41,13 +48,15 @@ co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id);
 /// Await non-blockingly in a coroutine for an async operation created by dcb_async_create() to complete.
 /// Returns payload bytes on success; throws std::runtime_error on failure / cancellation.
 ///
-/// Must be called inside a Lazy bound to an Executor (.via(ex)).
-inline async_simple::coro::Lazy<std::vector<std::uint8_t>> async_wait(std::uint64_t op_id) {
+/// Must be awaited in an environment that answers get_start_scheduler (starts_on /
+/// outer exec::task / dcb::sync_wait). Completion is delivered on the caller's home
+/// scheduler regardless of which thread calls dcb_async_complete.
+inline exec::task<std::vector<std::uint8_t>> async_wait(std::uint64_t op_id) {
   auto rx = detail::take_async_receiver(op_id);
   if (!rx) {
     throw std::runtime_error("async_wait: invalid op_id");
   }
-  auto result = co_await rx.recv();
+  auto result = co_await std::move(rx);
   if (!result) {
     throw std::runtime_error("async_wait: operation cancelled");
   }
