@@ -1,6 +1,6 @@
 # dart_cpp_bridge 已知问题与技术债
 
-> 更新日期：2026-08-04（新增 ID-002、ID-003、ID-004；ID-002 追加补充说明；ID-003 追加第 2 次修复：channel 节点化重构 + stop token 落地）
+> 更新日期：2026-08-05（新增 ID-005 至 ID-011：foreign_runtime_demo stdexec 迁移（libuv UvScheduler）过程中碰到的构建 / 协程 / 并发陷阱）
 >
 > **维护规则（每次编辑本文件必须遵守）：**
 > 1. **更新日期**：每次增改内容后，把头部「更新日期」改成当天日期（YYYY-MM-DD）。
@@ -23,7 +23,14 @@
     - [2.1.3 [ID-003] recv 中途取消丢值（stale pending_tx）与 oneshot detached 语义](#213-id-003-recv-中途取消丢值stale-pending_tx与-oneshot-detached-语义)
     - [2.1.4 [ID-004] mpsc 单消费者契约的运行期强制](#214-id-004-mpsc-单消费者契约的运行期强制)
   - [2.2 构建 / 工具链](#22-构建--工具链)
+    - [2.2.1 [ID-005] hook 增量构建缓存损坏导致「莫名崩溃」（0xC0000005）](#221-id-005-hook-增量构建缓存损坏导致莫名崩溃0xc0000005)
+    - [2.2.2 [ID-006] pubspec.yaml description 单行含冒号未加引号导致 YAML 解析失败](#222-id-006-pubspecyaml-description-单行含冒号未加引号导致-yaml-解析失败)
+    - [2.2.3 [ID-007] exec::task 编译期陷阱：无默认模板参数 / 无环境下不满足 stdexec::sender 概念](#223-id-007-exectask-编译期陷阱无默认模板参数--无环境下不满足-stdexecsender-概念)
+    - [2.2.4 [ID-008] UV_HANDLE_CLOSING 是 libuv 内部宏，公共代码应使用 uv_is_closing()](#224-id-008-uv_handle_closing-是-libuv-内部宏公共代码应使用-uv_is_closing)
   - [2.3 其它](#23-其它)
+    - [2.3.1 [ID-009] MSVC 19.51 协程 lambda 捕获损坏（co_await 后按值捕获变量变垃圾值）](#231-id-009-msvc-1951-协程-lambda-捕获损坏co_await-后按值捕获变量变垃圾值)
+    - [2.3.2 [ID-010] 协程内持有全局锁跨 co_await 阻塞 io 线程（并发请求死锁）](#232-id-010-协程内持有全局锁跨-co_await-阻塞-io-线程并发请求死锁)
+    - [2.3.3 [ID-011] uv_scheduler 并发设计陷阱（timer double-close / cancel 挂起 / WorkState 双重管理）](#233-id-011-uv_scheduler-并发设计陷阱timer-double-close--cancel-挂起--workstate-双重管理)
 
 ---
 
@@ -256,8 +263,181 @@ tokio 用 `recv(&mut self)` 在编译期强制单消费者；C++ 没有借用检
 
 ### 2.2 构建 / 工具链
 
-（暂无条目）
+### [ID-005] hook 增量构建缓存损坏导致「莫名崩溃」（0xC0000005）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：构建（Native Assets build hook / MSBuild 增量）
+- **影响**：foreign_runtime_demo 等走 build hook 的包，连续多次修改 header-only 模板（如 `uv_scheduler.hpp`）后，hook 增量构建产物可能 ABI 不一致，Dart 测试进程出现崩溃（`ExceptionCode=-1073741819` / 0xC0000005）。
+
+#### 问题描述
+
+现象：修改 `uv_scheduler.hpp` 数轮后 `dart test` 固定崩溃在 DLL 同一偏移（实测 `dcb_foreign_runtime_demo.dll+0x22fc78`），且崩溃地址多轮一致。用 `git stash` 二分回「提交版代码」后依然崩溃，一度误判为新代码引入的内存错误；排查（加日志、撤销 dispose 调用、回退 uv_work 用法）均无法消除。
+
+根因：**hook 增量构建缓存损坏**——MSBuild 增量把旧 `.obj` 与新头文件内容混合（头文件被多个 TU 包含时部分 TU 未重编），链接产物里同一 inline/模板代码存在新旧两份定义，运行期踩到旧定义即崩溃。与源码内容无关。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复（缓解措施，非根治）
+- **方案**：删除 `.dart_tool/hooks_runner` 与 `.dart_tool/lib` 后让 hook 全量重建。
+- **验证**：清理后同一代码立即恢复全绿，`foreign_runtime_demo` 19/19 连续 3 次通过。
+- **遗留**：hook 增量构建的可靠性问题未根治。后续改进方向：hook 构建前强制全量（关 MSBuild 增量 / 每次 touch 源文件时间戳），或 header-only 模板改动后手动清缓存；排查「莫名崩溃」时先清 hook 缓存再怀疑代码。
+
+#### 补充说明（2026-08-05）
+
+> 排查期间曾把崩溃归因于新代码（dispose 接线 / uv_work 用法），并回退了部分修复；实际根因是 hook 增量缓存损坏，回退的改动随后已恢复并提交（5f20357）。
+
+### [ID-006] pubspec.yaml description 单行含冒号未加引号导致 YAML 解析失败
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：低
+- **涉及模块**：Dart 包（示例 `pubspec.yaml`）
+- **影响**：`dart test` / `pub get` 报 `Error on line 2, column 18: Mapping values are not allowed here`，整个包无法解析。
+
+#### 问题描述
+
+把多行 folded description（`description: >` + 缩进多行）改为单行时，行内 `Demo: libuv ...` 的冒号被 YAML 解析为 mapping 分隔符，报错指向冒号位置。YAML 单行标量含 `: `（冒号+空格）必须整体加引号。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：`description` 值整体加双引号。
+- **验证**：`dart test` 恢复解析与运行。
+- **遗留**：无。
+
+### [ID-007] exec::task 编译期陷阱：无默认模板参数 / 无环境下不满足 stdexec::sender 概念
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：中
+- **涉及模块**：手写 wire / 通用启动帮助函数（`exec::task` 使用方）
+- **影响**：凡直接使用 `exec::task` 的生成/手写代码，照抄文档的 `exec::task<>` 写法在 MSVC 上报「模板参数太少」；给接收 sender 的模板帮助函数加 `stdexec::sender` 概念约束时，传入 `exec::task` 编译失败。
+
+#### 问题描述
+
+1. `exec::task` 是 `template <class T> using task = basic_task<T, default_task_context<T>>;`（`exec/task.hpp`），**没有默认模板参数**，`exec::task<>` 不合规，必须写 `exec::task<void>`。
+2. `exec::task` 的完成签名需要环境（`get_start_scheduler`）才能计算；在**无环境**的裸 `stdexec::sender` 概念检查（如 `template <stdexec::sender S> void spawn(S&&)`）下不满足概念。解法：帮助函数不约束模板参数，由 `starts_on` 等内部提供环境。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：显式 `exec::task<void>`；`spawn_on_io` 去掉 `stdexec::sender` 概念约束（文档注释说明原因）。
+- **验证**：编译通过，19/19 测试。
+- **遗留**：codegen 生成器迁移到 stdexec 时，生成模板需产出 `exec::task<void>`（或等价 sender）写法。
+
+### [ID-008] UV_HANDLE_CLOSING 是 libuv 内部宏，公共代码应使用 uv_is_closing()
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：低
+- **涉及模块**：libuv 适配代码（`uv_worker.hpp` 的 `uv_walk` 清理）
+- **影响**：用 `h->flags & UV_HANDLE_CLOSING` 判断 handle 是否在关闭流程中时，MSVC 报 C2065 未定义标识符。
+
+#### 问题描述
+
+`UV_HANDLE_CLOSING` 定义在 libuv 内部头（`uv-unix.h` / `uv-win.h`），公共 `uv.h` 不导出；公共 API 是 `uv_is_closing(handle)`。`uv_walk` 回调里需要跳过已在关闭流程中的 handle 时，必须用 `uv_is_closing(h)`。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：改用 `if (uv_is_closing(h)) return;`。
+- **验证**：编译通过，stop 清理路径测试通过。
+- **遗留**：无。
 
 ### 2.3 其它
 
-（暂无条目）
+### [ID-009] MSVC 19.51 协程 lambda 捕获损坏（co_await 后按值捕获变量变垃圾值）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：codegen 输出 `wire_dispatch.cpp` / 任何 `exec::task` 协程 lambda
+- **影响**：wire dispatch 的协程 lambda 按值捕获 `[session, gen, req, method]`，`co_await` 子 task 恢复后捕获变量损坏（实测 `method` 变成随机垃圾值如 3847799911），响应帧 method_id 错乱，Dart 侧匹配不到请求而超时。旧 async-simple `Lazy` 时代同样的协程 lambda 未暴露此问题，`exec::task` 协程帧布局下触发。
+
+#### 问题描述
+
+诊断过程：dispatch 入口打印 `method=18716410` 正确；协程 lambda 内 `post_ok` 打印 `method=3847799911`（每次运行不同值）——捕获区在协程帧内损坏。与 `src/cbridge.cpp` 既有注释「MSVC 19.51 coroutine lambda capture bug workaround: Use a static coroutine function and pass all variables as parameters」完全一致。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：`wire_dispatch.cpp` 全部异步 case 改为**静态协程函数**，参数显式传递（`spawn_on_io(静态函数(session, gen, req, method, ...))`）。
+- **验证**：修复后测试 1 立即通过，全套 19/19。
+- **遗留**：codegen 生成器仍产出协程 lambda，重新生成会退回坏代码；生成器迁移到 stdexec 时（AGENTS.md 规则 4）必须同时改为静态函数或避免捕获。
+
+### [ID-010] 协程内持有全局锁跨 co_await 阻塞 io 线程（并发请求死锁）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：业务协程（`foreign_api.cpp` 的 `ask_uv` 等）
+- **影响**：并发调用 `ask_uv` / `uv_compute` 等持有全局锁 `g_mu` 跨 `co_await` 的函数时，io 线程被第二个请求的锁等待阻塞，第一个请求的完成（需要 io 线程恢复）永远无法处理，永久死锁（Dart 侧超时 / `resource deadlock would occur`）。
+
+#### 问题描述
+
+规则：**io 线程必须保持空闲**才能恢复挂起的协程（exec::task 的完成经 `asio::post` 回 home scheduler）。锁跨 `co_await` 持有 = io 线程可能被别的协程阻塞在锁上 = 自死锁。锁只能用于获取 scheduler / 启动任务，挂起前必须释放。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：所有协程函数的锁作用域收窄到 `require_worker()`（取 scheduler）为止，`co_await` 前释放；`test_channel_service` 系列同理（锁内只做建通道 + start_detached）。
+- **验证**：`multiple concurrent requests` 测试通过；全套 19/19。
+- **遗留**：无。
+
+### [ID-011] uv_scheduler 并发设计陷阱（timer double-close / cancel 挂起 / WorkState 双重管理）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：`examples/foreign_runtime_demo/uv_scheduler.hpp`（UvScheduler / schedule_after / uv_work）
+- **影响**：libuv 适配的并发正确性——若按初版实现发布，cancel/init 竞态可致 `uv_close` 二次调用（libuv assert / 损坏 closing 队列）、stop 提前到达时 receiver 永不完成（挂起）、`uv_work` 双重释放（use-after-free）。两轮 review 发现并修复。
+
+#### 问题描述
+
+三个并发缺陷：
+
+1. **timer double-close**：cancel claim 先赢、`TimerInitNode` 后执行时，init 兜底已 `uv_close`（claim != kPending 分支），随后 `TimerCancelNode` 再 `uv_timer_stop + uv_close` → 对 closing handle 二次 close。
+2. **receiver 挂起**：stop 请求在 init 节点执行前到达时，cancel 节点的 `!inited` 分支直接 return，init 兜底只 close 不完成 → 接收者永不完成。
+3. **WorkState 双重管理**：`make_shared` 创建却在 `after_work` 里 `delete ws`，opstate 析构还会访问 `ws_->claim` → use-after-free + 控制块双重释放；且堆分配节点（TimerInitNode/TimerCancelNode/WorkStartNode）无释放机制，每操作泄漏。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：
+  - `TimerState` 增加 `std::atomic<bool> closed`：init 兜底 / `on_timer` / cancel 节点中**恰好一个**执行 close（`closed.exchange(true)` 仲裁），double-close 消除。
+  - `TimerCancelNode` 的 `!inited` 分支补 `set_stopped`（`complete_stopped_` 且 receiver 未移走时），receiver 不再挂起。
+  - `WorkState` 改为 shared_ptr 自引用（`self`，`WorkStartNode::run` 在 `uv_queue_work` 前设置、`after_work` 释放），支持 void 返回值（`stored_t`），`uv_queue_work` 失败时 `set_error` 完成。
+  - `StartNode` 增加虚拟 `dispose()`：`on_async` 在 `run()` 后调用，堆节点 `delete this`，嵌入式 schedule opstate 空覆写；堆节点泄漏消除。
+  - `UvWorker::stop()` 用 `uv_walk` + `uv_is_closing` 清理残留 handle（含未完成 timer），`uv_loop_close` 不再因活跃 handle 失败。
+- **验证**：19/19 测试连续多次通过（含 `uv_compute` 经 `uv_work` 真实执行线程池路径）；stop/restart 测试覆盖清理路径。
+- **遗留**：① stop 时在飞的 `uv_work` 无法取消（`after_work` 需要 loop 运行，loop 已停则 receiver 挂起 + 自引用泄漏）——demo 测试无此路径，已文档化；② `uv_queue_work` 失败且 opstate 并发析构时 `self` 未 reset 的罕见泄漏（LOW，review 记录）；③ schedule opstate destroy-vs-run 窗口为 P2300 拥有者契约场景（与 `co::oneshot` 相同保证级别）。
