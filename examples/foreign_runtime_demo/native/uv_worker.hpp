@@ -18,6 +18,7 @@
 #include <uv.h>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -61,13 +62,30 @@ class UvWorker {
     }
     running_.store(false, std::memory_order_release);
 
-    // Reject new work, then wake the loop so the pending drain runs and
-    // uv_run() can observe the stop request.
+    // Reject new work, then wake the loop so the pending drain runs.
     {
       std::lock_guard lock(st_->mu);
       st_->closed = true;
     }
     st_->wake();
+
+    // Let the loop drain the start queue and finish in-flight uv_queue_work
+    // operations before stopping it: closing a loop with an in-flight
+    // request is illegal, and after_work needs a running loop to release the
+    // WorkState self-hold.
+    while (true) {
+      bool queue_empty;
+      {
+        std::lock_guard lock(st_->mu);
+        queue_empty = st_->head == nullptr;
+      }
+      if (queue_empty &&
+          st_->work_in_flight.load(std::memory_order_acquire) == 0) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     uv_stop(&loop_);
     if (thread_.joinable()) {
       thread_.join();
@@ -92,7 +110,9 @@ class UvWorker {
             },
             nullptr);
     uv_run(&loop_, UV_RUN_DEFAULT);
-    uv_loop_close(&loop_);
+    if (uv_loop_close(&loop_) != 0) {
+      std::fprintf(stderr, "[foreign_demo] uv_loop_close failed (leak)\n");
+    }
     st_.reset();
   }
 

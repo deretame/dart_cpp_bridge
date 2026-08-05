@@ -61,6 +61,11 @@ struct UvSchedState {
   Node* tail{nullptr};
   bool closed{false};  // set under mu by the owner before loop teardown
   std::atomic<bool> async_ready{false};
+  // Number of uv_queue_work operations started but not yet completed.
+  // stop() waits for this to drain (and the queue to empty) before it stops
+  // the loop: after_work needs a running loop, and uv_close/uv_loop_close on
+  // an in-flight request is illegal.
+  std::atomic<int> work_in_flight{0};
 
   void push(Node* n) {
     if (tail) {
@@ -87,21 +92,62 @@ struct UvSchedState {
 
   // Base of every queued start task. run() executes on the loop thread and
   // returns false when the operation was cancelled before it could start.
+  // Lifecycle: start() pushes the node under mu; on_async pops the whole
+  // queue and claims every node (kQueued → kRunning) inside the same
+  // critical section as pop_all(). The opstate destructor claims under the
+  // same lock, so it can only win the race while the node is still queued —
+  // a node that lost the race was destroyed and must never run.
   // Heap-allocated nodes (TimerInitNode / TimerCancelNode / WorkStartNode)
   // free themselves at the end of run(); the embedded schedule opstate is
   // owned by its parent and must NOT be touched after run() returns (the
   // parent may be destroyed by the io thread as soon as set_value completes).
   struct StartNode : Node {
+    enum Claim : int { kQueued = 0, kRunning = 1, kCancelled = 2 };
+    std::atomic<int> claim{kQueued};
     virtual bool run() = 0;
+    // Called when this node lost the claim race and will never run.
+    // Heap-allocated nodes free themselves here; the embedded schedule
+    // opstate overrides this to a no-op (its parent tree was destroyed and
+    // the destructor already handled everything). Currently unreachable
+    // (nothing marks a queued node cancelled while it is still queued) —
+    // kept as forward-looking defense; runs outside st_->mu.
+    virtual void on_discarded() noexcept { delete this; }
   };
 
   // Run on the loop thread; drains the start queue and runs each node.
   static void on_async(uv_async_t* h) {
     auto* st = static_cast<UvSchedState*>(h->data);
     Node* node;
+    Node* dead = nullptr;
     {
       std::lock_guard lock(st->mu);
       node = st->pop_all();
+      // Claim every node under the lock: the destructor claims (kQueued →
+      // kCancelled) under the same lock, so it can never destroy a node that
+      // is about to run. Cancelled nodes are dropped from the run list and
+      // disposed of outside the lock.
+      Node** pp = &node;
+      while (*pp) {
+        auto* start = static_cast<StartNode*>(*pp);
+        int expected = StartNode::kQueued;
+        if (start->claim.compare_exchange_strong(expected, StartNode::kRunning)) {
+          pp = &start->next;
+        } else {
+          Node* d = *pp;
+          *pp = d->next;
+          d->next = dead;
+          dead = d;
+        }
+      }
+    }
+    while (dead) {
+      // Heap nodes free themselves (and undo queue-time bookkeeping) via
+      // on_discarded(); the embedded schedule opstate no-ops. Today no node
+      // can actually lose the claim (nothing marks a queued node cancelled
+      // while it is still queued), so this is forward-looking defense.
+      Node* next = dead->next;
+      static_cast<StartNode*>(dead)->on_discarded();
+      dead = next;
     }
     while (node) {
       Node* next = node->next;
@@ -157,35 +203,62 @@ class UvScheduler {
     struct opstate : UvSchedState::StartNode {
       using operation_state_concept = stdexec::operation_state_tag;
 
-      enum Claim : int { kQueued = 0, kRunning = 1, kCancelled = 2 };
-
       std::shared_ptr<UvSchedState> st_;
-      Rcvr rcvr_;
-      std::atomic<int> claim_{kQueued};
+      // Receiver ownership: this opstate while the node is queued/unclaimed;
+      // transferred to run() once on_async has claimed it (kRunning). The
+      // destructor destroys it only on the cancellation path — never while
+      // the node is claimed, because run() uses it.
+      Rcvr* rcvr_;
 
       opstate(std::shared_ptr<UvSchedState> st, Rcvr rcvr)
-        : st_(std::move(st)), rcvr_(std::move(rcvr)) {}
+        : st_(std::move(st)), rcvr_(new Rcvr(std::move(rcvr))) {}
 
       opstate(opstate&&) = delete;  // P2300: operation states are immovable
       opstate(const opstate&) = delete;
       opstate& operator=(const opstate&) = delete;
 
       ~opstate() {
-        std::lock_guard lock(st_->mu);
-        int expected = kQueued;
-        if (claim_.compare_exchange_strong(expected, kCancelled)) {
-          // Still queued: unlink so the loop never runs a dead opstate.
-          Node** pp = &st_->head;
-          while (*pp && *pp != this) {
-            pp = &(*pp)->next;
-          }
-          if (*pp == this) {
-            *pp = next;
-            if (st_->tail == this) {
-              st_->tail = nullptr;
+        Rcvr* r = nullptr;
+        {
+          std::lock_guard lock(st_->mu);
+          int expected = StartNode::kQueued;
+          if (claim.compare_exchange_strong(expected, StartNode::kCancelled)) {
+            // Still queued and unclaimed: cancel. Unlink so the loop never
+            // runs a dead opstate, and destroy the receiver (outside the
+            // lock: its destructor may re-enter the runtime).
+            Node* prev = nullptr;
+            Node* cur = st_->head;
+            while (cur && cur != this) {
+              prev = cur;
+              cur = cur->next;
             }
+            if (cur == this) {
+              if (prev) {
+                prev->next = cur->next;
+              } else {
+                st_->head = cur->next;
+              }
+              if (st_->tail == this) {
+                st_->tail = prev;
+              }
+            }
+            r = rcvr_;
+            rcvr_ = nullptr;
           }
+          // Claimed (kRunning): run() owns the receiver and completes it;
+          // the destructor must not touch it. Destroying a
+          // claimed-but-incomplete opstate is a whole-tree-destruction
+          // scenario (P2300 out-of-contract) that this codebase never
+          // exercises — starts_on trees are owned by start_detached and are
+          // destroyed only after completion.
         }
+        delete r;
+      }
+
+      void on_discarded() noexcept override {
+        // The parent tree was destroyed while this node was still queued;
+        // the destructor already unlinked it and destroyed the receiver.
+        // Do not touch anything.
       }
 
       void start() & noexcept {
@@ -199,23 +272,31 @@ class UvScheduler {
           }
         }
         if (closed) {
-          int expected = kQueued;
-          if (claim_.compare_exchange_strong(expected, kCancelled)) {
-            stdexec::set_stopped(std::move(rcvr_));
+          int expected = StartNode::kQueued;
+          if (claim.compare_exchange_strong(expected, StartNode::kCancelled)) {
+            // Take the receiver into a local first: set_stopped may
+            // reentrantly destroy this opstate (whole-tree destruction via
+            // the completion chain), so nothing may be touched afterwards.
+            Rcvr* r = rcvr_;
+            rcvr_ = nullptr;
+            stdexec::set_stopped(std::move(*r));
+            delete r;
           }
           return;
         }
         st_->wake();
       }
 
-      bool run() override {  // loop thread
-        // Claim the execution right: the destructor may have cancelled us
-        // while we were still queued (it unlinks and claims kCancelled).
-        int expected = kQueued;
-        if (!claim_.compare_exchange_strong(expected, kRunning)) {
-          return false;  // cancelled; the destructor owns the receiver
+      bool run() override {  // loop thread; claimed under mu by on_async
+        if (claim.load(std::memory_order_acquire) != StartNode::kRunning) {
+          return false;  // cancelled
         }
-        stdexec::set_value(std::move(rcvr_));
+        Rcvr* r = rcvr_;
+        if (!r) {
+          return false;  // already completed via the closed path
+        }
+        stdexec::set_value(std::move(*r));
+        delete r;
         return true;
       }
 
@@ -501,6 +582,9 @@ struct WorkState {
 
   uv_work_t work{};
   F fn;
+  // Back-pointer for the in-flight work counter (UvSchedState::work_in_flight);
+  // stop() waits for the counter to reach zero before closing the loop.
+  std::shared_ptr<UvSchedState> st;
   std::unique_ptr<Rcvr> rcvr;
   std::optional<stored_t> value;
   std::exception_ptr error;
@@ -509,7 +593,8 @@ struct WorkState {
   // (the opstate and the WorkStartNode may both be gone by then).
   std::shared_ptr<WorkState> self;
 
-  explicit WorkState(F f) : fn(std::move(f)) {}
+  explicit WorkState(F f, std::shared_ptr<UvSchedState> s)
+    : fn(std::move(f)), st(std::move(s)) {}
 
   static void on_work(uv_work_t* w) {
     auto* ws = static_cast<WorkState*>(w->data);
@@ -527,6 +612,9 @@ struct WorkState {
 
   static void after_work(uv_work_t* w, int /*status*/) {
     auto* ws = static_cast<WorkState*>(w->data);
+    if (ws->st) {
+      ws->st->work_in_flight.fetch_sub(1, std::memory_order_acq_rel);
+    }
     int expected = kPending;
     if (!ws->claim.compare_exchange_strong(expected, kComplete)) {
       ws->self.reset();  // cancelled: drop the result
@@ -573,7 +661,7 @@ struct UvScheduler::work_sender<F>::opstate {
   }
 
   void start() & noexcept {
-    auto ws = std::make_shared<uv_detail::WorkState<F, Rcvr>>(std::move(fn_));
+    auto ws = std::make_shared<uv_detail::WorkState<F, Rcvr>>(std::move(fn_), st_);
     ws->rcvr = std::make_unique<Rcvr>(std::move(rcvr_));
     ws->work.data = ws.get();
     ws_ = std::move(ws);
@@ -583,8 +671,12 @@ struct UvScheduler::work_sender<F>::opstate {
       std::lock_guard lock(st_->mu);
       closed = st_->closed;
       if (!closed) {
-        // uv_queue_work must be called from the loop thread; hop through the queue.
+        // uv_queue_work must be called from the loop thread; hop through the
+        // queue. Count the node at push time (under the lock) so stop() can
+        // never observe an empty queue + zero counter while a work start is
+        // still pending in a popped batch.
         st_->push(new WorkStartNode(st_->loop, ws_));
+        st_->work_in_flight.fetch_add(1, std::memory_order_acq_rel);
       }
     }
     if (closed) {
@@ -611,23 +703,35 @@ struct UvScheduler::work_sender<F>::opstate {
       const int rc = uv_queue_work(loop_, &ws_->work,
                                    &uv_detail::WorkState<F, Rcvr>::on_work,
                                    &uv_detail::WorkState<F, Rcvr>::after_work);
-      if (rc != 0) {
-        // Failed to enqueue: complete with an error so the receiver never
-        // hangs, then release the self-hold.
-        int expected = uv_detail::WorkState<F, Rcvr>::kPending;
-        if (ws_->claim.compare_exchange_strong(expected,
-                                               uv_detail::WorkState<F, Rcvr>::kComplete)) {
-          auto rcvr = std::move(ws_->rcvr);
-          ws_->self.reset();
-          stdexec::set_error(std::move(*rcvr),
-                             std::make_exception_ptr(
-                                 std::runtime_error("uv_queue_work failed")));
-          delete this;
-          return true;
-        }
+      if (rc == 0) {
+        // Counter was incremented at push time; after_work decrements it.
+        delete this;
+        return true;
+      }
+      // Failed to enqueue: undo the queue-time counter increment, complete
+      // with an error so the receiver never hangs, then release the
+      // self-hold (after_work will never run).
+      ws_->st->work_in_flight.fetch_sub(1, std::memory_order_acq_rel);
+      int expected = uv_detail::WorkState<F, Rcvr>::kPending;
+      if (ws_->claim.compare_exchange_strong(expected,
+                                             uv_detail::WorkState<F, Rcvr>::kComplete)) {
+        auto rcvr = std::move(ws_->rcvr);
+        ws_->self.reset();
+        stdexec::set_error(std::move(*rcvr),
+                           std::make_exception_ptr(
+                               std::runtime_error("uv_queue_work failed")));
+      } else {
+        ws_->self.reset();  // already cancelled: drop the self-hold too
       }
       delete this;
       return true;
+    }
+
+    void on_discarded() noexcept override {
+      // Never queued into uv: undo the push-time counter increment and free
+      // the node. (The opstate's destructor already claimed the WorkState.)
+      ws_->st->work_in_flight.fetch_sub(1, std::memory_order_acq_rel);
+      delete this;
     }
   };
 };
