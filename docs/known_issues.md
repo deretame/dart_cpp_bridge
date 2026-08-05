@@ -1,6 +1,6 @@
 # dart_cpp_bridge 已知问题与技术债
 
-> 更新日期：2026-08-05（新增 ID-005 至 ID-011：foreign_runtime_demo stdexec 迁移（libuv UvScheduler）过程中碰到的构建 / 协程 / 并发陷阱）
+> 更新日期：2026-08-05（新增 ID-012 至 ID-016：uv_scheduler 二次并发修复（dispose UAF / pop 窗口与 tail-orphan / teardown TOCTOU 与 timer 泄漏）与构建工具链陷阱（hook 依赖监控缺失 / stdexec execution.bs 下载失败）；ID-011 追加第 2 次修复记录）
 >
 > **维护规则（每次编辑本文件必须遵守）：**
 > 1. **更新日期**：每次增改内容后，把头部「更新日期」改成当天日期（YYYY-MM-DD）。
@@ -27,10 +27,15 @@
     - [2.2.2 [ID-006] pubspec.yaml description 单行含冒号未加引号导致 YAML 解析失败](#222-id-006-pubspecyaml-description-单行含冒号未加引号导致-yaml-解析失败)
     - [2.2.3 [ID-007] exec::task 编译期陷阱：无默认模板参数 / 无环境下不满足 stdexec::sender 概念](#223-id-007-exectask-编译期陷阱无默认模板参数--无环境下不满足-stdexecsender-概念)
     - [2.2.4 [ID-008] UV_HANDLE_CLOSING 是 libuv 内部宏，公共代码应使用 uv_is_closing()](#224-id-008-uv_handle_closing-是-libuv-内部宏公共代码应使用-uv_is_closing)
+    - [2.2.5 [ID-013] hook 依赖监控缺失——native/ 外的头文件修改不触发重建](#225-id-013-hook-依赖监控缺失native-外的头文件修改不触发重建)
+    - [2.2.6 [ID-016] stdexec FetchContent 的 execution.bs 下载失败留 0 字节文件 → CMake VERSION "0..0"](#226-id-016-stdexec-fetchcontent-的-executionbs-下载失败留-0-字节文件--cmake-version-00)
   - [2.3 其它](#23-其它)
     - [2.3.1 [ID-009] MSVC 19.51 协程 lambda 捕获损坏（co_await 后按值捕获变量变垃圾值）](#231-id-009-msvc-1951-协程-lambda-捕获损坏co_await-后按值捕获变量变垃圾值)
     - [2.3.2 [ID-010] 协程内持有全局锁跨 co_await 阻塞 io 线程（并发请求死锁）](#232-id-010-协程内持有全局锁跨-co_await-阻塞-io-线程并发请求死锁)
     - [2.3.3 [ID-011] uv_scheduler 并发设计陷阱（timer double-close / cancel 挂起 / WorkState 双重管理）](#233-id-011-uv_scheduler-并发设计陷阱timer-double-close--cancel-挂起--workstate-双重管理)
+    - [2.3.4 [ID-012] dispose() UAF——on_async 在 run() 后触碰已析构的嵌入式 opstate（0xC0000005）](#234-id-012-dispose-uafon_async-在-run-后触碰已析构的嵌入式-opstate0xc0000005)
+    - [2.3.5 [ID-014] start 队列 pop 窗口竞态与 unlink tail-orphan（claim 基类化修复）](#235-id-014-start-队列-pop-窗口竞态与-unlink-tail-orphanclaim-基类化修复)
+    - [2.3.6 [ID-015] teardown TOCTOU 与 stop() 时挂起 timer 泄漏](#236-id-015-teardown-toctou-与-stop-时挂起-timer-泄漏)
 
 ---
 
@@ -441,3 +446,152 @@ tokio 用 `recv(&mut self)` 在编译期强制单消费者；C++ 没有借用检
   - `UvWorker::stop()` 用 `uv_walk` + `uv_is_closing` 清理残留 handle（含未完成 timer），`uv_loop_close` 不再因活跃 handle 失败。
 - **验证**：19/19 测试连续多次通过（含 `uv_compute` 经 `uv_work` 真实执行线程池路径）；stop/restart 测试覆盖清理路径。
 - **遗留**：① stop 时在飞的 `uv_work` 无法取消（`after_work` 需要 loop 运行，loop 已停则 receiver 挂起 + 自引用泄漏）——demo 测试无此路径，已文档化；② `uv_queue_work` 失败且 opstate 并发析构时 `self` 未 reset 的罕见泄漏（LOW，review 记录）；③ schedule opstate destroy-vs-run 窗口为 P2300 拥有者契约场景（与 `co::oneshot` 相同保证级别）。
+
+##### 第 2 次修复（2026-08-05）
+
+- **结果**：已修复（遗留 ① ② ③ 全部解决，见 ID-014 / ID-015）
+- **方案**：
+  - 遗留 ①（stop 时在飞 `uv_work`）：`UvSchedState` 增加 `work_in_flight` 计数（push 时在锁内递增，`after_work` / `run()` 失败分支 / `on_discarded()` 配对递减）；`UvWorker::stop()` 在 `uv_stop` 前轮询等待「start 队列空 && 计数归零」，保证 `after_work` 一定在 loop 停止前执行；`uv_loop_close` 失败会打日志。
+  - 遗留 ②（`uv_queue_work` 失败 + 已取消时 `self` 未 reset）：`WorkStartNode::run()` 失败分支在 CAS 失败路径也执行 `ws_->self.reset()`。
+  - 遗留 ③（destroy-vs-run 窗口）：见 ID-014（claim 基类化 + 锁内抢占）。
+- **验证**：19/19 测试连续多次通过；review + security_review 续审通过。
+- **遗留**：无（stop 轮询无超时——当前计数配对可证终止，属防御性改进项）。
+
+### [ID-012] dispose() UAF——on_async 在 run() 后触碰已析构的嵌入式 opstate（0xC0000005）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：`examples/foreign_runtime_demo/native/uv_scheduler.hpp`（start 队列 / `on_async` / `StartNode`）
+- **影响**：ask_uv 测试间歇崩溃（访问违例 0xC0000005），崩溃点经 dumpbin 反汇编定位为 `on_async` 内的第二次虚调用（`call [rax+8]`）；多线程调度下稳定复现，曾误判为构建缓存问题（见 ID-013）。
+
+#### 问题描述
+
+初版生命周期设计：`on_async` 在 `run()` 返回后调用 `start->dispose()` 虚函数（堆节点 `delete this`，嵌入式 schedule opstate 空覆写）。
+
+竞态：`run()` 内 `set_value` 完成后，io 线程可立即析构 `starts_on` 链（含嵌入式 schedule opstate）——P2300 契约允许完成即析构。loop 线程在 `run()` 返回后调用 `dispose()` 时读取已释放对象的 vtable → UAF。loop 线程在 `run()` 返回与 `dispose()` 之间被抢占时窗口显著扩大（io 线程可完整跑完 post_ok 并析构整棵树）。
+
+修复前崩溃栈（RtlCaptureStackBackTrace + dumpbin RVA 对照）：`on_async` → `call [rax+8]`（dispose 虚调用），调用者链 `uv__process_async_wakeup_req` → `uv__process_reqs` → `uv_run` → `UvWorker::start` lambda。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：移除 `dispose()` 机制——堆节点（`TimerInitNode` / `TimerCancelNode` / `WorkStartNode`）在 `run()` 各返回路径末尾 `delete this`；`on_async` 在 `run()` 返回后不再触碰节点（只使用预先保存的 `next` 指针）。嵌入式 schedule opstate 由父链析构。
+- **验证**：修复后 ask_uv 不再崩溃；19/19 连续多次通过（含清缓存全量重建，确认 DLL 为最新代码）。
+- **遗留**：无（本条修复后即闭环；pop 窗口竞态见 ID-014）。
+
+### [ID-013] hook 依赖监控缺失——native/ 外的头文件修改不触发重建
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：`dart/lib/hook.dart`（`DcbCMakeBuilder._declareDependencies`）/ foreign_runtime_demo 目录布局
+- **影响**：`examples/foreign_runtime_demo/` 根目录下的 `uv_scheduler.hpp` / `uv_worker.hpp` 不在 hook 的依赖跟踪范围（只遍历 `sourceDir` = `native/`），修改它们后 `dart test` 的 hook 缓存不失效、**一直编译并运行旧 DLL**——表现为「改了代码没效果」「间歇崩溃无法复现」，并直接导致 ID-005（hook 缓存损坏误诊）与 ID-012（崩溃定位困难）的排查走弯路。
+
+#### 问题描述
+
+`DcbCMakeBuilder._declareDependencies` 递归列出 `sourceRoot`（`sourceDir` 参数，foreign_runtime_demo 里为 `native/`）下的 `.h/.hpp/.cpp/...` 文件并声明为 code_assets 缓存依赖。头文件若放在 `native/` 之外（通过 `target_include_directories(... ${CMAKE_CURRENT_SOURCE_DIR}/..)` 引入），修改它们不会改变 hook 输入 hash → hooks runner 跳过 hook → 不重新 cmake 配置 / 编译。
+
+判定方法：对比 `.dart_tool/lib/dcb_foreign_runtime_demo.dll` 与头文件的 mtime；多次「修改 → 崩溃地址不变」的强信号。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：把 `uv_scheduler.hpp`、`uv_worker.hpp` 移入 `native/`（include 路径同步调整），使其纳入 hook 依赖跟踪；此后修改头文件即可触发重建。
+- **验证**：修改头文件后 DLL mtime 更新；19/19 连续多次通过。
+- **遗留**：无（若未来在 `native/` 外放头文件，需为 `DcbCMakeBuilder` 增加额外依赖目录参数）。
+
+### [ID-014] start 队列 pop 窗口竞态与 unlink tail-orphan（claim 基类化修复）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：高
+- **涉及模块**：`examples/foreign_runtime_demo/native/uv_scheduler.hpp`（`StartNode` / `on_async` / schedule opstate 析构）
+- **影响**：① 析构（锁内 CAS `kQueued→kCancelled`）可在 `on_async` 的 `pop_all()` 之后、`run()` 之前成功——节点已出队无法 unlink，析构销毁 receiver 后 `run()` 仍会执行 → UAF；② 析构 unlink 摘除 tail 节点时把 `tail` 置 `nullptr`（即使队列还有其他节点），下一次 `push()` 会覆盖 `head` → 剩余节点全部孤儿，其 sender 永不完成。
+
+#### 问题描述
+
+1. **pop 窗口**：`on_async` 在锁内 `pop_all()` 后释放锁，再在锁外 `run()`。析构也在锁内做 `kQueued→kCancelled` CAS 与 unlink——若析构发生在 pop 之后（节点已不在队列，unlink 无效果），CAS 成功即销毁 receiver 与节点内存，`run()` 随后访问已析构对象。security_review 判定为 MEDIUM（当前调用图不可达，但 `when_all` 取消 / 整树析构可触发）。
+2. **tail-orphan**：析构 unlink 用 `Node** pp` 遍历，摘除时若 `st_->tail == this` 则 `st_->tail = nullptr`；但当被摘除节点不是 head 时，队列仍有存活节点，`tail=nullptr` 后 `push()` 走 `else head = n` 分支 → 覆盖 head，原存活节点失去引用。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：
+  - `claim` 移到 `StartNode` 基类（`enum Claim` + `std::atomic<int>`）。
+  - `on_async` 在 `pop_all()` 的**同一锁临界区内**对每个节点 CAS `kQueued→kRunning`（与析构的 `kQueued→kCancelled` 互斥）；失手节点收集到 dead 链表，锁外经 `on_discarded()` 释放（堆节点 `delete this`，嵌入式 opstate 空覆写，`WorkStartNode` 顺带撤销 push 时计数）。
+  - schedule opstate 析构改 prev 指针遍历 unlink：`tail = prev`（仅当被摘除节点是 head 时 `tail=nullptr`）；receiver 改为裸指针，析构只在取消路径（锁外）`delete`，`run()` 先取局部再 `set_value` 后 `delete`，closed 路径先移出局部再 `set_stopped`（防完成链重入销毁树后写已销毁对象）。
+- **验证**：19/19 连续多次通过；review 续审确认 tail-orphan 与计数配对全路径正确。
+- **遗留**：已抢占未 run 的节点被整树销毁仍是 P2300 契约外场景（本代码库所有树为 `start_detached` 所有，不可达），已在 `schedule()` 注释文档化。
+
+### [ID-015] teardown TOCTOU 与 stop() 时挂起 timer 泄漏
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05）
+- **首次记录**：2026-08-05
+- **优先级**：中
+- **涉及模块**：`examples/foreign_runtime_demo/native/uv_scheduler.hpp`（`work_in_flight` / `TimerState::on_close`）+ `native/uv_worker.hpp`（`UvWorker::stop`）
+- **影响**：① `stop()` 与 start 队列 drain 的 TOCTOU：`work_in_flight` 在 `WorkStartNode::run()` 内（`uv_queue_work` 成功后）递增，`stop()` 可能在 `on_async` pop 批量后、run 之前观察到「队列空 + 计数 0」→ `uv_stop`/`join` → 节点仍执行 `uv_queue_work`（loop 在回调中）成功，但 `after_work` 永不运行 → 计数卡 1、`WorkState` 自引用泄漏、`uv_loop_close` 失败；② `stop()` 的 `uv_walk` 关闭仍挂起的 `schedule_after` handle 时只释放 `TimerState` 自引用，receiver 永不完成 → 拥有者 sender 树（opstate + exec::task 帧）泄漏。
+
+#### 问题描述
+
+1. **TOCTOU**：计数递增时机在 `run()`（loop 线程）而停止判定（`stop()`，调用方线程）读「队列空 + 计数 0」——两者之间存在窗口。修复方向（security_review 建议）：push 时在锁内递增。
+2. **timer 泄漏**：`TimerState::on_close` 原实现只 `self.reset()`；`stop()` 的 teardown 路径（`uv_walk` + 第二次 `uv_run`）关闭仍为 `kPending` 的 timer 时，无任何完成者 → 树泄漏。复现场景：stream 订阅中途取消或未等待 timer 完成直接 `stop_uv_worker`（Dart 测试通过先 await 完成规避）。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复
+- **方案**：
+  - `work_in_flight` 改为 push 时（锁内）递增；`after_work`（最先执行）、`WorkStartNode::run()` 失败分支、`on_discarded()` 三处配对递减；`stop()` 在 `uv_stop` 前轮询等待「队列空 && 计数 0」；`uv_loop_close` 失败打日志。
+  - `TimerState::on_close` 增加 CAS `kPending→kStopped`：成功（即 teardown 关闭未决 timer 路径）则把 receiver 移到局部、`self.reset()`、`set_stopped` 完成树；失败（正常超时 / 取消已认领）只 `self.reset()`。完成点在 loop 线程的第二次 `uv_run` 内，先于 `uv_loop_close` / `st_.reset()`。
+- **验证**：19/19 连续多次通过；security_review 续审 verdict=pass（claim 仲裁单一完成者、顺序无 UAF、teardown 顺序正确）。
+- **遗留**：stop 轮询无超时（当前计数配对可证终止，若未来漏减会从泄漏变成挂起——建议加有界等待兜底）；无 stop-with-pending-timer 的专门回归测试（现由 uv_stream / stop_uv_worker 路径间接覆盖）。
+
+### [ID-016] stdexec FetchContent 的 execution.bs 下载失败留 0 字节文件 → CMake `VERSION "0..0"`
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-05，首次记录）
+  - 已解决（2026-08-05，环境级处理）
+- **首次记录**：2026-08-05
+- **优先级**：中
+- **涉及模块**：构建 / 工具链（`dart/native/CMakeLists.txt` 的 stdexec `FetchContent_Declare`；hook 全量重建路径）
+- **影响**：清空 hook 缓存全量重建时，stdexec 配置阶段报 `string sub-command REGEX, mode REPLACE needs at least 6 arguments` + `project(...) VERSION "0..0" format invalid`，hook 构建失败，容易被误判为代码或 CMake 配置问题。
+
+#### 问题描述
+
+`dart/native/CMakeLists.txt` 用 `FetchContent` 拉取 stdexec `nvhp-26.05` 标签。该版本的 `CMakeLists.txt` 从 `raw.githubusercontent.com/cplusplus/sender-receiver/main/execution.bs` 下载规范文件并提取 `Revision:` 作为版本号：
+
+```cmake
+if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/execution.bs)
+  file(DOWNLOAD ".../execution.bs" ${CMAKE_CURRENT_BINARY_DIR}/execution.bs)
+endif()
+file(STRINGS ".../execution.bs" STD_EXECUTION_BS_REVISION_LINE REGEX "Revision: [0-9]+")
+...
+project(STDEXEC VERSION "0.${STD_EXECUTION_BS_REVISION}.0")
+```
+
+`file(DOWNLOAD)` 网络失败时**静默留下 0 字节文件**（不报错）；下次配置因 `NOT EXISTS` 为假跳过下载 → `STD_EXECUTION_BS_REVISION` 为空 → `VERSION "0..0"`。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-05）
+
+- **结果**：已修复（环境级；代码无需改动）
+- **方案**：用 curl 下载有效的 `execution.bs`（约 432 KB，`Revision: 11`）覆盖 `stdexec-build/execution.bs` 后重试 hook 构建；网络恢复时全量重建自然成功。
+- **验证**：覆盖后 hook 配置与构建成功；19/19 测试通过。
+- **遗留**：`file(DOWNLOAD)` 失败不留痕迹属上游 stdexec 行为；离线 / 弱网环境首次全量构建仍可能踩中。可选改进：vendored 版本（`third_party/stdexec`，固定 `VERSION "0.11.0"`，无此下载逻辑）替换 FetchContent。
