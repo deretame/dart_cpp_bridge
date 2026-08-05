@@ -418,7 +418,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ## Common pitfalls
 
-- **Sync DartFn on the io thread**: `DartFn::operator()` returns a sender (`detail::dartfn_sender<Ret>`, async only). For blocking contexts, use `stdexec::sync_wait(dcb::spawn(fn(args...)))`. Calling `sync_wait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
+- **Sync DartFn on the io thread**: `DartFn::operator()` returns a sender (`detail::dartfn_sender<Ret>`, async only). For blocking contexts, use `dcb::sync_wait(fn(args...))` — the deadlock-guarded wrapper (runtime.hpp) that rejects calls on the io thread with `std::logic_error`. Calling `sync_wait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
 - **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
 - **Generated code is not a build step**: codegen must be run manually after API header changes. Native Assets hooks compile and link only; they do not regenerate code.
 - **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative — via stdexec stop tokens (`inplace_stop_source` / `stop_token`, see `docs/channel_stop_token_design.md`) — and must be exposed by business code (e.g. a task_id → stop-source map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
