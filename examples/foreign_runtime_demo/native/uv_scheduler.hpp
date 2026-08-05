@@ -87,12 +87,12 @@ struct UvSchedState {
 
   // Base of every queued start task. run() executes on the loop thread and
   // returns false when the operation was cancelled before it could start.
+  // Heap-allocated nodes (TimerInitNode / TimerCancelNode / WorkStartNode)
+  // free themselves at the end of run(); the embedded schedule opstate is
+  // owned by its parent and must NOT be touched after run() returns (the
+  // parent may be destroyed by the io thread as soon as set_value completes).
   struct StartNode : Node {
     virtual bool run() = 0;
-    // Heap-allocated nodes (TimerInitNode / TimerCancelNode / WorkStartNode)
-    // free themselves after run(); the embedded schedule opstate overrides
-    // this to a no-op.
-    virtual void dispose() { delete this; }
   };
 
   // Run on the loop thread; drains the start queue and runs each node.
@@ -106,9 +106,7 @@ struct UvSchedState {
     while (node) {
       Node* next = node->next;
       node->next = nullptr;
-      auto* start = static_cast<StartNode*>(node);
-      start->run();
-      start->dispose();  // heap nodes free themselves; embedded opstate no-ops
+      static_cast<StartNode*>(node)->run();
       node = next;
     }
   }
@@ -221,7 +219,9 @@ class UvScheduler {
         return true;
       }
 
-      void dispose() override {}  // embedded in the parent opstate, not leaked
+      // No dispose(): this opstate is embedded in the parent (starts_on) and
+      // must not be touched after run() returns — the parent may already be
+      // destroyed by the io thread at that point.
     };
 
     template <class Rcvr>
@@ -338,9 +338,11 @@ struct TimerInitNode : UvSchedState::StartNode {
       if (!ts_->closed.exchange(true)) {
         uv_close(reinterpret_cast<uv_handle_t*>(&ts_->timer), &TimerState<Rcvr>::on_close);
       }
+      delete this;
       return true;
     }
     uv_timer_start(&ts_->timer, &TimerState<Rcvr>::on_timer, /*timeout*/ 0, /*repeat*/ 0);
+    delete this;
     return true;
   }
 };
@@ -362,6 +364,7 @@ struct TimerCancelNode : UvSchedState::StartNode {
         auto rcvr = std::move(ts_->rcvr);
         stdexec::set_stopped(std::move(*rcvr));
       }
+      delete this;
       return true;
     }
     if (!ts_->closed.exchange(true)) {
@@ -372,6 +375,7 @@ struct TimerCancelNode : UvSchedState::StartNode {
       auto rcvr = std::move(ts_->rcvr);
       stdexec::set_stopped(std::move(*rcvr));
     }
+    delete this;
     return true;
   }
 };
@@ -618,9 +622,11 @@ struct UvScheduler::work_sender<F>::opstate {
           stdexec::set_error(std::move(*rcvr),
                              std::make_exception_ptr(
                                  std::runtime_error("uv_queue_work failed")));
+          delete this;
           return true;
         }
       }
+      delete this;
       return true;
     }
   };

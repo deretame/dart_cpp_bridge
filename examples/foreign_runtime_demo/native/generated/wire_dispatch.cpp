@@ -53,12 +53,23 @@ void post_err(const std::shared_ptr<Session> &s, std::uint64_t gen,
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
 }
 
+// The environment starts_on(io_scheduler, sndr) actually provides to the
+// child sender: get_scheduler and get_start_scheduler both answer the io
+// scheduler. exec::task completion signatures are computed against this env
+// (they require get_start_scheduler), so `sender_in<S, spawn_env_t>` accepts
+// exec::task and rejects non-senders with a clear compile error at the call
+// site. (The plain stdexec::sender concept would reject exec::task: its
+// signatures are not computable in the root environment.)
+using spawn_env_t = decltype(stdexec::env{
+    stdexec::prop{stdexec::get_scheduler, std::declval<const dcb::IoContextScheduler&>()},
+    stdexec::prop{stdexec::get_start_scheduler,
+                  std::declval<const dcb::IoContextScheduler&>()}});
+
 // Launch a coroutine/sender on the bridge io thread. The official
 // exec::start_detached terminates on set_error, so an upon_error log is
 // appended (the coroutine bodies below catch everything anyway).
-// No stdexec::sender constraint: exec::task completion signatures need an
-// environment (get_start_scheduler), which starts_on provides.
 template <class S>
+  requires stdexec::sender_in<S, spawn_env_t>
 void spawn_on_io(S &&sndr) {
   exec::start_detached(
       stdexec::starts_on(*Runtime::instance().io_scheduler(), std::forward<S>(sndr))

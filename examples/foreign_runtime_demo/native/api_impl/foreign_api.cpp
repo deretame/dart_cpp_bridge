@@ -5,7 +5,7 @@
 
 #include "foreign_api.h"
 
-#include "../uv_worker.hpp"
+#include "uv_worker.hpp"
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/cbridge_wait.hpp"
