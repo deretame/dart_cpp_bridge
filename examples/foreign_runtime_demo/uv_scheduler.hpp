@@ -85,6 +85,16 @@ struct UvSchedState {
     }
   }
 
+  // Base of every queued start task. run() executes on the loop thread and
+  // returns false when the operation was cancelled before it could start.
+  struct StartNode : Node {
+    virtual bool run() = 0;
+    // Heap-allocated nodes (TimerInitNode / TimerCancelNode / WorkStartNode)
+    // free themselves after run(); the embedded schedule opstate overrides
+    // this to a no-op.
+    virtual void dispose() { delete this; }
+  };
+
   // Run on the loop thread; drains the start queue and runs each node.
   static void on_async(uv_async_t* h) {
     auto* st = static_cast<UvSchedState*>(h->data);
@@ -96,16 +106,12 @@ struct UvSchedState {
     while (node) {
       Node* next = node->next;
       node->next = nullptr;
-      static_cast<StartNode*>(node)->run();
+      auto* start = static_cast<StartNode*>(node);
+      start->run();
+      start->dispose();  // heap nodes free themselves; embedded opstate no-ops
       node = next;
     }
   }
-
-  // Base of every queued start task. run() executes on the loop thread and
-  // returns false when the operation was cancelled before it could start.
-  struct StartNode : Node {
-    virtual bool run() = 0;
-  };
 };
 
 // ---------------------------------------------------------------------------
@@ -214,6 +220,8 @@ class UvScheduler {
         stdexec::set_value(std::move(rcvr_));
         return true;
       }
+
+      void dispose() override {}  // embedded in the parent opstate, not leaked
     };
 
     template <class Rcvr>
@@ -280,6 +288,9 @@ struct TimerState : TimerStateBase {
   std::unique_ptr<Rcvr> rcvr;
   // Self-hold: keeps the state alive from init until the close callback.
   std::shared_ptr<TimerState> self;
+  // Exactly one of {init fallback, timer callback, cancel node} closes the
+  // handle; the winner also stops the timer.
+  std::atomic<bool> closed{false};
   bool inited{false};  // loop thread only
 
   static void on_timer(uv_timer_t* h) {
@@ -287,13 +298,17 @@ struct TimerState : TimerStateBase {
     int expected = kPending;
     if (ts->claim.compare_exchange_strong(expected, kValue)) {
       auto rcvr = std::move(ts->rcvr);
-      uv_timer_stop(&ts->timer);
-      uv_close(reinterpret_cast<uv_handle_t*>(&ts->timer), &TimerState::on_close);
+      if (!ts->closed.exchange(true)) {
+        uv_timer_stop(&ts->timer);
+        uv_close(reinterpret_cast<uv_handle_t*>(&ts->timer), &TimerState::on_close);
+      }
       stdexec::set_value(std::move(*rcvr));
     } else {
       // Cancelled/stopped already claimed: release the handle only.
-      uv_timer_stop(&ts->timer);
-      uv_close(reinterpret_cast<uv_handle_t*>(&ts->timer), &TimerState::on_close);
+      if (!ts->closed.exchange(true)) {
+        uv_timer_stop(&ts->timer);
+        uv_close(reinterpret_cast<uv_handle_t*>(&ts->timer), &TimerState::on_close);
+      }
     }
   }
 
@@ -320,7 +335,9 @@ struct TimerInitNode : UvSchedState::StartNode {
     ts_->timer.data = ts_.get();
     ts_->inited = true;
     if (ts_->claim.load(std::memory_order_acquire) != TimerState<Rcvr>::kPending) {
-      uv_close(reinterpret_cast<uv_handle_t*>(&ts_->timer), &TimerState<Rcvr>::on_close);
+      if (!ts_->closed.exchange(true)) {
+        uv_close(reinterpret_cast<uv_handle_t*>(&ts_->timer), &TimerState<Rcvr>::on_close);
+      }
       return true;
     }
     uv_timer_start(&ts_->timer, &TimerState<Rcvr>::on_timer, /*timeout*/ 0, /*repeat*/ 0);
@@ -340,10 +357,17 @@ struct TimerCancelNode : UvSchedState::StartNode {
   bool run() override {
     if (!ts_->inited) {
       // The init node will observe the claim and close without starting.
+      // Deliver the stopped completion here so the receiver never hangs.
+      if (complete_stopped_ && ts_->rcvr) {
+        auto rcvr = std::move(ts_->rcvr);
+        stdexec::set_stopped(std::move(*rcvr));
+      }
       return true;
     }
-    uv_timer_stop(&ts_->timer);
-    uv_close(reinterpret_cast<uv_handle_t*>(&ts_->timer), &TimerState<Rcvr>::on_close);
+    if (!ts_->closed.exchange(true)) {
+      uv_timer_stop(&ts_->timer);
+      uv_close(reinterpret_cast<uv_handle_t*>(&ts_->timer), &TimerState<Rcvr>::on_close);
+    }
     if (complete_stopped_ && ts_->rcvr) {
       auto rcvr = std::move(ts_->rcvr);
       stdexec::set_stopped(std::move(*rcvr));
@@ -468,19 +492,30 @@ namespace uv_detail {
 template <class F, class Rcvr>
 struct WorkState {
   using result_t = std::invoke_result_t<F>;
+  using stored_t = std::conditional_t<std::is_void_v<result_t>, char, result_t>;
   enum Claim : int { kPending = 0, kComplete = 1, kCancelled = 2 };
 
   uv_work_t work{};
   F fn;
   std::unique_ptr<Rcvr> rcvr;
-  std::optional<result_t> value;
+  std::optional<stored_t> value;
   std::exception_ptr error;
   std::atomic<int> claim{kPending};
+  // Self-hold: keeps the state alive from uv_queue_work until after_work
+  // (the opstate and the WorkStartNode may both be gone by then).
+  std::shared_ptr<WorkState> self;
+
+  explicit WorkState(F f) : fn(std::move(f)) {}
 
   static void on_work(uv_work_t* w) {
     auto* ws = static_cast<WorkState*>(w->data);
     try {
-      ws->value.emplace(ws->fn());
+      if constexpr (std::is_void_v<result_t>) {
+        ws->fn();
+        ws->value.emplace(0);
+      } else {
+        ws->value.emplace(ws->fn());
+      }
     } catch (...) {
       ws->error = std::current_exception();
     }
@@ -490,19 +525,19 @@ struct WorkState {
     auto* ws = static_cast<WorkState*>(w->data);
     int expected = kPending;
     if (!ws->claim.compare_exchange_strong(expected, kComplete)) {
-      delete ws;  // cancelled: drop the result
+      ws->self.reset();  // cancelled: drop the result
       return;
     }
     auto rcvr = std::move(ws->rcvr);
     auto value = std::move(ws->value);
     auto error = ws->error;
-    delete ws;
+    ws->self.reset();
     if (error) {
       stdexec::set_error(std::move(*rcvr), error);
-    } else if (value) {
-      stdexec::set_value(std::move(*rcvr), std::move(*value));
-    } else {
+    } else if constexpr (std::is_void_v<result_t>) {
       stdexec::set_value(std::move(*rcvr));
+    } else {
+      stdexec::set_value(std::move(*rcvr), std::move(*value));
     }
   }
 };
@@ -534,8 +569,7 @@ struct UvScheduler::work_sender<F>::opstate {
   }
 
   void start() & noexcept {
-    auto ws = std::make_shared<uv_detail::WorkState<F, Rcvr>>();
-    ws->fn = std::move(fn_);
+    auto ws = std::make_shared<uv_detail::WorkState<F, Rcvr>>(std::move(fn_));
     ws->rcvr = std::make_unique<Rcvr>(std::move(rcvr_));
     ws->work.data = ws.get();
     ws_ = std::move(ws);
@@ -546,7 +580,7 @@ struct UvScheduler::work_sender<F>::opstate {
       closed = st_->closed;
       if (!closed) {
         // uv_queue_work must be called from the loop thread; hop through the queue.
-        st_->push(new WorkStartNode(ws_));
+        st_->push(new WorkStartNode(st_->loop, ws_));
       }
     }
     if (closed) {
@@ -569,8 +603,24 @@ struct UvScheduler::work_sender<F>::opstate {
     WorkStartNode(uv_loop_t* loop, std::shared_ptr<uv_detail::WorkState<F, Rcvr>> ws)
       : loop_(loop), ws_(std::move(ws)) {}
     bool run() override {
-      uv_queue_work(loop_, &ws_->work, &uv_detail::WorkState<F, Rcvr>::on_work,
-                    &uv_detail::WorkState<F, Rcvr>::after_work);
+      ws_->self = ws_;  // hold until after_work
+      const int rc = uv_queue_work(loop_, &ws_->work,
+                                   &uv_detail::WorkState<F, Rcvr>::on_work,
+                                   &uv_detail::WorkState<F, Rcvr>::after_work);
+      if (rc != 0) {
+        // Failed to enqueue: complete with an error so the receiver never
+        // hangs, then release the self-hold.
+        int expected = uv_detail::WorkState<F, Rcvr>::kPending;
+        if (ws_->claim.compare_exchange_strong(expected,
+                                               uv_detail::WorkState<F, Rcvr>::kComplete)) {
+          auto rcvr = std::move(ws_->rcvr);
+          ws_->self.reset();
+          stdexec::set_error(std::move(*rcvr),
+                             std::make_exception_ptr(
+                                 std::runtime_error("uv_queue_work failed")));
+          return true;
+        }
+      }
       return true;
     }
   };

@@ -80,7 +80,7 @@ class UvWorker {
     st_->async_ready.store(false, std::memory_order_release);
     uv_walk(&loop_,
             [](uv_handle_t* h, void*) {
-              if (h->flags & UV_HANDLE_CLOSING) {
+              if (uv_is_closing(h)) {
                 return;  // already closing; its close callback is pending
               }
               if (h->type == UV_TIMER && h->data) {

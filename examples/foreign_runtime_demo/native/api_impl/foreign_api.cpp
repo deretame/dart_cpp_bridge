@@ -103,16 +103,17 @@ exec::task<std::int32_t> uv_compute(std::int32_t n) {
     std::lock_guard lock(g_mu);
     sched = require_worker();
   }
-  auto result = co_await stdexec::starts_on(
-      std::move(sched),
-      stdexec::just(n)
-      | stdexec::then([](std::int32_t k) {
-          std::int32_t sum = 0;
-          for (std::int32_t i = 1; i <= k; ++i) {
-            sum += i;
-          }
-          return sum;
-        }));
+  // CPU-bound work via uv_queue_work (libuv thread pool); the result is
+  // delivered on the uv loop thread and the exec::task reschedules it back
+  // to the caller's home scheduler (io).
+  auto work = sched.uv_work([n] {
+    std::int32_t sum = 0;
+    for (std::int32_t i = 1; i <= n; ++i) {
+      sum += i;
+    }
+    return sum;
+  });
+  auto result = co_await stdexec::starts_on(std::move(sched), std::move(work));
   co_return result;
 }
 

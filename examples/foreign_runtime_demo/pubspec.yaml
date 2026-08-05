@@ -1,5 +1,5 @@
 name: dcb_foreign_runtime_demo
-description: Demo: libuv runtime integrated with dart_cpp_bridge via a stdexec scheduler (UvScheduler) for non-blocking cross-runtime sender composition.
+description: "Demo: libuv runtime integrated with dart_cpp_bridge via a stdexec scheduler (UvScheduler) for non-blocking cross-runtime sender composition."
 version: 0.1.0
 publish_to: none
 
