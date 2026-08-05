@@ -1,4 +1,7 @@
-// foreign_api.cpp — Business implementation: libuv worker communicates with bridge via ForeignExecutor + channel.
+// foreign_api.cpp — Business implementation: libuv worker communicates with the
+// bridge via the UvScheduler (stdexec) — no ForeignExecutor, no C registration
+// API. Work runs on the uv loop thread with stdexec::starts_on; timers use
+// schedule_after; CPU-bound tasks use uv_work.
 
 #include "foreign_api.h"
 
@@ -9,10 +12,13 @@
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/dcb_codec.h"
-#include "dart_cpp_bridge/foreign_executor.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
+
+#include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
+#include <exec/task.hpp>
 
 #include <chrono>
 #include <future>
@@ -29,9 +35,33 @@ namespace {
 std::mutex g_mu;
 std::unique_ptr<UvWorker> g_uv_worker;
 
+// Fire-and-forget with an error log (exec::start_detached terminates on
+// set_error, so detached chains must swallow errors first).
+template <stdexec::sender S>
+void start_detached_safe(S&& sndr) {
+  exec::start_detached(
+      std::forward<S>(sndr)
+      | stdexec::upon_error([](std::exception_ptr ep) noexcept {
+          try {
+            std::rethrow_exception(ep);
+          } catch (const std::exception& e) {
+            std::fprintf(stderr, "[foreign_demo] detached sender error: %s\n", e.what());
+          } catch (...) {
+            std::fprintf(stderr, "[foreign_demo] detached sender error: unknown\n");
+          }
+        }));
+}
+
+UvScheduler require_worker() {
+  if (!g_uv_worker || !g_uv_worker->running()) {
+    throw std::runtime_error("uv worker not running");
+  }
+  return g_uv_worker->scheduler();
+}
+
 }  // namespace
 
-async_simple::coro::Lazy<std::string> start_uv_worker() {
+exec::task<std::string> start_uv_worker() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker) {
     g_uv_worker = std::make_unique<UvWorker>("libuv-worker");
@@ -40,7 +70,7 @@ async_simple::coro::Lazy<std::string> start_uv_worker() {
   co_return std::string("uv worker started");
 }
 
-async_simple::coro::Lazy<std::string> stop_uv_worker() {
+exec::task<std::string> stop_uv_worker() {
   std::lock_guard lock(g_mu);
   if (g_uv_worker) {
     g_uv_worker->stop();
@@ -49,154 +79,95 @@ async_simple::coro::Lazy<std::string> stop_uv_worker() {
   co_return std::string("uv worker stopped");
 }
 
-async_simple::coro::Lazy<std::string> ask_uv(std::string message) {
-  auto [tx, rx] = co::oneshot::channel<std::string>();
-
+exec::task<std::string> ask_uv(std::string message) {
+  // Take the scheduler under the lock, then release it before suspending:
+  // holding g_mu across co_await would block the io thread (which must stay
+  // free to resume this very coroutine).
+  UvScheduler sched;
   {
     std::lock_guard lock(g_mu);
-    if (!g_uv_worker || !g_uv_worker->running()) {
-      throw std::runtime_error("uv worker not running");
-    }
-
-    // Schedule onto the libuv loop thread via ForeignExecutor::schedule.
-    // The trampoline executes a lambda on the uv loop thread → sends back to bridge.
-    // Note: std::function must be copyable, so wrap the move-only Sender in shared_ptr.
-    auto* ex = g_uv_worker->executor();
-    auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
-    ex->schedule([tx_ptr, msg = std::move(message)]() {
-      // This code runs on the libuv loop thread
-      std::string result = "[uv:" + msg + "]";
-      tx_ptr->send(std::move(result));  // non-blocking send, wakes the bridge-side coroutine
-    });
+    sched = require_worker();
   }
-
-  // Wait for the reply on the bridge main runtime (suspends the coroutine, does not block the io thread)
-  auto reply = co_await rx.recv();
-  if (!reply) {
-    throw std::runtime_error("uv worker dropped");
-  }
-  co_return *reply;
+  // Run the work on the uv loop thread; the exec::task reschedules the
+  // completion back to the bridge io thread (the caller's home scheduler).
+  auto result = co_await stdexec::starts_on(
+      std::move(sched),
+      stdexec::just(std::move(message))
+      | stdexec::then([](std::string msg) { return "[uv:" + msg + "]"; }));
+  co_return result;
 }
 
-async_simple::coro::Lazy<std::int32_t> uv_compute(std::int32_t n) {
-  auto [tx, rx] = co::oneshot::channel<std::int32_t>();
-
+exec::task<std::int32_t> uv_compute(std::int32_t n) {
+  UvScheduler sched;
   {
     std::lock_guard lock(g_mu);
-    if (!g_uv_worker || !g_uv_worker->running()) {
-      throw std::runtime_error("uv worker not running");
+    sched = require_worker();
+  }
+  auto result = co_await stdexec::starts_on(
+      std::move(sched),
+      stdexec::just(n)
+      | stdexec::then([](std::int32_t k) {
+          std::int32_t sum = 0;
+          for (std::int32_t i = 1; i <= k; ++i) {
+            sum += i;
+          }
+          return sum;
+        }));
+  co_return result;
+}
+
+// Runs on the uv loop thread: emits `count` items with an async uv timer
+// between them, then ends the stream.
+static exec::task<void> uv_stream_coro(UvScheduler sched,
+                                       dcb::StreamSink<std::string> sink,
+                                       std::int32_t count, std::int32_t interval_ms) {
+  for (std::int32_t i = 0; i < count; ++i) {
+    if (interval_ms > 0) {
+      co_await sched.schedule_after(std::chrono::milliseconds(interval_ms));
     }
-
-    auto* ex = g_uv_worker->executor();
-    auto tx_ptr = std::make_shared<co::oneshot::Sender<std::int32_t>>(std::move(tx));
-    ex->schedule([tx_ptr, n]() {
-      // Compute on the libuv loop thread
-      std::int32_t sum = 0;
-      for (std::int32_t i = 1; i <= n; ++i) {
-        sum += i;
-      }
-      tx_ptr->send(sum);
-    });
+    sink.add("uv_item_" + std::to_string(i));
   }
-
-  auto reply = co_await rx.recv();
-  if (!reply) {
-    throw std::runtime_error("uv worker dropped");
-  }
-  co_return *reply;
+  sink.end();
+  co_return;
 }
 
 void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
                std::int32_t interval_ms) {
-  auto [tx, rx] = co::mpsc::unbounded<std::string>();
-
-  {
-    std::lock_guard lock(g_mu);
-    if (!g_uv_worker || !g_uv_worker->running()) {
-      sink.error("uv worker not running");
-      return;
-    }
-
-    // Start the sender task on the libuv loop thread
-    // Note: std::function must be copyable, so wrap the move-only Sender in shared_ptr.
-    auto* ex = g_uv_worker->executor();
-    auto tx_ptr = std::make_shared<co::mpsc::Sender<std::string>>(std::move(tx));
-    ex->schedule([tx_ptr, count, interval_ms]() {
-      // Run on the uv loop thread (note: sleep blocks the uv loop; for demo only)
-      for (std::int32_t i = 0; i < count; ++i) {
-        if (interval_ms > 0) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
-        }
-        if (!tx_ptr->send("uv_item_" + std::to_string(i))) {
-          break;
-        }
-      }
-      // tx_ptr destruction → channel closes → recv returns nullopt
-    });
+  std::lock_guard lock(g_mu);
+  if (!g_uv_worker || !g_uv_worker->running()) {
+    sink.error("uv worker not running");
+    return;
   }
-
-  // Consume the mpsc on the bridge main runtime and forward to StreamSink
-  dcb::Runtime::instance().spawn_on_asio(
-      [sink = std::move(sink), rx = std::move(rx)]() mutable
-      -> async_simple::coro::Lazy<> {
-        while (true) {
-          auto item = co_await rx.recv();
-          if (!item) break;
-          sink.add(*item);
-        }
-        sink.end();
-        co_return;
-      });
+  // Fire-and-forget producer on the uv loop thread; the io thread stays free.
+  start_detached_safe(stdexec::starts_on(
+      g_uv_worker->scheduler(),
+      uv_stream_coro(g_uv_worker->scheduler(), std::move(sink), count, interval_ms)));
 }
 
-// Workaround for MSVC 19.51 coroutine lambda capture bug:
-// Use a separate static coroutine function and pass all variables as parameters.
-static async_simple::coro::Lazy<> uv_dart_fn_coro(
-    std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
-    dcb::DartFn<std::string(std::string)> cb,
-    std::string input) {
+exec::task<std::string> call_dart_from_uv(dcb::DartFn<std::string(std::string)> callback,
+                                          std::string input) {
+  UvScheduler sched;
+  {
+    std::lock_guard lock(g_mu);
+    sched = require_worker();
+  }
+  // Start the reverse DartFn call on the uv loop thread; dartfn_sender posts
+  // to Dart, waits for the oneshot reply and migrates back to the io thread.
+  // The outer exec::task then reschedules to its home (io). A Dart-side
+  // exception surfaces as a C++ error here; convert it to the demo's
+  // "ERROR:..." result contract.
   try {
-    auto result = co_await cb(input);
-    tx_ptr->send(std::move(result));
+    auto result = co_await stdexec::starts_on(std::move(sched),
+                                              std::move(callback)(std::move(input)));
+    co_return result;
   } catch (const std::exception& e) {
-    tx_ptr->send(std::string("ERROR: ") + e.what());
+    co_return std::string("ERROR:") + e.what();
   }
-  co_return;
-}
-
-async_simple::coro::Lazy<std::string> call_dart_from_uv(
-    dcb::DartFn<std::string(std::string)> callback, std::string input) {
-  auto [tx, rx] = co::oneshot::channel<std::string>();
-
-  {
-    std::lock_guard lock(g_mu);
-    if (!g_uv_worker || !g_uv_worker->running()) {
-      throw std::runtime_error("uv worker not running");
-    }
-
-    auto* ex = g_uv_worker->executor();
-    auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
-
-    // Start a coroutine on the uv loop thread that co_awaits the DartFn non-blockingly.
-    // Use a static coroutine function instead of a coroutine lambda (MSVC 19.51 bug workaround).
-    ex->schedule([tx_ptr, cb = std::move(callback), input = std::move(input), ex]() mutable {
-      uv_dart_fn_coro(std::move(tx_ptr), std::move(cb), std::move(input))
-          .via(ex)
-          .start([](auto&&) {});
-    });
-  }
-
-  // Wait for the result on the bridge main runtime
-  auto reply = co_await rx.recv();
-  if (!reply) {
-    throw std::runtime_error("uv worker dropped");
-  }
-  co_return *reply;
 }
 
 // ─── cbridge pure C API tests ────────────────────────────────────────────────
 
-async_simple::coro::Lazy<std::string> test_cbridge_async() {
+exec::task<std::string> test_cbridge_async() {
   // Create async operation
   uint64_t op = dcb_async_create();
 
@@ -213,7 +184,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_async() {
   co_return std::string(data.begin(), data.end());
 }
 
-async_simple::coro::Lazy<std::string> test_cbridge_async_fail() {
+exec::task<std::string> test_cbridge_async_fail() {
   uint64_t op = dcb_async_create();
 
   std::thread failer([op] {
@@ -230,7 +201,7 @@ async_simple::coro::Lazy<std::string> test_cbridge_async_fail() {
   }
 }
 
-async_simple::coro::Lazy<std::string> test_cbridge_async_cancel() {
+exec::task<std::string> test_cbridge_async_cancel() {
   uint64_t op = dcb_async_create();
 
   std::thread canceller([op] {
@@ -247,8 +218,8 @@ async_simple::coro::Lazy<std::string> test_cbridge_async_cancel() {
   }
 }
 
-async_simple::coro::Lazy<std::string> test_cbridge_invoke(
-    dcb::DartFn<std::string(std::string)> callback, std::string input) {
+exec::task<std::string> test_cbridge_invoke(dcb::DartFn<std::string(std::string)> callback,
+                                            std::string input) {
   // Extract session_id and fn_id from DartFn
   auto session = callback.session();
   if (!session) {
@@ -322,8 +293,9 @@ struct ServiceRequest {
   co::oneshot::Sender<std::string> reply_tx;
 };
 
-// Service loop: runs for a long time on the uv worker's ForeignExecutor
-static async_simple::coro::Lazy<> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
+// Service loop: runs on the uv loop thread; exec::task reschedules back to the
+// uv loop after every recv() completes (the send may come from the io thread).
+static exec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   while (auto req = co_await rx.recv()) {
     // Process the request: add a prefix
     std::string result = "[svc:" + req->payload + "]";
@@ -332,18 +304,17 @@ static async_simple::coro::Lazy<> service_loop(co::mpsc::Receiver<ServiceRequest
   co_return;  // channel closed, service ends
 }
 
-async_simple::coro::Lazy<std::string> test_channel_service() {
-  std::lock_guard lock(g_mu);
-  if (!g_uv_worker || !g_uv_worker->running()) {
-    throw std::runtime_error("uv worker not running");
-  }
-
-  // Create mpsc channel (bridge side sends, uv worker side receives)
+exec::task<std::string> test_channel_service() {
+  // Create the channel and start the service loop under the lock; release it
+  // before waiting for replies (never hold g_mu across co_await).
   auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
-
-  // Start the service loop on the uv worker's ForeignExecutor
-  auto* ex = g_uv_worker->executor();
-  service_loop(std::move(rx)).via(ex).start([](auto&&) {});
+  UvScheduler sched;
+  {
+    std::lock_guard lock(g_mu);
+    sched = require_worker();
+    // Start the service loop on the uv loop thread
+    start_detached_safe(stdexec::starts_on(std::move(sched), service_loop(std::move(rx))));
+  }
 
   // Send 3 requests from the bridge side, each with its own reply channel
   std::string results;
@@ -352,7 +323,7 @@ async_simple::coro::Lazy<std::string> test_channel_service() {
     tx.send(ServiceRequest{"msg" + std::to_string(i), std::move(reply_tx)});
 
     // Wait non-blockingly for the reply (suspends current coroutine, does not occupy the io thread)
-    auto reply = co_await reply_rx.recv();
+    auto reply = co_await std::move(reply_rx);
     if (!reply) throw std::runtime_error("service dropped");
     if (!results.empty()) results += ",";
     results += *reply;
@@ -365,15 +336,14 @@ async_simple::coro::Lazy<std::string> test_channel_service() {
 
 // Concurrent version: send all requests in one batch, then collect all replies.
 // Tests mpsc queuing + service loop processing one by one.
-async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
-  std::lock_guard lock(g_mu);
-  if (!g_uv_worker || !g_uv_worker->running()) {
-    throw std::runtime_error("uv worker not running");
-  }
-
+exec::task<std::string> test_channel_service_concurrent() {
   auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
-  auto* ex = g_uv_worker->executor();
-  service_loop(std::move(rx)).via(ex).start([](auto&&) {});
+  UvScheduler sched;
+  {
+    std::lock_guard lock(g_mu);
+    sched = require_worker();
+    start_detached_safe(stdexec::starts_on(std::move(sched), service_loop(std::move(rx))));
+  }
 
   // Send 5 requests in one batch first (without waiting) to test mpsc queuing
   std::vector<co::oneshot::Receiver<std::string>> receivers;
@@ -386,7 +356,7 @@ async_simple::coro::Lazy<std::string> test_channel_service_concurrent() {
   // Then collect all replies (service loop processes them one by one on the uv loop thread)
   std::string results;
   for (auto& reply_rx : receivers) {
-    auto reply = co_await reply_rx.recv();
+    auto reply = co_await std::move(reply_rx);
     if (!reply) throw std::runtime_error("service dropped");
     if (!results.empty()) results += ",";
     results += *reply;

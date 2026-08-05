@@ -21,11 +21,13 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
 
 **Migration rules:**
 
-1. **Public contracts do not change.** The C ABI (`ffi.h`, `cbridge.h`,
-   `foreign_runtime.h`), wire protocol, Dart public API, and generated-code
+1. **Public contracts do not change.** The C ABI (`ffi.h`, `cbridge.h`),
+   wire protocol, Dart public API, and generated-code
    contracts stay stable (see [Compatibility policy](#compatibility-policy)).
    The migration changes C++ internals and the C++ business-code coroutine
-   surface only.
+   surface only. (`foreign_runtime.h` was removed in the migration: it never
+   shipped in a release — its `dcb_foreign_*` symbols were excluded from the
+   build — and external loops now plug in via plain stdexec schedulers.)
 2. New or touched async C++ code uses **stdexec senders / `stdexec::task<T>`**
    (or `exec::task<T>` when scheduler affinity is needed). Do not add new
    `async_simple::coro::Lazy` usages; legacy `Lazy` stays only until its
@@ -60,13 +62,15 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
 
 **Migration touchpoints (where async-simple lives today):**
 
-- `dart/native/include/dart_cpp_bridge/`: `cbridge_wait.hpp`,
-  `channel.hpp`, `dart_fn.hpp`, `runtime.hpp`,
-  `session.hpp`, `foreign_executor.hpp`, `foreign_runtime.h`, `stream*.hpp`
-- `dart/native/src/`: `cbridge.cpp`, `runtime/runtime.cpp`
+- `dart/native/include/dart_cpp_bridge/`: `channel.hpp`, `dart_fn.hpp`,
+  `runtime.hpp`, `session.hpp`, `stream*.hpp` (cbridge_wait.hpp / cbridge.cpp
+  are already migrated; `foreign_executor.hpp` and `foreign_runtime.h` were
+  **deleted** — foreign event loops now plug in as plain stdexec schedulers,
+  see `examples/foreign_runtime_demo/uv_scheduler.hpp`)
+- `dart/native/src/`: `runtime/runtime.cpp`
 - `dcb_gen_tool/` (see rule 4 above)
 - `examples/*/native/` (API headers, generated `wire_dispatch.*`,
-  `worker_runtime.hpp`)
+  `worker_runtime.hpp`; codegen_demo still awaits full port)
 - `docs-site/` async-simple guides (last phase)
 
 ## Project overview
@@ -100,7 +104,7 @@ The project is in a **released / stable state** (1.2.4). Treat every public
 surface as part of the compatibility contract:
 
 - Dart package public API (`dart/lib/`) and generated code contracts;
-- C ABI exports: `ffi.h`, `cbridge.h`, `foreign_runtime.h` (including
+- C ABI exports: `ffi.h`, `cbridge.h` (including
   `dart_cpp_bridge` FFI functions and the `dcb_*` C bridge API);
 - Public C++ headers under `dart/native/include/dart_cpp_bridge/`;
 - The wire protocol (frame layout, `msg_type` values, `method_id` semantics);
@@ -175,7 +179,7 @@ internals and the documented coroutine-type switch.
 │   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
 │   │   │   ├── ffi.h          # C ABI exported by the shared library
 │   │   │   ├── asio_executor.hpp # IoContextScheduler (stdexec scheduler over the asio io_context)
-│   │   │   ├── foreign_executor.hpp # ForeignExecutor for async-simple (migration target)
+│   │   │   ├── (foreign_executor.hpp / foreign_runtime.h deleted in the stdexec migration — foreign loops expose a plain scheduler)
 │   │   │   └── annotate.h     # BRIDGE_* / DCB_* codegen markers
 │   │   ├── src/
 │   │   │   ├── runtime/runtime.cpp  # Runtime impl, Session impl, DartFn invoke

@@ -123,8 +123,10 @@ endif()
 # --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---
 # Migration note (feat/stdexec-migration): src/cbridge.cpp has been re-ported to
 # std::exec (stdexec starts_on + exec::task, see docs/cpp26_executor_model_usage.md)
-# and is built again. src/foreign_runtime.cpp remains temporarily excluded — it
-# still targets the old async-simple runtime and will be re-ported later.
+# and is built again. The old ForeignExecutor mechanism (foreign_executor.hpp /
+# foreign_runtime.h / src/foreign_runtime.cpp) has been removed: foreign event
+# loops now plug in via a plain stdexec scheduler (see
+# examples/foreign_runtime_demo/uv_scheduler.hpp).
 add_library(dcb_runtime STATIC
   src/runtime/runtime.cpp
   src/runtime/object_handle.cpp

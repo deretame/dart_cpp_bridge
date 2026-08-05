@@ -1,13 +1,13 @@
 # =============================================================================
-# foreign_runtime_demo — Foreign runtime integration example (libuv + ForeignExecutor)
+# foreign_runtime_demo — Foreign runtime integration example (libuv + UvScheduler)
 # =============================================================================
 #
-# Demonstrates a non-asio event loop (libuv) integrating with the bridge
-# channel/coroutine system via the ForeignExecutor C API, for non-blocking cross-runtime messaging.
+# Demonstrates a non-asio event loop (libuv) integrating with the bridge's
+# stdexec sender world: UvWorker exposes a UvScheduler (uv_scheduler.hpp) and
+# business code composes it with starts_on / schedule_after / uv_work.
 #
 # This file lives in the native/ directory; hook/build.dart points sourceDir: 'native' at it.
 # The base runtime is brought in via dcb_find_package.cmake and linked with WHOLE_ARCHIVE to keep dcb_* exports.
-# foreign_runtime.cpp (ForeignExecutor C API) is already included in the base library.
 # asio / async-simple versions are pinned and propagated by the base library; only libuv is declared here.
 #
 # Run codegen before building:

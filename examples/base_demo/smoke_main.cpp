@@ -1144,8 +1144,8 @@ int main() {
   test_bounded_mpsc_backpressure();
   test_bounded_mpsc_cross_thread_fifo();
   test_unbounded_mpsc_cross_thread();
-  // TODO(stdexec migration): ForeignExecutor tests will be re-ported once the
-  // foreign runtime lands on std::exec.
+  // ForeignExecutor was removed in the stdexec migration; the foreign runtime
+  // path is covered by examples/foreign_runtime_demo (UvScheduler + dart test).
 
   Runtime::instance().start();
   g_add_done = std::make_shared<std::promise<int>>();
