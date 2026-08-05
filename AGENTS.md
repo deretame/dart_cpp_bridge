@@ -60,18 +60,19 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
 | `coro::sleep(dur, ex)`                    | `exec::schedule_after(timed_sched, dur)` (needs a timed scheduler)                               |
 | `Future<T>` / `Promise<T>`                | oneshot channel / sender (migrate together with `channel.hpp`)                                   |
 
-**Migration touchpoints (where async-simple lives today):**
+**Migration touchpoints (async-simple still lives here):**
 
-- `dart/native/include/dart_cpp_bridge/`: `channel.hpp`, `dart_fn.hpp`,
-  `runtime.hpp`, `session.hpp`, `stream*.hpp` (cbridge_wait.hpp / cbridge.cpp
-  are already migrated; `foreign_executor.hpp` and `foreign_runtime.h` were
-  **deleted** — foreign event loops now plug in as plain stdexec schedulers,
-  see `examples/foreign_runtime_demo/uv_scheduler.hpp`)
-- `dart/native/src/`: `runtime/runtime.cpp`
 - `dcb_gen_tool/` (see rule 4 above)
-- `examples/*/native/` (API headers, generated `wire_dispatch.*`,
-  `worker_runtime.hpp`; codegen_demo still awaits full port)
+- `examples/codegen_demo/` (API headers, generated `wire_dispatch.*`,
+  `worker_runtime.hpp`; still awaits full port)
 - `docs-site/` async-simple guides (last phase)
+
+The **base runtime is fully migrated**: `channel.hpp`, `dart_fn.hpp`,
+`runtime.hpp`, `session.hpp`, `stream*.hpp`, `src/runtime/runtime.cpp`,
+`cbridge_wait.hpp`, `cbridge.cpp` are all stdexec (`exec::task` / senders /
+stop tokens); `foreign_executor.hpp` and `foreign_runtime.h` were **deleted**
+— foreign event loops now plug in as plain stdexec schedulers, see
+`examples/foreign_runtime_demo/native/uv_scheduler.hpp`.
 
 ## Project overview
 
@@ -96,7 +97,7 @@ Runtime (process-wide)
   wire: sync / async coroutine-sender / stream / DartFn
 ```
 
-Core principle: **business C++ code is written as normal functions or one coroutine/sender type (`async_simple::coro::Lazy<T>` today, stdexec after the migration); the bridge handles codec, scheduling, and Dart API generation.** Do not invent bridge-specific Future/Stream wrapper types in business code.
+Core principle: **business C++ code is written as normal functions or one coroutine/sender type (`exec::task<T>` / stdexec senders today; the legacy `async_simple::coro::Lazy<T>` remains only in codegen_demo); the bridge handles codec, scheduling, and Dart API generation.** Do not invent bridge-specific Future/Stream wrapper types in business code.
 
 ## Compatibility policy
 
@@ -147,11 +148,11 @@ internals and the documented coroutine-type switch.
 | ------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | C++ standard | C++20 minimum                                                | Coroutines, concepts. Requires recent MSVC/GCC/Clang. stdexec needs **only** C++20.             |
 | Event loop   | [Asio](https://think-async.com/Asio/) standalone             | `asio::io_context` single-threaded; timers, post, completion.                                   |
-| Concurrency  | stdexec (P2300 senders/receivers), vendored `third_party/stdexec` | **Migrating from async-simple** (`Lazy`/`Executor`/`Signal`). See [Current initiative](#current-initiative-async-simple--stdexec-migration). |
+| Concurrency  | stdexec (P2300 senders/receivers), vendored `third_party/stdexec` | Base runtime migrated from async-simple (`Lazy`/`Executor`/`Signal`); legacy `Lazy` remains only in `dcb_gen_tool` / `codegen_demo`. See [Current initiative](#current-initiative-async-simple--stdexec-migration). |
 | Dart side    | Dart 3 + `package:ffi`                                       | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                              |
 | Dart SDK     | `>= 3.10.0`                                                  | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+.               |
 | Codegen      | Pinned Python 3.13.13 + libclang-ng 22.1.4.2                 | Downloaded from remote, cached, hash-verified. No host Python/LLVM.                             |
-| Build        | CMake 3.24+                                                  | FetchContent pulls Asio/async-simple (until migration completes); stdexec is vendored. Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
+| Build        | CMake 3.24+                                                  | FetchContent pulls Asio; stdexec is vendored (`third_party/stdexec`). Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
 
 ## Directory structure
 
@@ -169,11 +170,11 @@ internals and the documented coroutine-type switch.
 │   ├── pubspec.yaml
 │   ├── native/cmake/           # CMake modules (dcb_find_package, fetch_dart_api)
 │   ├── native/                # C++ native library (base runtime only)
-│   │   ├── CMakeLists.txt     # Static lib + FetchContent deps (asio/async-simple)
+│   │   ├── CMakeLists.txt     # Static lib + FetchContent deps (asio + vendored stdexec)
 │   │   ├── include/dart_cpp_bridge/   # Public C++ headers
-│   │   │   ├── runtime.hpp    # Singleton Runtime, spawn_on_asio
+│   │   │   ├── runtime.hpp    # Singleton Runtime, io_scheduler() / dcb::sleep
 │   │   │   ├── session.hpp    # Session, SessionRegistry, DartFnReply
-│   │   │   ├── channel.hpp    # co::mpsc / co::oneshot coroutine channels
+│   │   │   ├── channel.hpp    # co::mpsc / co::oneshot stdexec channels (stop-token aware)
 │   │   │   ├── dart_fn.hpp    # DartFn<Ret(Args...)> reverse callback sender
 │   │   │   ├── stream_sink.hpp # StreamSink<T>
 │   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
@@ -206,13 +207,20 @@ internals and the documented coroutine-type switch.
     │   ├── demo_api.cpp       # Hand-written demo wire dispatch
     │   ├── smoke_main.cpp     # C++ smoke test (no Dart VM)
     │   └── CMakeLists.txt     # Builds dart_cpp_bridge.dll + dcb_smoke
-    └── codegen_demo/          # Phase 2 fixture
+    ├── codegen_demo/          # Phase 2 fixture (still async-simple; awaits port)
         ├── dart_cpp_bridge.yaml
         ├── native/api/bridge_api.h
         ├── native/api_impl/bridge_api.cpp
         ├── native/generated/  # Generated wire_dispatch.* + ir.json
         ├── lib/               # Generated Dart API + manual export
         ├── test/
+        └── CMakeLists.txt
+    └── foreign_runtime_demo/  # libuv runtime as a plain stdexec scheduler (migrated)
+        ├── dart_cpp_bridge.yaml
+        ├── native/uv_scheduler.hpp / uv_worker.hpp   # UvScheduler + libuv worker
+        ├── native/api/foreign_api.h                  # BRIDGE_* async/stream APIs
+        ├── native/generated/wire_dispatch.*          # hand-ported to exec::task
+        ├── test/foreign_runtime_test.dart            # 19 tests (libuv + cbridge)
         └── CMakeLists.txt
 ```
 
@@ -224,7 +232,7 @@ internals and the documented coroutine-type switch.
 - C++20 compiler (MSVC 2019+, GCC 10+, Clang 12+)
 - Dart SDK >= 3.10.0
 - Git (for FetchContent)
-- Network for first C++ build (Asio/async-simple) and codegen toolchain
+- Network for first C++ build (Asio + vendored stdexec) and codegen toolchain
 
 ### C++ base library + base_demo
 
@@ -232,7 +240,7 @@ internals and the documented coroutine-type switch.
 # 1. Fetch Dart API DL headers (one-time unless deleted)
 cmake -P dart/native/cmake/fetch_dart_api.cmake
 
-# 2. Configure base library deps (asio/async-simple)
+# 2. Configure base library deps (asio)
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
 # 3. Build base_demo (DLL + smoke test)
@@ -268,7 +276,7 @@ DCB_LIBRARY_PATH=/path/to/libdart_cpp_bridge.so dart test
 ### Codegen demo fixture
 
 ```bash
-# 1. Configure base library deps (reuses _deps for asio/async-simple)
+# 1. Configure base library deps (reuses _deps for asio)
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
 # 2. Run codegen for the demo fixture
@@ -410,10 +418,10 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ## Common pitfalls
 
-- **Sync DartFn on the io thread**: `DartFn::operator()` returns `Lazy<Ret>` (async only). For blocking contexts, use `syncAwait(dcb::spawn(fn(args...)))`. Calling `syncAwait` on the `io_context` thread is a self-deadlock. The library does not auto-offload. (Post-migration: same rule with `stdexec::sync_wait`.)
+- **Sync DartFn on the io thread**: `DartFn::operator()` returns a sender (`detail::dartfn_sender<Ret>`, async only). For blocking contexts, use `stdexec::sync_wait(dcb::spawn(fn(args...)))`. Calling `sync_wait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
 - **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
 - **Generated code is not a build step**: codegen must be run manually after API header changes. Native Assets hooks compile and link only; they do not regenerate code.
-- **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative — today via async-simple `Signal`/`Slot` (cancellable `sleep()`, `collectAny`/`collectAll<Terminate>`), after the migration via stdexec stop tokens — and must be exposed by business code (e.g. a task_id → stop-source map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
+- **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative — via stdexec stop tokens (`inplace_stop_source` / `stop_token`, see `docs/channel_stop_token_design.md`) — and must be exposed by business code (e.g. a task_id → stop-source map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
 - **stdexec top pitfalls** (details in `docs/cpp26_executor_model_usage.md`):
   `co_await` binds tighter than `|` — parenthesize pipelines
   (`co_await (a | then(f))`); `co_await` of a single-value sender yields the
