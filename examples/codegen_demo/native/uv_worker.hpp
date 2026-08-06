@@ -87,6 +87,15 @@ class UvWorker {
     }
 
     uv_stop(&loop_);
+    // uv_stop only sets stop_flag (uv-common.c); it does NOT wake a loop
+    // blocked in uv__io_poll. If the loop entered the poll between the
+    // earlier wake() (used to drain the start queue) and this uv_stop, it
+    // would sleep on epoll_wait(-1) forever and join() below would deadlock.
+    // This window is tiny on desktop but widens on slow/scheduled threads
+    // (observed hanging "start and stop uv worker" on the Android emulator,
+    // and likely the occasional desktop hangs recorded in known_issues
+    // ID-021). Wake again after uv_stop so the loop observes stop_flag.
+    st_->wake();
     if (thread_.joinable()) {
       thread_.join();
     }
