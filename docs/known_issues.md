@@ -1,6 +1,6 @@
 # dart_cpp_bridge 已知问题与技术债
 
-> 更新日期：2026-08-06（ID-017 追加补充说明：spawn_on_io 改回模板 + sender_in 泛型约束但 OOM 不复发的原因；新增 ID-021：uv 并发测试偶发挂起观察；目录同步）
+> 更新日期：2026-08-06（ID-021 追加第 1 次修复记录：uv_stop 不唤醒 poll 导致 join 死锁，CI Android 命中；iOS 偶发挂起观察与 CI timeout-minutes 兜底）
 >
 > **维护规则（每次编辑本文件必须遵守）：**
 > 1. **更新日期**：每次增改内容后，把头部「更新日期」改成当天日期（YYYY-MM-DD）。
@@ -756,4 +756,9 @@ return stop_source->request_stop();
 
 #### 修复记录（按时间追加）
 
-（暂无——偶发未复现，未定位根因。若再次复现：优先抓 `multiple concurrent requests` 挂起时的 Dart 侧调用栈与 `pending_ops` 残留，检查 uv worker 的 start 队列与 oneshot channel 是否丢应答。）
+##### 第 1 次修复（2026-08-06）
+
+- **结果**：已修复（根因确认，`uv_worker.hpp`）
+- **方案**：`UvWorker::stop()` 的 `uv_stop(&loop_)` 只设置 `stop_flag`（libuv `uv-common.c`），**不会唤醒阻塞在 `uv__io_poll` 的 loop**；原代码在 `uv_stop` 之前的 `wake()`（用于排空 start 队列）之后，loop 可能进入 `epoll_wait(-1)`（无 timer 时无限超时）→ `stop_flag` 永不被观察 → `thread_.join()` 死锁。竞态窗口在桌面极小（这正是多次全量都过的原因），但在慢线程上放大：CI 的 Android 模拟器（`build-android`）首先命中，卡在 `libuv foreign runtime start and stop uv worker`。修复：`uv_stop` 之后**再 `wake()` 一次**，确保 loop 从 poll 醒来观察 `stop_flag` 退出（commit `d850437`）。
+- **验证**：CI `build-android` 修复后通过（此前卡住的平台）；同一 run 的 iOS 曾偶发卡死一次（>20 分钟无进展，模拟器环境偶发，与 wake#2 无关——紧接的重跑 5 平台全绿）。为兜底这类"native 挂死导致 Dart 测试进程不退出"的偶发，CI 各 job 增加 `timeout-minutes: 40`（commit `3124578`）：`flutter test` 自身的超时在 app 挂死时不生效。
+- **遗留**：`wake()` 依赖 `async_ready` 标志，`stop()` 中 `async_ready.store(false)` 在 join 之后（close 阶段前），顺序安全；若未来在 `uv_stop` 后、join 前有其他唤醒需求，注意 `uv_async_send` 的 pipe/eventfd 平台差异（macOS 用 pipe、Linux 用 eventfd）。
