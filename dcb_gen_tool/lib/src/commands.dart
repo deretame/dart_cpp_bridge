@@ -341,8 +341,17 @@ Future<void> _postProcessCppOutput(
 /// 2. `clang-format` on system PATH.
 /// 3. Returns null (skip formatting).
 String? _resolveClangFormat(YamlMap config, String projectDir, CliLogger log) {
+  // Windows-style absolute paths (`C:\...`) are meaningless on other
+  // platforms: p.isAbsolute() would treat them as relative and join them
+  // onto projectDir, producing a bogus candidate. Skip them instead.
+  final windowsDrive = RegExp(r'^[A-Za-z]:[\\/]');
   final candidates = _clangFormatCandidates(config);
   for (final entry in candidates) {
+    if (!Platform.isWindows && windowsDrive.hasMatch(entry)) {
+      log.info('clang_format candidate skipped (windows path on '
+          '${Platform.operatingSystem}): $entry');
+      continue;
+    }
     var resolved =
         p.isAbsolute(entry) ? entry : p.normalize(p.join(projectDir, entry));
     // If it's a directory, look for the executable inside.
