@@ -19,6 +19,7 @@ jobs:
   # ══════════════════════════════════════════
   build-linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -59,6 +60,7 @@ jobs:
   # ══════════════════════════════════════════
   build-windows:
     runs-on: windows-2025-vs2026
+    timeout-minutes: 40
     defaults:
       run:
         shell: pwsh
@@ -96,6 +98,7 @@ jobs:
   # ══════════════════════════════════════════
   build-macos:
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -138,6 +141,7 @@ jobs:
   # ══════════════════════════════════════════
   build-ios:
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -185,6 +189,7 @@ jobs:
   # ══════════════════════════════════════════
   build-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     env:
       ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/29.0.14206865
     steps:
