@@ -179,7 +179,7 @@ internals and the documented coroutine-type switch.
 │   │   │   ├── stream_sink.hpp # StreamSink<T>
 │   │   │   ├── codec.hpp      # Wire frame + ByteReader/Writer
 │   │   │   ├── ffi.h          # C ABI exported by the shared library
-│   │   │   ├── asio_executor.hpp # IoContextScheduler (stdexec scheduler over the asio io_context)
+│   │   │   ├── runtime.hpp    # Runtime + IoContextScheduler (stdexec scheduler over the asio io_context)
 │   │   │   ├── (foreign_executor.hpp / foreign_runtime.h deleted in the stdexec migration — foreign loops expose a plain scheduler)
 │   │   │   └── annotate.h     # BRIDGE_* / DCB_* codegen markers
 │   │   ├── src/

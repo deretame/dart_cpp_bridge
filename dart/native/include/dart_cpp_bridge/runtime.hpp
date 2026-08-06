@@ -1,11 +1,12 @@
 #pragma once
 
-#include "dart_cpp_bridge/asio_executor.hpp"
 #include "dart_cpp_bridge/channel.hpp"
 
 #include <stdexec/execution.hpp>
 
+#include <exec/asio/asio_config.hpp>
 #include <exec/asio/asio_thread_pool.hpp>
+#include <exec/asio/use_sender.hpp>
 
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
@@ -28,6 +29,61 @@ namespace dcb {
 // movable payload (e.g. the co::oneshot channel). `co_await
 // dcb::spawn_blocking(f)` for a void `f` completes with dcb::Unit.
 struct Unit {};
+
+// P2300 (std::execution / stdexec) scheduler adapter that runs sender work on
+// an asio::io_context event loop — the single-threaded io thread. Design
+// reference: docs/cpp26_executor_model_usage.md §12.6 (Asio 适配).
+//
+// `stdexec::schedule(*sched)` returns the official exec::asio adapter sender
+// for `asio::post(io_context, use_sender)`: the posted handler runs on the io
+// thread, so every step of a chain launched with
+// `stdexec::starts_on(*sched, ...)` executes on the io thread, and its
+// completion fires back on the io thread. Error/stopped mapping follows the
+// adapter contract: operation_aborted / operation_canceled -> set_stopped,
+// other error_code -> set_error(std::exception_ptr).
+//
+// Timers (dcb::sleep) use the same adapter via asio::steady_timer +
+// async_wait(use_sender), so sleeping never blocks the io thread and a stop
+// request cancels the timer.
+//
+// Lifetime: pending schedule operations capture the io_context reference, so
+// the scheduler must not outlive the io_context. The Runtime owns both and
+// guarantees the order: io_context member declared before the scheduler
+// member; stop() joins the io thread before destruction.
+//
+// The scheduler is trivially copyable-equivalent in the sense required by the
+// stdexec scheduler concept: copies share the underlying io_context pointer.
+// current_thread_is_io() delegates to asio's own
+// executor_type::running_in_this_thread(), so no thread-id bookkeeping is
+// needed (it backs dcb::sync_wait's self-deadlock guard).
+class IoContextScheduler {
+ public:
+  using scheduler_concept = stdexec::scheduler_tag;
+
+  explicit IoContextScheduler(asio::io_context& ioc) : ioc_(&ioc) {}
+
+  stdexec::sender auto schedule() const noexcept {
+    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
+  }
+
+  asio::io_context& io() const noexcept { return *ioc_; }
+
+  asio::io_context::executor_type executor() const noexcept {
+    return ioc_->get_executor();
+  }
+
+  /// True only when the calling thread runs the io_context. Used by
+  /// dcb::sync_wait to reject calls that would self-deadlock.
+  bool current_thread_is_io() const noexcept {
+    return ioc_->get_executor().running_in_this_thread();
+  }
+
+  // Two schedulers are equal when they wrap the same io_context.
+  friend bool operator==(const IoContextScheduler&, const IoContextScheduler&) = default;
+
+ private:
+  asio::io_context* ioc_;
+};
 
 using DartPostFn = void (*)(std::int64_t port, const std::uint8_t* data, std::size_t len,
                             void* userdata);

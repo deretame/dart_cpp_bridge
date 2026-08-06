@@ -10,7 +10,7 @@
 // Communication with other runtimes is exclusively through co::mpsc / co::oneshot
 // channels. send() is non-blocking; recv() suspends the coroutine (not the thread).
 
-#include "dart_cpp_bridge/asio_executor.hpp"
+#include "dart_cpp_bridge/runtime.hpp"
 
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>

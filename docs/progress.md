@@ -130,7 +130,7 @@ docs/
   frb_and_cpp_bridge_design.md   # 设计全文
   progress.md                    # 本进度
   known_issues.md                # 技术债与已解问题
-include/dart_cpp_bridge/         # 公共头（含 channel / asio_executor）
+include/dart_cpp_bridge/         # 公共头（含 channel / runtime 含 IoContextScheduler）
 src/runtime|wire|ffi_entry       # 实现
 dart/lib + dart/test             # Dart 包与测试
 dcb_gen_tool/                    # CLI 工具 + parse/generate

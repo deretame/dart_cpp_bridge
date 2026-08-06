@@ -1230,7 +1230,7 @@ def parse_project(config_path: Path) -> dict[str, Any]:
 
     args = [f"-std={cfg['std']}", "-x", "c++"]
     # Disable clang's default error limit (20). The bridge runtime headers
-    # (asio_executor.hpp / runtime.hpp) and the fetched asio internals produce
+    # (runtime.hpp) and the fetched asio internals produce
     # benign parse diagnostics under libclang that we do not care about for
     # codegen. Without this, hitting the limit makes clang emit
     # "too many errors emitted, stopping now" and degrade later template types

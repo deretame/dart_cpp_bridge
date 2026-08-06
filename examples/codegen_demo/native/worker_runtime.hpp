@@ -11,7 +11,7 @@
 // co::oneshot channels. send() is non-blocking; recv() suspends the coroutine
 // (not the thread).
 
-#include "dart_cpp_bridge/asio_executor.hpp"
+#include "dart_cpp_bridge/runtime.hpp"
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
@@ -47,7 +47,6 @@ class WorkerRuntime {
         ioc_.get_executor());
     sched_ = std::make_shared<dcb::IoContextScheduler>(ioc_);
     thread_ = std::make_unique<std::thread>([this] { ioc_.run(); });
-    sched_->set_io_thread_id(thread_->get_id());
   }
 
   void stop() {

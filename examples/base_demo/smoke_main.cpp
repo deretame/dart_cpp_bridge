@@ -1,4 +1,3 @@
-#include "dart_cpp_bridge/asio_executor.hpp"
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
