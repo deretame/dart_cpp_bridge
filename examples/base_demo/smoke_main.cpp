@@ -4,6 +4,7 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/start_with_receiver.hpp"
+#include "dart_cpp_bridge/stream.hpp"
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
@@ -981,6 +982,46 @@ void test_bounded_mpsc_backpressure() {
   std::printf("bounded mpsc backpressure ok\n");
 }
 
+// Concurrent merge (merge_concurrent): two 5ms interval streams advance
+// concurrently, so the merged stream's first values contain both streams'
+// first tick (0 appears twice). A sequential merge would emit 0..5 instead.
+void test_merge_concurrent() {
+  using namespace dcb;
+  Runtime::instance().start();
+  auto* io = Runtime::instance().io_scheduler();
+
+  bool ok = std::get<0>(*dcb::sync_wait([io]() -> exec::task<bool> {
+    auto s1 = co::stream::interval_on<int>(*io, std::chrono::milliseconds(5));
+    auto s2 = co::stream::interval_on<int>(*io, std::chrono::milliseconds(5));
+    // Stream is move-only, so initializer_list ({...}) is not usable.
+    std::vector<co::stream::Stream<int>> srcs;
+    srcs.push_back(std::move(s1));
+    srcs.push_back(std::move(s2));
+    auto m = co::stream::merge_concurrent<int>(std::move(srcs));
+    std::vector<int> out;
+    for (int i = 0; i < 6; ++i) {
+      auto v = co_await m.next();
+      if (!v) break;
+      out.push_back(*v);
+    }
+    int zeros = 0;
+    for (int v : out) {
+      zeros += (v == 0);
+    }
+    std::printf("merge_concurrent: [");
+    for (std::size_t i = 0; i < out.size(); ++i) {
+      std::printf("%s%d", i ? "," : "", out[i]);
+    }
+    std::printf("] zeros=%d\n", zeros);
+    co_return zeros >= 2;
+  }()));
+
+  std::printf("%s\n", ok ? "merge_concurrent interleaved ok" : "merge_concurrent FAILED");
+  if (!ok) {
+    std::abort();
+  }
+}
+
 // Cross-thread strict FIFO: two producer threads send values taken from a
 // shared monotonically increasing counter through a small bounded channel
 // (forcing park/wake contention). The consumer must observe a strictly
@@ -1143,6 +1184,7 @@ int main() {
   test_bounded_mpsc_backpressure();
   test_bounded_mpsc_cross_thread_fifo();
   test_unbounded_mpsc_cross_thread();
+  test_merge_concurrent();
   // ForeignExecutor was removed in the stdexec migration; the foreign runtime
   // path is covered by examples/foreign_runtime_demo (UvScheduler + dart test).
 

@@ -117,6 +117,20 @@ class Stream {
   template <typename Sched>
   static Stream<T> interval_on(Sched sched, std::chrono::milliseconds period);
 
+  // Concurrently merge same-typed streams: every source stream is pulled by
+  // its own driver coroutine (started on the dcb runtime io thread) and
+  // values are emitted in arrival order. Unlike merge(), which alternates
+  // between streams sequentially, sources advance concurrently while they
+  // wait (timers, channels, ...). Ends when every source has ended.
+  //
+  //   auto m = co::stream::merge_concurrent<int>({std::move(a), std::move(b)});
+  //
+  // Caveats (same trade-off as merge_each / StreamSink late add): sources
+  // start being consumed at creation (not lazily), and if the consumer stops
+  // pulling early, the drivers keep running until the sources end.
+  // Defined in stream.hpp (needs dcb::Runtime + co::oneshot).
+  static Stream<T> merge_concurrent(std::vector<Stream<T>> sources);
+
   static Stream<T> once(T value)
   {
     return from_vector(std::vector<T>{std::move(value)});
