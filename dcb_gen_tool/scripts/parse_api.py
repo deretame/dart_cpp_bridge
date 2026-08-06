@@ -789,10 +789,21 @@ def _type_ir(
             if m:
                 return {"kind": "array", "inner": inner, "size": int(m.group(1))}
 
+    if s.startswith("std::map"):
+        args = _template_args(s)
+        if len(args) >= 2:
+            return {"kind": "map", "key": _rec(args[0]), "value": _rec(args[1]),
+                    "ordered": True}
+
     if s.startswith("std::unordered_map"):
         args = _template_args(s)
         if len(args) >= 2:
             return {"kind": "map", "key": _rec(args[0]), "value": _rec(args[1])}
+
+    if s.startswith("std::set"):
+        args = _template_args(s)
+        if args:
+            return {"kind": "set", "inner": _rec(args[0]), "ordered": True}
 
     if s.startswith("std::unordered_set"):
         args = _template_args(s)

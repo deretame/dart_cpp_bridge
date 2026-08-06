@@ -119,6 +119,18 @@ void main() {
     expect(await sumSet(values: {1, 2, 3}), 6);
   });
 
+  testWidgets('BRIDGE_ASYNC ordered map<std::string, int> sum_scores_ordered',
+      (tester) async {
+    expect(await sumScoresOrdered(scores: {}), 0);
+    expect(await sumScoresOrdered(scores: {'a': 1, 'b': 2, 'c': 3}), 6);
+  });
+
+  testWidgets('BRIDGE_ASYNC ordered set<int> sum_set_ordered',
+      (tester) async {
+    expect(await sumSetOrdered(values: <int>{}), 0);
+    expect(await sumSetOrdered(values: {1, 2, 3}), 6);
+  });
+
   testWidgets('BRIDGE_ASYNC Int128 echo_i128', (tester) async {
     final big = BigInt.parse('170141183460469231731687303715884105727');
     expect(await echoI128(value: big), big);

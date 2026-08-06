@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 #include <array>
+#include <map>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -121,8 +123,12 @@ class ByteWriter {
     }
   }
 
-  template <typename K, typename V, typename WriteKey, typename WriteValue>
-  void map(const std::unordered_map<K, V>& m, WriteKey write_key, WriteValue write_value) {
+  // Map write. The container type is deduced from the argument, so both
+  // std::map and std::unordered_map (and any std-compatible map) work.
+  template <typename K, typename V,
+            template <typename...> class Map = std::unordered_map,
+            typename WriteKey, typename WriteValue>
+  void map(const Map<K, V>& m, WriteKey write_key, WriteValue write_value) {
     u32(static_cast<std::uint32_t>(m.size()));
     for (const auto& [k, v] : m) {
       write_key(k);
@@ -130,8 +136,11 @@ class ByteWriter {
     }
   }
 
-  template <typename T, typename WriteValue>
-  void set(const std::unordered_set<T>& s, WriteValue write_value) {
+  // Set write. Container type deduced from the argument (std::set /
+  // std::unordered_set).
+  template <typename T, template <typename...> class Set = std::unordered_set,
+            typename WriteValue>
+  void set(const Set<T>& s, WriteValue write_value) {
     u32(static_cast<std::uint32_t>(s.size()));
     for (const auto& item : s) {
       write_value(item);
@@ -261,11 +270,19 @@ class ByteReader {
     return result;
   }
 
-  template <typename K, typename V, typename ReadKey, typename ReadValue>
-  std::unordered_map<K, V> map(ReadKey read_key, ReadValue read_value) {
+  // Map read. Defaults to std::unordered_map; pass the container as the
+  // third template argument for an ordered map:
+  //   r.map<K, V>(...)            -> std::unordered_map<K, V>
+  //   r.map<K, V, std::map>(...)  -> std::map<K, V>
+  template <typename K, typename V,
+            template <typename...> class Map = std::unordered_map,
+            typename ReadKey, typename ReadValue>
+  Map<K, V> map(ReadKey read_key, ReadValue read_value) {
     auto n = u32();
-    std::unordered_map<K, V> result;
-    result.reserve(n);
+    Map<K, V> result;
+    if constexpr (requires { result.reserve(n); }) {
+      result.reserve(n);
+    }
     for (std::uint32_t i = 0; i < n; ++i) {
       auto k = read_key();
       auto v = read_value();
@@ -274,11 +291,18 @@ class ByteReader {
     return result;
   }
 
-  template <typename T, typename ReadValue>
-  std::unordered_set<T> set(ReadValue read_value) {
+  // Set read. Defaults to std::unordered_set; pass the container as the
+  // second template argument for an ordered set:
+  //   r.set<T>(...)            -> std::unordered_set<T>
+  //   r.set<T, std::set>(...)  -> std::set<T>
+  template <typename T, template <typename...> class Set = std::unordered_set,
+            typename ReadValue>
+  Set<T> set(ReadValue read_value) {
     auto n = u32();
-    std::unordered_set<T> result;
-    result.reserve(n);
+    Set<T> result;
+    if constexpr (requires { result.reserve(n); }) {
+      result.reserve(n);
+    }
     for (std::uint32_t i = 0; i < n; ++i) {
       result.insert(read_value());
     }

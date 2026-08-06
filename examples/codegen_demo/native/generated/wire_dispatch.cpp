@@ -354,6 +354,23 @@ exec::task<void> Counter_greetDartFn_dispatch(
   co_return;
 }
 
+exec::task<void> sum_set_ordered_dispatch(std::shared_ptr<Session> session,
+                                          std::uint64_t gen, std::uint64_t req,
+                                          std::uint32_t method,
+                                          std::set<std::int32_t> values) {
+  try {
+    auto out = co_await ::demo::api::sum_set_ordered(values);
+    ByteWriter w;
+    w.i32(out);
+    post_ok(session, gen, req, method, w.raw());
+  } catch (const std::exception &e) {
+    post_err(session, gen, req, method, "sum_set_ordered", e.what());
+  } catch (...) {
+    post_err(session, gen, req, method, "sum_set_ordered", "unknown");
+  }
+  co_return;
+}
+
 exec::task<void> call_dart_from_worker_a_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, dcb::DartFn<std::string(std::string)> callback,
@@ -675,6 +692,23 @@ exec::task<void> test_cbridge_async_dispatch(std::shared_ptr<Session> session,
     post_err(session, gen, req, method, "test_cbridge_async", e.what());
   } catch (...) {
     post_err(session, gen, req, method, "test_cbridge_async", "unknown");
+  }
+  co_return;
+}
+
+exec::task<void>
+sum_scores_ordered_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                            std::uint64_t req, std::uint32_t method,
+                            std::map<std::string, std::int32_t> scores) {
+  try {
+    auto out = co_await ::demo::api::sum_scores_ordered(scores);
+    ByteWriter w;
+    w.i32(out);
+    post_ok(session, gen, req, method, w.raw());
+  } catch (const std::exception &e) {
+    post_err(session, gen, req, method, "sum_scores_ordered", e.what());
+  } catch (...) {
+    post_err(session, gen, req, method, "sum_scores_ordered", "unknown");
   }
   co_return;
 }
@@ -1370,6 +1404,14 @@ void dispatch_request(std::shared_ptr<Session> session,
   try {
     switch (method) {
 
+    case 10142861: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto values =
+          r.set<std::int32_t, std::set>([&]() { return r.i32(); });
+      spawn_on_io(sum_set_ordered_dispatch(session, gen, req, method, values));
+      break;
+    }
+
     case 36494560: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto sourceHandle = r.u64();
@@ -1643,6 +1685,15 @@ void dispatch_request(std::shared_ptr<Session> session,
           }),
           [](ByteWriter &w, const auto &out) { w.str(out); },
           "invoke_registered");
+      break;
+    }
+
+    case 601014207: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto scores = r.map<std::string, std::int32_t, std::map>(
+          [&]() { return r.str(); }, [&]() { return r.i32(); });
+      spawn_on_io(
+          sum_scores_ordered_dispatch(session, gen, req, method, scores));
       break;
     }
 

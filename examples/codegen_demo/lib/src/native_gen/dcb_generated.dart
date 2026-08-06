@@ -61,6 +61,7 @@ final class BridgeApiImpl {
       _instance = BridgeApiImpl._(bridge);
   static void disposeSingleton() => _instance = null;
 
+  static const int sumSetOrderedId = 10142861;
   static const int cloneWithOffsetId = 36494560;
   static const int callDartFromWorkerAId = 36798377;
   static const int collectAllDemoId = 38208963;
@@ -86,6 +87,7 @@ final class BridgeApiImpl {
   static const int testCbridgeInvokeId = 541474998;
   static const int testCbridgeAsyncId = 577957429;
   static const int invokeRegisteredId = 594957055;
+  static const int sumScoresOrderedId = 601014207;
   static const int echoBoolListId = 608718626;
   static const int pingWorkerId = 686903527;
   static const int collectAnyCancelDemoId = 727741271;
@@ -152,6 +154,20 @@ final class BridgeApiImpl {
   static const int counterGreetDartFnId = 1190014947;
   static const int counterTickStreamId = 550621099;
   static const int counterAliveCountId = 1338263248;
+
+  Future<int> sumSetOrdered(Set<int> values) async {
+    final _payload = ByteWriter();
+    _payload.u32(values.length);
+    for (final _v in values) {
+      _payload.i32(_v);
+    }
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      sumSetOrderedId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).i32();
+  }
 
   Counter cloneWithOffset(Counter source, int offset) {
     source.ensureAlive();
@@ -467,6 +483,21 @@ final class BridgeApiImpl {
       _payloadBytes,
     );
     return ByteReader(_bytes).str();
+  }
+
+  Future<int> sumScoresOrdered(Map<String, int> scores) async {
+    final _payload = ByteWriter();
+    _payload.u32(scores.length);
+    scores.forEach((final _k, final _v) {
+      _payload.str(_k);
+      _payload.i32(_v);
+    });
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      sumScoresOrderedId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).i32();
   }
 
   Future<List<bool>> echoBoolList(List<bool> values) async {

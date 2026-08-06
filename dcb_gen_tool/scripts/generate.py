@@ -254,8 +254,12 @@ def _cpp_type(t: dict[str, Any]) -> str:
     if k == "array":
         return f"std::array<{_cpp_type(t['inner'])}, {t['size']}>"
     if k == "set":
+        if t.get("ordered"):
+            return f"std::set<{_cpp_type(t['inner'])}>"
         return f"std::unordered_set<{_cpp_type(t['inner'])}>"
     if k == "map":
+        if t.get("ordered"):
+            return f"std::map<{_cpp_type(t['key'])}, {_cpp_type(t['value'])}>"
         return f"std::unordered_map<{_cpp_type(t['key'])}, {_cpp_type(t['value'])}>"
     if k == "i128":
         return "dcb::Int128"
@@ -876,10 +880,18 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
     if k == "set":
         inner = t["inner"]
         inner_t = _cpp_type(inner)
+        if t.get("ordered"):
+            return f"const auto {name} = r.set<{inner_t}, std::set>([&]() {{ return {_cpp_read_item(inner)}; }});"
         return f"const auto {name} = r.set<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
     if k == "map":
         key_t = _cpp_type(t["key"])
         value_t = _cpp_type(t["value"])
+        if t.get("ordered"):
+            return (
+                f"const auto {name} = r.map<{key_t}, {value_t}, std::map>("
+                f"[&]() {{ return {_cpp_read_item(t['key'])}; }}, "
+                f"[&]() {{ return {_cpp_read_item(t['value'])}; }});"
+            )
         return (
             f"const auto {name} = r.map<{key_t}, {value_t}>("
             f"[&]() {{ return {_cpp_read_item(t['key'])}; }}, "

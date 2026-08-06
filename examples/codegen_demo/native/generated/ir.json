@@ -19,7 +19,6 @@
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\dart\\native\\include",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\dcb_gen_tool\\stubs",
-    "-ID:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\build\\_deps\\asio-src\\asio\\include",
     "-ID:\\Project\\flutter\\dart_cpp_bridge\\third_party\\stdexec\\include",
     "-nostdinc",
     "-nostdinc++",
@@ -485,7 +484,7 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point",
-            "loc": "bridge_api.h:32"
+            "loc": "bridge_api.h:34"
           }
         },
         {
@@ -494,7 +493,7 @@
             "kind": "data_class",
             "name": "Point",
             "qualified": "demo::api::Point",
-            "loc": "bridge_api.h:33"
+            "loc": "bridge_api.h:35"
           }
         }
       ],
@@ -503,6 +502,32 @@
     }
   ],
   "functions": [
+    {
+      "name": "sum_set_ordered",
+      "qualified": "demo::api::sum_set_ordered",
+      "kind": "async",
+      "method_id": 10142861,
+      "args": [
+        {
+          "name": "values",
+          "type": {
+            "kind": "set",
+            "inner": {
+              "kind": "i32"
+            },
+            "ordered": true
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
     {
       "name": "cloneWithOffset",
       "qualified": "demo::api::cloneWithOffset",
@@ -1169,6 +1194,35 @@
       },
       "attrs": [
         "bridge::normal"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "sum_scores_ordered",
+      "qualified": "demo::api::sum_scores_ordered",
+      "kind": "async",
+      "method_id": 601014207,
+      "args": [
+        {
+          "name": "scores",
+          "type": {
+            "kind": "map",
+            "key": {
+              "kind": "string"
+            },
+            "value": {
+              "kind": "i32"
+            },
+            "ordered": true
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
       ],
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },

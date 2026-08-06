@@ -56,6 +56,9 @@ final class Rect {
 // Functions
 // ═════════════════════════════════════════════
 
+Future<int> sumSetOrdered({required Set<int> values}) =>
+    BridgeApiImpl.instance.sumSetOrdered(values);
+
 Future<String> collectAllDemo() => BridgeApiImpl.instance.collectAllDemo();
 
 Future<int> sumScores({required Map<String, int> scores}) =>
@@ -102,6 +105,9 @@ Future<int> sumArray({required List<int> values}) =>
 
 Future<String> invokeRegistered({required String input}) =>
     BridgeApiImpl.instance.invokeRegistered(input);
+
+Future<int> sumScoresOrdered({required Map<String, int> scores}) =>
+    BridgeApiImpl.instance.sumScoresOrdered(scores);
 
 Future<List<bool>> echoBoolList({required List<bool> values}) =>
     BridgeApiImpl.instance.echoBoolList(values);

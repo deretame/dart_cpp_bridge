@@ -10,7 +10,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -107,6 +109,15 @@ exec::task<std::int32_t> sum_scores(
 BRIDGE_ASYNC
 exec::task<std::int32_t> sum_set(
     std::unordered_set<std::int32_t> values);
+
+// async → Dart: Future<int> sumScoresOrdered(Map<String, int> scores)
+BRIDGE_ASYNC
+exec::task<std::int32_t> sum_scores_ordered(
+    std::map<std::string, std::int32_t> scores);
+
+// async → Dart: Future<int> sumSetOrdered(Set<int> values)
+BRIDGE_ASYNC
+exec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values);
 
 // async → Dart: Future<BigInt> echoI128(BigInt value)
 BRIDGE_ASYNC

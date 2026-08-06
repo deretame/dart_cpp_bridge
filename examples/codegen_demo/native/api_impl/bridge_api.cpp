@@ -115,6 +115,19 @@ exec::task<std::int32_t> sum_set(
   co_return total;
 }
 
+exec::task<std::int32_t> sum_scores_ordered(
+    std::map<std::string, std::int32_t> scores) {
+  std::int32_t total = 0;
+  for (const auto& [k, v] : scores) total += v;
+  co_return total;
+}
+
+exec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values) {
+  std::int32_t total = 0;
+  for (auto v : values) total += v;
+  co_return total;
+}
+
 exec::task<dcb::Int128> echo_i128(dcb::Int128 value) {
   co_return value;
 }
