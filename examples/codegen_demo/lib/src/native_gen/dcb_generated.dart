@@ -67,6 +67,7 @@ final class BridgeApiImpl {
   static const int sumScoresId = 66895156;
   static const int distanceId = 75330037;
   static const int failNormalId = 81397966;
+  static const int syncDownloadWithProgressId = 88691087;
   static const int pairEchoId = 237527086;
   static const int tupleEchoId = 243144110;
   static const int testForeignSleepId = 286391769;
@@ -77,7 +78,6 @@ final class BridgeApiImpl {
   static const int failAsyncId = 414051157;
   static const int failStreamId = 444673125;
   static const int downloadWithProgressId = 463555789;
-  static const int syncDownloadWithProgressId = 88691087;
   static const int startUvWorkerId = 482550500;
   static const int maybeDoubleId = 489154044;
   static const int addId = 513277594;
@@ -230,6 +230,18 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
+  String syncDownloadWithProgress(String url, StreamController<int>? progress) {
+    final _payload = ByteWriter();
+    _payload.str(url);
+    final _bytes = bridge.invokeSyncMethodWithStream<int>(
+      syncDownloadWithProgressId,
+      _payload,
+      progress,
+      (final _r) => _r.i32(),
+    );
+    return ByteReader(_bytes).str();
+  }
+
   Future<(int, String)> pairEcho((int, String) value) async {
     final _payload = ByteWriter();
     _payload.i32(value.$1);
@@ -351,13 +363,6 @@ final class BridgeApiImpl {
       progress,
       (final _r) => _r.i32(),
     );
-    return ByteReader(_bytes).str();
-  }
-
-  String syncDownloadWithProgress(String url, StreamController<int>? progress) {
-    final _payload = ByteWriter();
-    _payload.str(url);
-    final _bytes = bridge.invokeSyncMethodWithStream<int>(syncDownloadWithProgressId, _payload, progress, (final _r) => _r.i32());
     return ByteReader(_bytes).str();
   }
 

@@ -1,6 +1,6 @@
 # dart_cpp_bridge 已知问题与技术债
 
-> 更新日期：2026-08-05（新增 ID-012 至 ID-016：uv_scheduler 二次并发修复（dispose UAF / pop 窗口与 tail-orphan / teardown TOCTOU 与 timer 泄漏）与构建工具链陷阱（hook 依赖监控缺失 / stdexec execution.bs 下载失败）；ID-011 追加第 2 次修复记录）
+> 更新日期：2026-08-06（ID-017 追加补充说明：spawn_on_io 改回模板 + sender_in 泛型约束但 OOM 不复发的原因；新增 ID-021：uv 并发测试偶发挂起观察；目录同步）
 >
 > **维护规则（每次编辑本文件必须遵守）：**
 > 1. **更新日期**：每次增改内容后，把头部「更新日期」改成当天日期（YYYY-MM-DD）。
@@ -29,6 +29,8 @@
     - [2.2.4 [ID-008] UV_HANDLE_CLOSING 是 libuv 内部宏，公共代码应使用 uv_is_closing()](#224-id-008-uv_handle_closing-是-libuv-内部宏公共代码应使用-uv_is_closing)
     - [2.2.5 [ID-013] hook 依赖监控缺失——native/ 外的头文件修改不触发重建](#225-id-013-hook-依赖监控缺失native-外的头文件修改不触发重建)
     - [2.2.6 [ID-016] stdexec FetchContent 的 execution.bs 下载失败留 0 字节文件 → CMake VERSION "0..0"](#226-id-016-stdexec-fetchcontent-的-executionbs-下载失败留-0-字节文件--cmake-version-00)
+    - [2.2.7 [ID-017] 生成 wire 的 spawn_on_io 模板链在 MSVC 上峰值 >150 GB](#227-id-017-生成-wire-的-spawn_on_io-模板链在-msvc-上峰值-150-gb)
+    - [2.2.8 [ID-018] exec::task 内 co_await DartFn 触发 continues_on 包装 → MSVC 错误风暴 + ~140 GB 提交内存](#228-id-018-exectask-内-co_await-dartfn-触发-continues_on-包装--msvc-错误风暴--140-gb-提交内存)
   - [2.3 其它](#23-其它)
     - [2.3.1 [ID-009] MSVC 19.51 协程 lambda 捕获损坏（co_await 后按值捕获变量变垃圾值）](#231-id-009-msvc-1951-协程-lambda-捕获损坏co_await-后按值捕获变量变垃圾值)
     - [2.3.2 [ID-010] 协程内持有全局锁跨 co_await 阻塞 io 线程（并发请求死锁）](#232-id-010-协程内持有全局锁跨-co_await-阻塞-io-线程并发请求死锁)
@@ -36,6 +38,9 @@
     - [2.3.4 [ID-012] dispose() UAF——on_async 在 run() 后触碰已析构的嵌入式 opstate（0xC0000005）](#234-id-012-dispose-uafon_async-在-run-后触碰已析构的嵌入式-opstate0xc0000005)
     - [2.3.5 [ID-014] start 队列 pop 窗口竞态与 unlink tail-orphan（claim 基类化修复）](#235-id-014-start-队列-pop-窗口竞态与-unlink-tail-orphanclaim-基类化修复)
     - [2.3.6 [ID-015] teardown TOCTOU 与 stop() 时挂起 timer 泄漏](#236-id-015-teardown-toctou-与-stop-时挂起-timer-泄漏)
+    - [2.3.7 [ID-019] stdexec `inplace_stop_source::request_stop()` 返回值语义与 `std::stop_source` 相反（cancel_task 契约回归）](#237-id-019-stdexec-inplace_stop_sourcerequest_stop-返回值语义与-stdstop_source-相反cancel_task-契约回归)
+    - [2.3.8 [ID-020] stdexec 迁移中 cbridge DartFn 回调契约回归（错误改抛异常 / 丢失 "C:" 前缀）](#238-id-020-stdexec-迁移中-cbridge-dartfn-回调契约回归错误改抛异常--丢失-c-前缀)
+    - [2.3.9 [ID-021] codegen_demo 全量集成测试偶发挂起（libuv multiple concurrent requests 超时 5 分钟）](#239-id-021-codegen_demo-全量集成测试偶发挂起libuv-multiple-concurrent-requests-超时-5-分钟)
 
 ---
 
@@ -595,3 +600,160 @@ project(STDEXEC VERSION "0.${STD_EXECUTION_BS_REVISION}.0")
 - **方案**：用 curl 下载有效的 `execution.bs`（约 432 KB，`Revision: 11`）覆盖 `stdexec-build/execution.bs` 后重试 hook 构建；网络恢复时全量重建自然成功。
 - **验证**：覆盖后 hook 配置与构建成功；19/19 测试通过。
 - **遗留**：`file(DOWNLOAD)` 失败不留痕迹属上游 stdexec 行为；离线 / 弱网环境首次全量构建仍可能踩中。可选改进：vendored 版本（`third_party/stdexec`，固定 `VERSION "0.11.0"`，无此下载逻辑）替换 FetchContent。
+
+### [ID-017] 生成 wire 的 spawn_on_io 模板链在 MSVC 上峰值 >150 GB
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 已解决（2026-08-06，spawn_on_io 改为非模板 + 参数固定为 `exec::task<void>`）
+- **首次记录**：2026-08-06
+- **优先级**：高（编译直接 OOM）
+- **涉及模块**：`dcb_gen_tool/scripts/generate.py` 生成的 `wire_dispatch.cpp` / `wire_slice.cpp`
+- **影响**：生成的 dispatch 文件里，若 `spawn_on_io` 写成模板（按 dispatch 函数类型实例化 `starts_on/upon_error/upon_stopped/start_detached` 链），每个 dispatch 函数各实例化一整条链；几十个 dispatch 的模板实例化让 MSVC 峰值超过 150 GB（40 GB 沙盒直接 OOM / 本机换页卡死）。
+
+#### 问题描述与修复
+
+- **根因**：所有 dispatch 函数都返回 `exec::task<void>`，但模板版 `spawn_on_io(S&&)` 会按**每个调用点的 S 类型**（每个 dispatch 协程的 promise/状态机类型）重新实例化 `starts_on | upon_error | upon_stopped | start_detached` 整条链（约 131 个模板实例化 × 46 个 dispatch）。
+- **修复**：`spawn_on_io` 改为普通函数，参数固定为 `exec::task<void>`（按值）；所有 dispatch 协程的 task 都转换为该固定类型，整条链只实例化一次。`exec::task<void>` 的协程状态机类型一致，所以这是类型安全的。
+- **验证**：修复后 `wire_dispatch.cpp`（46 个 dispatch）Debug/Release 编译峰值约 1.0–1.3 GB，编译成功。
+- **遗留**：无（本条闭环）。
+
+#### 补充说明（2026-08-06）
+
+> 「遗留：无」之后继续演进：`spawn_on_io` 已改回**模板 + 泛型约束**形式（对齐 `examples/foreign_runtime_demo/native/generated/wire_dispatch.cpp` 参考实现），但 OOM **不会复发**，原因如下：
+> - 新签名：`template <class S> requires stdexec::sender_in<S, spawn_env_t> void spawn_on_io(S&& sndr)`。`spawn_env_t` 模拟 `starts_on(io_scheduler, sndr)` 实际提供给子 sender 的环境（`get_scheduler` / `get_start_scheduler` 均答 `dcb::IoContextScheduler`）；用 `sender_in<S, spawn_env_t>` 而非 `stdexec::sender`，是因为 `exec::task` 的 completion signatures 需要在该环境下计算（plain `sender` 概念会拒绝 `exec::task`）。
+> - 原文根因「按每个调用点的 S 类型实例化」在**当前生成代码中不再成立**：所有 dispatch 函数统一声明返回 `exec::task<void>`，调用点表达式类型一致 → S 推导为同一类型 → 整条链仍只实例化一次（编译实测约 1 GB 峰值、无 OOM）。当年 131 × 46 个实例化属于 async-simple `Lazy` 时代（每个 dispatch 返回不同的具体协程类型）。
+> - 额外收益：约束在调用点给出清晰编译错误（误传非 sender 时），注释已同步更新（不再引用 OOM 排查史）。
+
+### [ID-018] exec::task 内 co_await DartFn（dartfn_sender）触发 continues_on 包装 → MSVC 错误风暴 + ~140 GB 提交内存
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 已解决（2026-08-06，`dart_fn.hpp` 的 `dartfn_sender` 新增 `dartfn_env` 报告 `__asynchronous_affine`）
+- **首次记录**：2026-08-06
+- **优先级**：高（编译直接 OOM / 卡死）
+- **涉及模块**：`dart/native/include/dart_cpp_bridge/dart_fn.hpp`；业务代码（`api_impl/bridge_api.cpp`、`api_impl/counter.cpp`）里的 `co_await callback(...)`
+- **影响**：在 `exec::task` 协程里 `co_await` 一个 `DartFn`（如 `auto reply = co_await callback(name);`），MSVC 14.51 编译该翻译单元时（1）报 `stdexec/__variant.hpp(339): error C2338: static assertion failed: 'Type not in variant'`；（2）错误恢复阶段提交内存峰值约 140 GB（任务管理器显示 ~150 GB），40 GB 沙盒 OOM、本机 64 GB 疯狂换页卡死。
+
+#### 问题描述
+
+- **机制**：`DartFn::operator()` 返回 `dcb::detail::dartfn_sender<Ret>`（stdexec sender，内部 base 链为 `oneshot::Receiver | continues_on(io_scheduler) | then(decode)`）。`exec::task` 的 `promise::await_transform(sender)` 会检查 `__completes_where_it_starts<set_value_t, env_of_t<Sender>, promise_env>`：
+  - `dartfn_sender::get_env()` 原来返回 `base_.get_env()`（透传 `continues_on` 的 env，其 `__get_completion_behavior` 查询一路透传到底层 `oneshot::Receiver`，而 channel 的 receiver sender 没有该属性 → `__unknown` → 非 affine）。
+  - 非 affine → `await_transform` 把 sender 再包一层 `continues_on(get_start_scheduler(ctx), sndr)`。task 的 sticky 调度器是类型擦除的 `__any_scheduler`，于是实例化 `continues_on(__any_scheduler, schedule_from(...))` 链：
+    - `schedule_from` 需要把 completion 存进 `__variant`（value/error/stopped 三路），而 `dartfn_sender` 的 `completion_signatures` 只有 value/error 两路 → `__variant.hpp(339)` 静态断言失败；
+    - 断言失败后 MSVC 进入模板错误恢复，反复展开巨型模板签名（几十 KB/条 × 上百条错误）→ 提交内存爆炸到 ~140 GB。
+
+#### 修复（2026-08-06）
+
+- **方案**：`dartfn_sender` 新增自定义 env `dcb::detail::dartfn_env`，对 `stdexec::__get_completion_behavior_t<_Tag>` 查询返回 `__completion_behavior::__asynchronous_affine`（语义正确：base 链内建 `continues_on(io_scheduler)`，完成固定发生在 io 线程）；`get_env()` 改为返回 `dartfn_env{}`。
+- **效果（静态推演）**：`__completes_where_it_starts` 为 true → `exec::task::await_transform` 走 if 分支，**不再包 `continues_on`**；`as_awaitable` 落到 `__with_sender` → `__sender_awaiter`（identity 适配，直接 connect base 链）→ 无 `__any_scheduler` / `schedule_from` 组合 → 'Type not in variant' 消失，实例化量级与 wire_dispatch.cpp 相当（~1 GB）。
+- **兼容性**：
+  - `sync_wait(callback(...))` 等 sender 管道用法不受影响（connect 路径不依赖该 env 查询）；
+  - `starts_on(sched, dartfn)` 会因 affine 走 `get_completion_scheduler` 快速路径，运行语义不变（base 链决定实际完成线程）；
+  - 两个 stdexec 版本（FetchContent 下载版 `nvhp-26.05` 与 vendored `third_party/stdexec`）都有 `__get_completion_behavior_t` / `__completion_behavior` 内部 API。
+- **验证状态**：⚠️ 静态分析完成，**尚未编译验证**（本机不再裸跑 cl.exe 以防卡死；请在 40 GB 沙盒 / 有内存上限的环境验证）：逐个编译 `api_impl/bridge_api.cpp`、`api_impl/counter.cpp`（两者含 `co_await DartFn`，修复前错误风暴 + OOM），再编 `wire_dispatch.cpp` 与其余 api_impl 文件。
+- **遗留**：`foreign_api.cpp` / `multi_runtime_api.cpp` 里还有大量 `co_await` 裸 sender（`oneshot::Receiver`、`mpsc recv`、`dcb::sleep/async_wait`）。它们同样会走 `continues_on(__any_scheduler, ...)` 链，但 completion 签名含 set_stopped 且 variant 组合合法（无静态断言失败），历史上未报告 OOM；若沙盒里仍超限，可对同类 sender 套用同样的 affine env 方案（按各自实际完成上下文报告）。
+
+#### 编译验证（2026-08-06）
+
+- **结果**：已编译验证通过（本条闭环）
+- **验证**：codegen_demo 全量 hook 构建（MSVC 14.51，Debug）成功——`api_impl/bridge_api.cpp`、`api_impl/counter.cpp`、`wire_dispatch.cpp` 及全部 api_impl / 生成文件编译无错误风暴、无 OOM；`flutter test integration_test` 149/149 通过，其中覆盖 `co_await DartFn` 运行路径的有：`greet_dart_fn`、`opaque class Counter greetDartFn`、`DartFn from worker runtime call Dart callback from Worker A/B`、`10 concurrent DartFn from Worker A`、`10 concurrent DartFn split across A and B` 等。
+- **遗留**：无（「遗留」中提到的裸 sender 组合未触发 OOM，保持现状即可）。
+
+### [ID-019] stdexec `inplace_stop_source::request_stop()` 返回值语义与 `std::stop_source` 相反（cancel_task 契约回归）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 已解决（2026-08-06，codegen_demo 集成测试 149/149 通过）
+- **首次记录**：2026-08-06
+- **优先级**：高
+- **涉及模块**：`examples/codegen_demo/native/api_impl/bridge_api.cpp`（stdexec 迁移，C01-C06 取消测试）
+- **影响**：Dart `cancelTask` 的返回值与既有契约相反——调用方按 `std::stop_source` 语义判断"首次取消应返回 true"会误判为取消失败；实际取消功能正常（任务确实被取消），但 C02/C03/C04/C06 集成测试断言失败，且失败在 flutter test 里被渲染成难读的 stack_frame assertion。
+
+#### 问题描述
+
+迁移前（async-simple）`cancel_task` 返回 `signal->emits(SignalType::Terminate) != SignalType::None`：`emits` 返回**之前**的状态，因此 **true = 本次调用发起了取消**（标准语义）。迁移到 stdexec 后直接透传：
+
+```cpp
+return stop_source->request_stop();
+```
+
+而 stdexec 的 `inplace_stop_source::request_stop()`（`third_party/stdexec/include/stdexec/stop_token.hpp:263-297`）返回值语义**相反**：`__try_lock_unless_stop_requested_` 失败（已停止过）返回 `true`；本次调用首次发起 stop 返回 `false`。
+
+现象（`flutter test integration_test` C02 等 4 个用例失败）：
+
+- `cancelTask(taskId)` 返回 `false`，测试断言 `isTrue` 失败；
+- 任务**确实**被取消了：future 以 `StateError: ... task cancelled by signal: ...` 失败；
+- 由于 future 在 `_waitUntil` 轮询期间（`await expectLater(...)` 之前）就已失败，flutter test 报 unhandled async error；渲染错误栈时又触发 `flutter/src/foundation/stack_frame.dart:197` 的 assertion（`FlutterError.demangleStackTrace` 未设置的已知问题），真实错误被吞掉，只剩一段无头绪的框架栈。
+
+排查手段：临时调试测试（对 future 立即挂 `then(onError)` 打印）确认 `cancelResult=false` + 任务确实被取消，从而锁定是返回值语义问题而非取消未生效。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-06）
+
+- **结果**：已修复
+- **方案**（`bridge_api.cpp`）：反转返回值并注释语义差异：
+
+  ```cpp
+  // stdexec::inplace_stop_source::request_stop() has the OPPOSITE return
+  // semantics ... Invert it so the Dart API keeps the established contract:
+  // true = this call cancelled the task.
+  return !stop_source->request_stop();
+  ```
+
+  未改动生成代码：Dart 侧 `cancelTask` 纯透传 `bool`，契约在 C++ 实现 + 测试断言中（C01: 二次取消返回 false；C02/C03/C04: 首次取消返回 true；C05: 未知 id 返回 false）。
+- **验证**：修复后 `flutter test integration_test` 149/149 通过（C01-C06 全绿）。
+- **遗留**：无。同类陷阱提醒：迁移 async-simple `Signal::emits()` / 其它返回"之前状态"的 API 时，需逐一核对新 API 的返回值语义。
+
+### [ID-020] stdexec 迁移中 cbridge DartFn 回调契约回归（错误改抛异常 / 丢失 "C:" 前缀）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 已解决（2026-08-06，codegen_demo 集成测试 149/149 通过）
+- **首次记录**：2026-08-06
+- **优先级**：中
+- **涉及模块**：`examples/codegen_demo/native/api_impl/foreign_api.cpp`（`test_cbridge_invoke` / `on_dart_reply_pure_c`，cbridge pure C API 测试组）
+- **影响**：3 个 cbridge 集成测试失败：`dcb_invoke_dart_fn: Dart callback that throws`（期望返回 `ERROR:` 前缀字符串）、`pure C invoke: dcb_async_create + C callback + async_wait` 与 `pure C invoke: Dart callback with delay`（期望返回 `C:` 前缀字符串）。测试文件未改动，即这些是迁移引入的行为回归而非测试变更。
+
+#### 问题描述
+
+`test_cbridge_invoke`（DartFn 经 `dcb_invoke_dart_fn` 纯 C API 回调）：
+
+- 迁移前：C 回调里 Dart 抛异常时 `p->set_value(std::string("ERROR:") + error)`，错误以**正常返回值**字符串形式回到协程（`async_wait` 正常完成，`ByteReader::str()` 解出 "ERROR:..."）。
+- 迁移后：改成 `dcb_async_fail(c->op, error)` → `async_wait` 抛 `std::runtime_error` → wire 层 `post_err` → Dart 侧 `await` 抛 `StateError`。测试契约（`expect(result, startsWith('ERROR:'))`）被破坏。
+
+`on_dart_reply_pure_c`（pure-C 路径回调）：
+
+- 迁移前：成功路径**解码** Dart 返回值（`dcb_read_str`）、前置 `"C:"` 前缀（`snprintf`）、重新编码后 `dcb_async_complete`——演示"C 层加工回复"的完整流程。
+- 迁移后：被简化成原样透传 `dcb_async_complete(ctx->op_id, data, len)`，丢失前缀。测试期望 `C:dart-pure:hello` / `C:delayed:wait` 失败。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-06）
+
+- **结果**：已修复
+- **方案**（`foreign_api.cpp`，两处均恢复旧行为）：
+  - `test_cbridge_invoke` 的 C 回调：错误分支改为构造 `"ERROR:" + error` 字符串、经 `dcb_writer` 编码后 `dcb_async_complete` 正常完成（不再 `dcb_async_fail`）；纯 C 路径 `on_dart_reply_pure_c` 的错误分支保持 `dcb_async_fail`（对应测试 `pure C invoke: Dart callback that throws` 期望抛异常，两路径契约不同，不可互相套用）。
+  - `on_dart_reply_pure_c`：恢复 `dcb_reader` 解码 + `snprintf("C:%.*s")` 前缀 + `dcb_writer` 重新编码 + `dcb_async_complete`。
+- **验证**：修复后 `flutter test integration_test` 149/149 通过（cbridge pure C API 组 12 个用例全绿）。
+- **遗留**：无。安全性说明：`dcb_async_complete`（`cbridge.cpp:145`）内部 `r.data.assign(...)` 同步复制数据，回调内 `dcb_writer_free` 无 use-after-free；`snprintf` 以 `slen` 为精度、buffer 512 字节截断时仍 NUL 结尾，`dcb_write_str` 无越界。
+
+### [ID-021] codegen_demo 全量集成测试偶发挂起（libuv multiple concurrent requests 超时 5 分钟）
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 未解决（2026-08-06，偶发，未能稳定复现）
+- **首次记录**：2026-08-06
+- **优先级**：低
+- **涉及模块**：`examples/codegen_demo` 的 uv 相关测试（`libuv foreign runtime` 组的 `multiple concurrent requests`，4 个并发 `askUv`）与全量 `flutter test integration_test` 执行顺序
+- **影响**：全量测试偶发在该用例挂起约 5 分钟（integration_test 默认超时），随后所有剩余测试（含 setUpAll/tearDownAll）报 `did not complete`、进程以失败退出。同一份二进制后续 libuv 组单跑 15/15、全量重跑 149/149 均通过——不影响正常交付，但会浪费一次全量 CI 时间并造成误报。
+
+#### 问题描述
+
+现象（2026-08-06 观察一次，未能复现）：
+
+- 全量跑在 `+85`（`multiple concurrent requests`）卡住，从 00:01 到 05:25 无输出，随后全部剩余测试报 `did not complete`，`exit status 1`。
+- 卡住时计数停在 `+85` 不变 → 是第 85 个测试本身未完成，而非后续测试级联失败。
+- 同一份代码立即重跑：`--plain-name "libuv"` 单跑 15/15 通过（00:00）；全量重跑 149/149 通过（00:04）。
+
+根因推测（未证实）：`askUv` 应答链（uv 线程 `send` → oneshot channel → io 线程协程恢复 → `post_ok`）中某个环节偶发丢失响应（uv_scheduler 并发区域历史雷区 ID-011~015 的残余窗口），导致 `Future.wait` 永不完成。**与 spawn_on_io 模板化改动无关**：改动前后各跑多次，仅此一次挂起，且挂起点前后行为等价。
+
+#### 修复记录（按时间追加）
+
+（暂无——偶发未复现，未定位根因。若再次复现：优先抓 `multiple concurrent requests` 挂起时的 Dart 侧调用栈与 `pending_ops` 残留，检查 uv worker 的 start 队列与 oneshot channel 是否丢应答。）

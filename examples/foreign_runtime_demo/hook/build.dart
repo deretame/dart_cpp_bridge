@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:code_assets/code_assets.dart';
 import 'package:dart_cpp_bridge/hook.dart';
 import 'package:hooks/hooks.dart';
@@ -9,14 +7,14 @@ void main(List<String> args) async {
     if (!input.config.buildCodeAssets) {
       return;
     }
-    final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
     final config = switch (input.config.code.targetOS) {
-      OS.windows => WindowsConfig(cmake: cmake),
-      OS.linux => LinuxConfig(cmake: cmake),
-      OS.macOS => MacosConfig(cmake: cmake),
-      OS.iOS => IosConfig(cmake: cmake),
+      OS.windows => WindowsConfig(),
+      OS.linux => LinuxConfig(),
+      OS.macOS => MacosConfig(),
+      OS.iOS => IosConfig(),
       final os => throw UnsupportedError(
-          'foreign_runtime_demo does not support: $os'),
+        'foreign_runtime_demo does not support: $os',
+      ),
     };
     await DcbCMakeBuilder(
       config: config,

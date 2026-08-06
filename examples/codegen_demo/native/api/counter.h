@@ -4,7 +4,7 @@
 #include "dart_cpp_bridge/dart_fn.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
-#include <async_simple/coro/Lazy.h>
+#include <exec/task.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -26,27 +26,27 @@ class BRIDGE_OPAQUE Counter {
   /// Put custom cleanup logic here (close files, free resources, etc.).
   BRIDGE_DESTRUCTOR ~Counter();
 
-  BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> value() const;
+  BRIDGE_ASYNC exec::task<std::int32_t> value() const;
   BRIDGE_SYNC std::int32_t valueSync() const;
 
   /// Designated toString: codegen turns this into the Dart `toString()`
   /// override on the opaque wrapper (sync wire call).
   BRIDGE_TO_STRING std::string toString() const;
 
-  BRIDGE_ASYNC async_simple::coro::Lazy<void> increment(std::int32_t delta = 1);
+  BRIDGE_ASYNC exec::task<void> increment(std::int32_t delta = 1);
   BRIDGE_NORMAL std::int32_t sleepAndGet(std::int32_t sleepMs);
-  BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addList(
+  BRIDGE_ASYNC exec::task<std::int32_t> addList(
       const std::vector<std::int32_t>& values);
-  BRIDGE_ASYNC async_simple::coro::Lazy<void> setValue(
+  BRIDGE_ASYNC exec::task<void> setValue(
       std::optional<std::int32_t> value);
-  BRIDGE_ASYNC async_simple::coro::Lazy<Counter> duplicate() const;
+  BRIDGE_ASYNC exec::task<Counter> duplicate() const;
 
-  BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addTo(
+  BRIDGE_ASYNC exec::task<std::int32_t> addTo(
       const Counter& other);
 
   static BRIDGE_SYNC std::int32_t sum(std::int32_t a, std::int32_t b);
 
-  BRIDGE_ASYNC async_simple::coro::Lazy<std::string> greetDartFn(
+  BRIDGE_ASYNC exec::task<std::string> greetDartFn(
       dcb::DartFn<std::string(std::string)> callback, std::string name);
 
   BRIDGE_NORMAL void tickStream(dcb::StreamSink<std::int32_t> sink,
@@ -58,7 +58,7 @@ class BRIDGE_OPAQUE Counter {
 };
 
 /// Free function: sum two Counter values (opaque as parameter, borrow semantics).
-BRIDGE_ASYNC async_simple::coro::Lazy<std::int32_t> addCounters(
+BRIDGE_ASYNC exec::task<std::int32_t> addCounters(
     const Counter& a, const Counter& b);
 
 /// Free function: create a new Counter with source's value + offset

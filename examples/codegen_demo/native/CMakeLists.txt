@@ -64,7 +64,7 @@ endif()
 include("${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(${DCB_ROOT} ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
 
-# --- libuv (FetchContent) — required for foreign_executor tests ---
+# --- libuv (FetchContent) — required for the libuv worker tests ---
 include(FetchContent)
 set(LIBUV_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LIBUV_BUILD_BENCH OFF CACHE BOOL "" FORCE)
@@ -107,5 +107,5 @@ target_link_libraries(my_fancy_bridge PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> uv_a)
 
 if(WIN32)
-  target_compile_options(my_fancy_bridge PRIVATE /utf-8)
+  target_compile_options(my_fancy_bridge PRIVATE /utf-8 /Zm2000)
 endif()

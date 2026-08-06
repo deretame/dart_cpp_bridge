@@ -238,6 +238,10 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return "bool"
     if k == "string":
         return "std::string"
+    if k == "dart_fn":
+        # e.g. signature "std::string (std::string)" →
+        # dcb::DartFn<std::string (std::string)>
+        return f"dcb::DartFn<{t['signature']}>"
     if k == "enum":
         q = t["qualified"]
         if not q.startswith("::"):
@@ -489,11 +493,12 @@ def _cpp_data_class_helpers(classes: list[dict[str, Any]]) -> str:
 
 def _cpp_class_method_cases(
     classes: list[dict[str, Any]],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Generate C++ dispatch cases for opaque class methods (constructor,
-    instance, static)."""
+    instance, static). Returns (cases, sync_cases, async_fns)."""
     cases: list[str] = []
     sync_cases: list[str] = []
+    async_fns: list[str] = []
 
     for cls in classes:
         if cls.get("kind") != "opaque_class":
@@ -634,37 +639,43 @@ def _cpp_class_method_cases(
                 sync_cases.append(sync_body)
 
             elif kind == "async":
-                move_caps = ", ".join(
-                    f"{a['name']} = std::move({a['name']})"
-                    if a["type"].get("kind") == "string"
-                    else a["name"]
-                    for a in non_sink_args
-                )
-                handle_cap = "handle, obj, " if not is_static else ""
-                if move_caps:
-                    captures = handle_cap + move_caps
-                else:
-                    captures = handle_cap.rstrip(", ")
+                # Static coroutine functions (not lambdas): MSVC 19.51 has a
+                # coroutine-lambda capture bug (see docs/known_issues.md ID-009).
+                fn_params = ["std::shared_ptr<Session> session", "std::uint64_t session_id",
+                             "std::uint64_t gen", "std::uint64_t req", "std::uint32_t method"]
+                fn_args = ["session", "session_id", "gen", "req", "method"]
+                if not is_static:
+                    fn_params.append("std::shared_ptr<void> obj")
+                    fn_args.append("obj")
+                for a in non_sink_args:
+                    fn_params.append(f"{_cpp_type(a['type'])} {a['name']}")
+                    fn_args.append(
+                        f"std::move({a['name']})"
+                        if a["type"].get("kind") == "string"
+                        else a["name"]
+                    )
                 call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
                 fn_label = f"{class_name}::{m['name']}"
+                dispatch_fn = f"{class_name}_{m['name']}_dispatch"
+                async_fns.append(f"""
+exec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+  try {{
+    {call_stmt}
+    ByteWriter w;
+    {write}
+    post_ok(session, gen, req, method, w.raw());
+  }} catch (const std::exception& e) {{
+    post_err(session, gen, req, method, "{fn_label}", e.what());
+  }} catch (...) {{
+    post_err(session, gen, req, method, "{fn_label}", "unknown");
+  }}
+  co_return;
+}}""")
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {handle_block}
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method, session_id, {captures}]() -> async_simple::coro::Lazy<> {{
-              try {{
-                {call_stmt}
-                ByteWriter w;
-                {write}
-                post_ok(session, gen, req, method, w.raw());
-              }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, "{fn_label}", e.what());
-              }} catch (...) {{
-                post_err(session, gen, req, method, "{fn_label}", "unknown");
-              }}
-              co_return;
-            }});
+        spawn_on_io({dispatch_fn}({', '.join(fn_args)}));
         break;
       }}"""
                 cases.append(body)
@@ -676,36 +687,33 @@ def _cpp_class_method_cases(
                     else a["name"]
                     for a in non_sink_args
                 )
-                handle_cap = "handle, obj, " if not is_static else ""
-                if move_caps:
-                    lambda_extra = ", " + handle_cap + move_caps
+                obj_cap = "" if is_static else "handle, obj"
+                lambda_caps = ", ".join(
+                    x for x in (obj_cap, move_caps) if x
+                )
+                ret_kind = ret.get("kind")
+                if ret_kind == "void":
+                    ret_cpp = "dcb::Unit"
+                    call_stmt = f"{call};"
+                    encode_lambda = "[](ByteWriter& w, const dcb::Unit&) { (void)w; }"
                 else:
-                    lambda_extra = ", " + handle_cap.rstrip(", ") if handle_cap else ""
-                call_stmt = call + ";" if ret.get("kind") == "void" else f"auto out = {call};"
+                    ret_cpp = _cpp_type(ret)
+                    call_stmt = f"return {call};"
+                    encode_lambda = f"""[](ByteWriter& w, const auto& out) {{
+              {write}
+            }}"""
                 fn_label = f"{class_name}::{m['name']}"
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {handle_block}
-        auto* io = &Runtime::instance().io();
-        asio::post(Runtime::instance().pool(), [session, gen, req, method, io, session_id{lambda_extra}]() {{
-          try {{
-            {call_stmt}
-            asio::post(*io, [session, gen, req, method, session_id, out = std::move(out)]() {{
-              ByteWriter w;
-              {write}
-              post_ok(session, gen, req, method, w.raw());
-            }});
-          }} catch (const std::exception& e) {{
-            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {{
-              post_err(session, gen, req, method, "{fn_label}", msg);
-            }});
-          }} catch (...) {{
-            asio::post(*io, [session, gen, req, method]() {{
-              post_err(session, gen, req, method, "{fn_label}", "unknown");
-            }});
-          }}
-        }});
+        run_async<{ret_cpp}>(
+            session, gen, req, method,
+            dcb::spawn_blocking([{lambda_caps}]() {{
+              {call_stmt}
+            }}),
+            {encode_lambda},
+            "{fn_label}");
         break;
       }}"""
                 cases.append(body)
@@ -744,7 +752,7 @@ def _cpp_class_method_cases(
             else:
                 raise ValueError(f"kind not supported yet: {kind}")
 
-    return cases, sync_cases
+    return cases, sync_cases, async_fns
 
 
 def _dart_data_class_defs(
@@ -1483,6 +1491,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     inc_lines = "\n".join(f'#include "{p}"' for p in api_includes)
     cases = []
     sync_cases = []
+    async_fns: list[str] = []
 
     for fn in fns:
         mid = fn["method_id"]
@@ -1577,19 +1586,23 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             sync_cases.append(sync_body)
 
         elif kind == "async":
-            move_caps = ", ".join(
-                f"{a['name']} = std::move({a['name']})"
-                if a["type"].get("kind") == "string"
-                else a["name"]
-                for a in fn["args"]
-                if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
-            )
-            if move_caps:
-                move_caps = ", " + move_caps
+            # Static coroutine functions (not lambdas): MSVC 19.51 has a
+            # coroutine-lambda capture bug (see docs/known_issues.md ID-009).
+            fn_params = ["std::shared_ptr<Session> session", "std::uint64_t gen",
+                         "std::uint64_t req", "std::uint32_t method"]
+            fn_args = ["session", "gen", "req", "method"]
+            for a in fn["args"]:
+                if a["type"].get("kind") == "stream_sink" or _is_optional_sink_arg(a):
+                    continue
+                fn_params.append(f"{_cpp_type(a['type'])} {a['name']}")
+                fn_args.append(
+                    f"std::move({a['name']})"
+                    if a["type"].get("kind") == "string"
+                    else a["name"]
+                )
 
             # Optional sink setup (read stream_id, create sink if non-zero).
             sink_setup = ""
-            sink_capture = ""
             if opt_sink_arg:
                 sink_inner = opt_sink_arg["type"]["inner"]["inner"]
                 sink_encode = _cpp_write_item(sink_inner, "v")
@@ -1603,7 +1616,8 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             return w.raw();
           }});
         }}"""
-                sink_capture = ", sink = std::move(sink)"
+                fn_params.append(f"std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink")
+                fn_args.append("std::move(sink)")
 
             ret_kind = fn["return"].get("kind")
             if ret_kind == "void":
@@ -1611,24 +1625,27 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             else:
                 call_stmt = f"auto out = co_await {call};"
 
+            dispatch_fn = f"{fn['name']}_dispatch"
+            async_fns.append(f"""
+exec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+  try {{
+    {call_stmt}
+    ByteWriter w;
+    {write}
+    post_ok(session, gen, req, method, w.raw());
+  }} catch (const std::exception& e) {{
+    post_err(session, gen, req, method, "{fn['name']}", e.what());
+  }} catch (...) {{
+    post_err(session, gen, req, method, "{fn['name']}", "unknown");
+  }}
+  co_return;
+}}""")
+
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {reads}{sink_setup}
-        Runtime::instance().spawn_on_asio(
-            [session, gen, req, method{move_caps}{sink_capture}]() -> async_simple::coro::Lazy<> {{
-              try {{
-                {call_stmt}
-                ByteWriter w;
-                {write}
-                post_ok(session, gen, req, method, w.raw());
-              }} catch (const std::exception& e) {{
-                post_err(session, gen, req, method, "{fn['name']}", e.what());
-              }} catch (...) {{
-                post_err(session, gen, req, method, "{fn['name']}", "unknown");
-              }}
-              co_return;
-            }});
+        spawn_on_io({dispatch_fn}({', '.join(fn_args)}));
         break;
       }}"""
             cases.append(body)
@@ -1641,10 +1658,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
                 for a in fn["args"]
                 if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
             )
-            if move_caps:
-                lambda_extra = ", " + move_caps
-            else:
-                lambda_extra = ""
+            lambda_caps = move_caps
 
             # Optional sink setup for normal (thread pool) functions.
             sink_setup = ""
@@ -1663,38 +1677,33 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
           }});
         }}"""
                 sink_capture = ", sink = std::move(sink)"
+                lambda_caps = ", ".join(
+                    x for x in (lambda_caps, "sink = std::move(sink)") if x
+                )
 
             ret_kind = fn["return"].get("kind")
             if ret_kind == "void":
+                ret_cpp = "dcb::Unit"
                 call_stmt = f"{call};"
-                post_block = "post_ok(session, gen, req, method, {});"
+                encode_lambda = "[](ByteWriter& w, const dcb::Unit&) { (void)w; }"
             else:
-                call_stmt = f"auto out = {call};"
-                post_block = f"""asio::post(*io, [session, gen, req, method, out = std::move(out)]() {{
-              ByteWriter w;
+                ret_cpp = _cpp_type(fn["return"])
+                call_stmt = f"return {call};"
+                encode_lambda = f"""[](ByteWriter& w, const auto& out) {{
               {write}
-              post_ok(session, gen, req, method, w.raw());
-            }});"""
+            }}"""
 
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {reads}{sink_setup}
-        auto* io = &Runtime::instance().io();
-        asio::post(Runtime::instance().pool(), [session, gen, req, method, io{lambda_extra}{sink_capture}]() {{
-          try {{
-            {call_stmt}
-            {post_block}
-          }} catch (const std::exception& e) {{
-            asio::post(*io, [session, gen, req, method, msg = std::string(e.what())]() {{
-              post_err(session, gen, req, method, "{fn['name']}", msg);
-            }});
-          }} catch (...) {{
-            asio::post(*io, [session, gen, req, method]() {{
-              post_err(session, gen, req, method, "{fn['name']}", "unknown");
-            }});
-          }}
-        }});
+        run_async<{ret_cpp}>(
+            session, gen, req, method,
+            dcb::spawn_blocking([{lambda_caps}]() {{
+              {call_stmt}
+            }}),
+            {encode_lambda},
+            "{fn['name']}");
         break;
       }}"""
             cases.append(body)
@@ -1732,12 +1741,27 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         else:
             raise ValueError(f"kind not supported yet: {kind}")
 
-    class_cases, class_sync_cases = _cpp_class_method_cases(ir.get("classes", []))
+    class_cases, class_sync_cases, class_async_fns = _cpp_class_method_cases(ir.get("classes", []))
     cases.extend(class_cases)
     sync_cases.extend(class_sync_cases)
+    async_fns = class_async_fns + async_fns
 
     cases_s = "\n".join(cases) if cases else ""
     sync_s = "\n".join(sync_cases) if sync_cases else ""
+    async_fns_s = "\n".join(async_fns) if async_fns else ""
+
+    # Diagnostic aid (not for production): DCB_GEN_MAX_DISPATCH truncates the
+    # generated dispatch functions and cases so MSVC template-bloat OOM can be
+    # bisected by compiling increasingly large slices.
+    import os as _os
+
+    _max_dispatch = _os.environ.get("DCB_GEN_MAX_DISPATCH")
+    if _max_dispatch:
+        _n = int(_max_dispatch)
+        async_fns = async_fns[:_n]
+        cases = cases[:_n]
+        cases_s = "\n".join(cases) if cases else ""
+        async_fns_s = "\n".join(async_fns) if async_fns else ""
 
     cpp = f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 #include "wire_dispatch.hpp"
@@ -1749,15 +1773,19 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 #include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/start_with_receiver.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 {inc_lines}
 
-#include <async_simple/coro/Lazy.h>
-
-#include <asio/post.hpp>
+#include <stdexec/execution.hpp>
+#include <exec/start_detached.hpp>
+#include <exec/task.hpp>
 
 #include <chrono>
+#include <cstdio>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -1769,6 +1797,44 @@ namespace dcb {{
 namespace demo {{
 
 namespace {{
+
+// The environment starts_on(io_scheduler, sndr) actually provides to the
+// child sender: get_scheduler and get_start_scheduler both answer the io
+// scheduler. exec::task completion signatures are computed against this env
+// (they require get_start_scheduler), so `sender_in<S, spawn_env_t>` accepts
+// exec::task and rejects non-senders with a clear compile error at the call
+// site. (The plain stdexec::sender concept would reject exec::task: its
+// signatures are not computable in the root environment.)
+using spawn_env_t = decltype(stdexec::env{{
+    stdexec::prop{{stdexec::get_scheduler,
+                   std::declval<const dcb::IoContextScheduler&>()}},
+    stdexec::prop{{stdexec::get_start_scheduler,
+                   std::declval<const dcb::IoContextScheduler&>()}}}});
+
+// Launch a dispatch coroutine on the bridge io thread. The official
+// exec::start_detached terminates on set_error, so an upon_error log is
+// appended (the coroutine bodies below catch everything anyway). Every
+// dispatch function returns exec::task<void>, so S deduces to the same type
+// at every call site and the chain below instantiates exactly once.
+template <class S>
+  requires stdexec::sender_in<S, spawn_env_t>
+void spawn_on_io(S&& sndr) {{
+  exec::start_detached(
+      stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                         std::forward<S>(sndr)) |
+      stdexec::upon_error([](std::exception_ptr ep) noexcept {{
+          try {{
+            std::rethrow_exception(ep);
+          }} catch (const std::exception& e) {{
+            std::fprintf(stderr, "[wire] detached sender error: %s\\n", e.what());
+          }} catch (...) {{
+            std::fprintf(stderr, "[wire] detached sender error: unknown\\n");
+          }}
+        }}) |
+      stdexec::upon_stopped([]() noexcept {{
+        std::fprintf(stderr, "[wire] detached sender stopped\\n");
+      }}));
+}}
 
 void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
              std::uint32_t method, const std::vector<std::uint8_t>& payload) {{
@@ -1783,11 +1849,83 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
   s->try_post(gen, make_frame(MsgType::kResponseErr, req, method, w.raw()));
 }}
 
+// Receiver that turns a sender's completion into a Dart response frame:
+// set_value -> responseOk, set_error / set_stopped -> responseErr.
+// Same pattern as examples/base_demo/demo_api.cpp.
+template <typename T>
+struct DispatchReceiver {{
+  using receiver_concept = stdexec::receiver_tag;
+
+  std::shared_ptr<Session> session;
+  std::uint64_t gen{{0}};
+  std::uint64_t req{{0}};
+  std::uint32_t method{{0}};
+  std::string name;
+  std::function<void(ByteWriter&, const T&)> encode;
+
+  void set_value(T v) && noexcept {{
+    try {{
+      ByteWriter w;
+      encode(w, v);
+      post_ok(session, gen, req, method, w.raw());
+    }} catch (const std::exception& e) {{
+      post_err(session, gen, req, method, name.c_str(), e.what());
+    }} catch (...) {{
+      post_err(session, gen, req, method, name.c_str(), "unknown");
+    }}
+  }}
+
+  void set_error(std::exception_ptr ep) && noexcept {{
+    std::string msg = "unknown";
+    try {{
+      std::rethrow_exception(ep);
+    }} catch (const std::exception& e) {{
+      msg = e.what();
+    }} catch (...) {{
+    }}
+    post_err(session, gen, req, method, name.c_str(), msg);
+  }}
+
+  void set_stopped() && noexcept {{
+    post_err(session, gen, req, method, name.c_str(), "sender stopped");
+  }}
+}};
+
+// Offload a blocking business call to the thread pool via dcb::spawn_blocking
+// (its completion is delivered back on the io thread) and route the result
+// into a response frame. Replaces the old asio::post(pool) + asio::post(io)
+// double hop; exceptions from the business call become responseErr frames.
+template <typename T, stdexec::sender S, typename Encode>
+void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen,
+               std::uint64_t req, std::uint32_t method, S&& sndr,
+               Encode&& encode, const char* name) {{
+  try {{
+    auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                                    std::forward<S>(sndr));
+    auto rcvr = DispatchReceiver<T>{{
+        session, gen, req, method, name,
+        std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))}};
+    dcb::start_with_receiver(std::move(chain), std::move(rcvr));
+  }} catch (const std::exception& e) {{
+    post_err(session, gen, req, method, name, e.what());
+  }} catch (...) {{
+    post_err(session, gen, req, method, name, "unknown");
+  }}
+}}
+
 }}  // namespace
 
 {alive_counters}
 
 {cpp_helpers}
+
+namespace {{
+// Per-method dispatch coroutines are placed after the generated data-class
+// codecs and alive counters they reference.
+
+{async_fns_s}
+
+}}  // namespace
 
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len) {{

@@ -67,6 +67,11 @@ Future<double> distance({required Point a, required Point b}) =>
 Future<int> failNormal({required String msg}) =>
     BridgeApiImpl.instance.failNormal(msg);
 
+String syncDownloadWithProgress({
+  required String url,
+  StreamController<int>? progress,
+}) => BridgeApiImpl.instance.syncDownloadWithProgress(url, progress);
+
 Future<(int, String)> pairEcho({required (int, String) value}) =>
     BridgeApiImpl.instance.pairEcho(value);
 
@@ -83,11 +88,6 @@ Future<String> downloadWithProgress({
   required String url,
   StreamController<int>? progress,
 }) => BridgeApiImpl.instance.downloadWithProgress(url, progress);
-
-String syncDownloadWithProgress({
-  required String url,
-  StreamController<int>? progress,
-}) => BridgeApiImpl.instance.syncDownloadWithProgress(url, progress);
 
 Future<int?> maybeDouble({int? value}) =>
     BridgeApiImpl.instance.maybeDouble(value);

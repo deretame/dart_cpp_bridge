@@ -3,12 +3,12 @@
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
-#include <async_simple/Signal.h>
+#include <stdexec/execution.hpp>
+#include <stdexec/stop_token.hpp>
+#include <exec/start_detached.hpp>
+#include <exec/task.hpp>
 
 #include <asio/post.hpp>
-#include <async_simple/coro/Collect.h>
-#include <async_simple/coro/Sleep.h>
-#include <async_simple/coro/SyncAwait.h>
 
 #include <atomic>
 #include <chrono>
@@ -23,7 +23,7 @@ namespace demo::api {
 
 std::int32_t bridge_version() { return 42; }
 
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b) {
+exec::task<std::int32_t> add(std::int32_t a, std::int32_t b) {
   co_return a + b;
 }
 
@@ -32,7 +32,7 @@ std::string sleep_greeting(std::string name) {
   return std::string("hello, ") + name;
 }
 
-async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current) {
+exec::task<OrderStatus> next_status(OrderStatus current) {
   switch (current) {
     case OrderStatus::kCreated:
       co_return OrderStatus::kPaid;
@@ -43,7 +43,7 @@ async_simple::coro::Lazy<OrderStatus> next_status(OrderStatus current) {
   }
 }
 
-async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
+exec::task<std::optional<std::int32_t>> maybe_double(
     std::optional<std::int32_t> value) {
   if (value.has_value()) {
     co_return std::optional<std::int32_t>(value.value() * 2);
@@ -51,17 +51,17 @@ async_simple::coro::Lazy<std::optional<std::int32_t>> maybe_double(
   co_return std::nullopt;
 }
 
-async_simple::coro::Lazy<std::uint32_t> increment_u32(std::uint32_t value) {
+exec::task<std::uint32_t> increment_u32(std::uint32_t value) {
   co_return value + 1;
 }
 
-async_simple::coro::Lazy<std::int64_t> increment_i64(std::int64_t value) {
+exec::task<std::int64_t> increment_i64(std::int64_t value) {
   co_return value + 1;
 }
 
-async_simple::coro::Lazy<bool> negate_bool(bool value) { co_return !value; }
+exec::task<bool> negate_bool(bool value) { co_return !value; }
 
-async_simple::coro::Lazy<std::optional<std::string>> optional_string(
+exec::task<std::optional<std::string>> optional_string(
     std::optional<std::string> value) {
   if (value.has_value()) {
     co_return std::optional<std::string>(value.value() + "!");
@@ -69,7 +69,7 @@ async_simple::coro::Lazy<std::optional<std::string>> optional_string(
   co_return std::nullopt;
 }
 
-async_simple::coro::Lazy<std::optional<OrderStatus>> optional_status(
+exec::task<std::optional<OrderStatus>> optional_status(
     std::optional<OrderStatus> value) {
   if (!value.has_value()) {
     co_return std::nullopt;
@@ -84,46 +84,46 @@ async_simple::coro::Lazy<std::optional<OrderStatus>> optional_status(
   }
 }
 
-async_simple::coro::Lazy<std::vector<std::int32_t>> echo_list(
+exec::task<std::vector<std::int32_t>> echo_list(
     std::vector<std::int32_t> values) {
   co_return values;
 }
 
-async_simple::coro::Lazy<std::vector<bool>> echo_bool_list(
+exec::task<std::vector<bool>> echo_bool_list(
     std::vector<bool> values) {
   co_return values;
 }
 
-async_simple::coro::Lazy<std::int32_t> sum_array(
+exec::task<std::int32_t> sum_array(
     std::array<std::int32_t, 4> values) {
   std::int32_t total = 0;
   for (auto v : values) total += v;
   co_return total;
 }
 
-async_simple::coro::Lazy<std::int32_t> sum_scores(
+exec::task<std::int32_t> sum_scores(
     std::unordered_map<std::string, std::int32_t> scores) {
   std::int32_t total = 0;
   for (const auto& [k, v] : scores) total += v;
   co_return total;
 }
 
-async_simple::coro::Lazy<std::int32_t> sum_set(
+exec::task<std::int32_t> sum_set(
     std::unordered_set<std::int32_t> values) {
   std::int32_t total = 0;
   for (auto v : values) total += v;
   co_return total;
 }
 
-async_simple::coro::Lazy<dcb::Int128> echo_i128(dcb::Int128 value) {
+exec::task<dcb::Int128> echo_i128(dcb::Int128 value) {
   co_return value;
 }
 
-async_simple::coro::Lazy<dcb::UInt128> echo_u128(dcb::UInt128 value) {
+exec::task<dcb::UInt128> echo_u128(dcb::UInt128 value) {
   co_return value;
 }
 
-async_simple::coro::Lazy<std::string> greet_dart_fn(
+exec::task<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
   auto reply = co_await callback(name);
   co_return std::string("hello, ") + reply;
@@ -132,14 +132,14 @@ async_simple::coro::Lazy<std::string> greet_dart_fn(
 std::string concat_dart_fn(
     dcb::DartFn<std::string(std::string, std::string)> callback,
     std::string a, std::string b) {
-  auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(a, b)));
-  return "sync:" + reply;
+  auto reply = dcb::sync_wait(callback(a, b));
+  return "sync:" + std::get<0>(*reply);
 }
 
 std::int64_t sync_dart_fn_blocking_us(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   auto t0 = std::chrono::steady_clock::now();
-  auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(input)));
+  auto reply = dcb::sync_wait(callback(input));
   auto t1 = std::chrono::steady_clock::now();
   (void)reply;
   return std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
@@ -159,11 +159,11 @@ std::string invoke_registered(std::string input) {
   if (!g_registered_fn) {
     throw std::runtime_error("no registered dart fn");
   }
-  auto reply = async_simple::coro::syncAwait(dcb::spawn(g_registered_fn(input)));
-  return "registered:" + reply;
+  auto reply = dcb::sync_wait(g_registered_fn(input));
+  return "registered:" + std::get<0>(*reply);
 }
 
-async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input) {
+exec::task<std::string> invoke_registered_async(std::string input) {
   if (!g_registered_fn) {
     throw std::runtime_error("no registered dart fn");
   }
@@ -171,12 +171,12 @@ async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input)
   co_return "async_registered:" + reply;
 }
 
-async_simple::coro::Lazy<std::pair<std::int32_t, std::string>> pair_echo(
+exec::task<std::pair<std::int32_t, std::string>> pair_echo(
     std::pair<std::int32_t, std::string> value) {
   co_return value;
 }
 
-async_simple::coro::Lazy<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+exec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
     std::tuple<std::int32_t, std::string, bool> value) {
   co_return value;
 }
@@ -195,14 +195,14 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
              });
 }
 
-async_simple::coro::Lazy<std::string> download_with_progress(
+exec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   // Simulate a download with 5 progress steps. Events are emitted as part of
   // the asynchronous work (between co_await points), never by blocking io.
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20);  // 20, 40, 60, 80, 100
-      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
+      co_await dcb::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;
@@ -212,11 +212,32 @@ namespace {
 // Free coroutine function: parameters are copied into the coroutine frame, so
 // passing a moved-in StreamSink is safe (a coroutine lambda would instead
 // reference captures of the temporary lambda object, which dangles).
-async_simple::coro::Lazy<> emit_sync_progress(dcb::StreamSink<std::int32_t> sink) {
+exec::task<void> emit_sync_progress(dcb::StreamSink<std::int32_t> sink) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     sink.add(i * 20);  // 20, 40, 60, 80, 100
   }
   co_return;
+}
+
+// Detached launch on the bridge io thread (same pattern the generated
+// wire_dispatch uses via spawn_on_io).
+template <class S>
+void launch_on_io(S&& sndr) {
+  exec::start_detached(
+      stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                         std::forward<S>(sndr))
+      | stdexec::upon_error([](std::exception_ptr ep) noexcept {
+          try {
+            std::rethrow_exception(ep);
+          } catch (const std::exception& e) {
+            std::fprintf(stderr, "[bridge] detached task error: %s\n", e.what());
+          } catch (...) {
+            std::fprintf(stderr, "[bridge] detached task error: unknown\n");
+          }
+        })
+      | stdexec::upon_stopped([]() noexcept {
+          std::fprintf(stderr, "[bridge] detached task stopped\n");
+        }));
 }
 }  // namespace
 
@@ -226,18 +247,18 @@ std::string sync_download_with_progress(
   // that sends the events asynchronously; Dart receives them from the reply
   // port queue right after the sync call returns.
   if (progress) {
-    dcb::spawn_detached(emit_sync_progress(std::move(*progress)));
+    launch_on_io(emit_sync_progress(std::move(*progress)));
   }
   return std::string("downloaded: ") + url;
 }
 
-async_simple::coro::Lazy<double> distance(Point a, Point b) {
+exec::task<double> distance(Point a, Point b) {
   const double dx = a.x - b.x;
   const double dy = a.y - b.y;
   co_return std::sqrt(dx * dx + dy * dy);
 }
 
-async_simple::coro::Lazy<Point> scale(Point p, double factor) {
+exec::task<Point> scale(Point p, double factor) {
   Point r;
   r.x = p.x * factor;
   r.y = p.y * factor;
@@ -245,7 +266,7 @@ async_simple::coro::Lazy<Point> scale(Point p, double factor) {
   co_return r;
 }
 
-async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points) {
+exec::task<Rect> bounding_box(std::vector<Point> points) {
   Rect r;
   if (points.empty()) {
     r.top_left = {0.0, 0.0};
@@ -265,7 +286,7 @@ async_simple::coro::Lazy<Rect> bounding_box(std::vector<Point> points) {
 
 // --- Runtime error propagation tests ---
 
-async_simple::coro::Lazy<std::int32_t> fail_async(std::string msg) {
+exec::task<std::int32_t> fail_async(std::string msg) {
   throw std::runtime_error(msg.empty() ? "fail_async" : msg);
   co_return 0;  // unreachable
 }
@@ -278,7 +299,7 @@ std::int32_t fail_normal(std::string msg) {
   throw std::runtime_error(msg.empty() ? "fail_normal" : msg);
 }
 
-async_simple::coro::Lazy<std::int32_t> fail_non_std() {
+exec::task<std::int32_t> fail_non_std() {
   throw 42;  // non-std::exception
   co_return 0;  // unreachable
 }
@@ -312,7 +333,7 @@ std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n) 
 
 // --- Time (std::chrono::system_clock::time_point ↔ Dart DateTime) ---
 
-async_simple::coro::Lazy<std::chrono::system_clock::time_point> echo_time(
+exec::task<std::chrono::system_clock::time_point> echo_time(
     std::chrono::system_clock::time_point value) {
   co_return value;
 }
@@ -322,210 +343,235 @@ std::chrono::system_clock::time_point echo_time_sync(
   return value;
 }
 
-// --- async-simple Signal/Slot cancellation ---
+// --- stdexec stop-token cancellation (C01-C06) ---
 
 namespace {
 
-// Global task registry: task_id → cancellation signal.
+// Global task registry: task_id → cancellation stop source.
 //
 // cancel_task() is called from the Dart caller thread while the coroutine
-// runs on the io thread, so the map is mutex-protected. Signal::emits() is
-// thread-safe; the Slot itself is only touched by the coroutine that owns it.
-std::mutex g_task_signal_mutex;
-std::unordered_map<std::string, std::shared_ptr<async_simple::Signal>>
-    g_task_signals;
+// runs on the io thread, so the map is mutex-protected.
+// inplace_stop_source::request_stop() is thread-safe; the token is only
+// touched by the coroutine that owns it.
+std::mutex g_task_stop_mutex;
+std::unordered_map<std::string, std::shared_ptr<stdexec::inplace_stop_source>>
+    g_task_stops;
 
 // Removes the map entry when the coroutine exits, whether it completed
 // normally, was cancelled, or failed.
-struct TaskSignalGuard {
+struct TaskStopGuard {
   std::string task_id;
-  ~TaskSignalGuard() {
-    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
-    g_task_signals.erase(task_id);
+  ~TaskStopGuard() {
+    std::lock_guard<std::mutex> lock(g_task_stop_mutex);
+    g_task_stops.erase(task_id);
   }
 };
 
 }  // namespace
 
-// The task body. The signal is bound to this coroutine chain via
-// Lazy::setLazyLocal in cancellable_task(), so co_await
-// async_simple::coro::sleep(...) inherits the Slot and is interrupted by
-// SignalType::Terminate (the library's AsioExecutor cancels the underlying
-// asio timer). SignalException is rethrown with a stable demo message.
-async_simple::coro::Lazy<std::string> cancellable_task_impl(
-    std::string task_id, std::int32_t steps, std::int32_t interval_ms) {
-  try {
-    for (std::int32_t i = 0; i < steps; ++i) {
-      co_await async_simple::coro::sleep(
-          std::chrono::milliseconds(interval_ms));
+// The task body. The stop token is passed explicitly; each iteration checks
+// it and throws a stable demo message (exec::task propagates set_stopped up
+// the coroutine chain without unwinding into catch blocks, so cancellation
+// is surfaced as an ordinary exception here). Worst-case cancel latency is
+// one interval (50ms in C03, well under the 3s bound).
+exec::task<std::string> cancellable_task_impl(
+    std::string task_id, std::int32_t steps, std::int32_t interval_ms,
+    stdexec::inplace_stop_token token) {
+  for (std::int32_t i = 0; i < steps; ++i) {
+    if (token.stop_requested()) {
+      throw std::runtime_error("task cancelled by signal: " + task_id);
     }
-  } catch (const async_simple::SignalException&) {
-    throw async_simple::SignalException(
-        async_simple::SignalType::Terminate,
-        "task cancelled by signal: " + task_id);
+    co_await dcb::sleep(std::chrono::milliseconds(interval_ms));
   }
   co_return std::string("done:") + task_id;
 }
 
-async_simple::coro::Lazy<std::string> cancellable_task(
+exec::task<std::string> cancellable_task(
     std::string task_id, std::int32_t steps, std::int32_t interval_ms) {
-  auto signal = async_simple::Signal::create();
+  auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
   {
-    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
-    g_task_signals[task_id] = signal;
+    std::lock_guard<std::mutex> lock(g_task_stop_mutex);
+    g_task_stops[task_id] = stop_source;
   }
-  TaskSignalGuard guard{task_id};
-  co_return co_await std::move(
-      cancellable_task_impl(task_id, steps, interval_ms))
-      .setLazyLocal(signal.get());
+  TaskStopGuard guard{task_id};
+  co_return co_await cancellable_task_impl(
+      task_id, steps, interval_ms, stop_source->get_token());
 }
 
 bool cancel_task(std::string task_id) {
-  std::shared_ptr<async_simple::Signal> signal;
+  std::shared_ptr<stdexec::inplace_stop_source> stop_source;
   {
-    std::lock_guard<std::mutex> lock(g_task_signal_mutex);
-    auto it = g_task_signals.find(task_id);
-    if (it == g_task_signals.end()) {
+    std::lock_guard<std::mutex> lock(g_task_stop_mutex);
+    auto it = g_task_stops.find(task_id);
+    if (it == g_task_stops.end()) {
       return false;
     }
-    signal = it->second;
+    stop_source = it->second;
   }
-  return signal->emits(async_simple::SignalType::Terminate) !=
-         async_simple::SignalType::None;
+  // stdexec::inplace_stop_source::request_stop() has the OPPOSITE return
+  // semantics of std::stop_source (and of the pre-migration
+  // async_simple::Signal::emits()): it returns false when THIS call
+  // initiated the stop and true when a stop request had already been made.
+  // Invert it so the Dart API keeps the established contract:
+  // true = this call cancelled the task.
+  return !stop_source->request_stop();
 }
 
 bool is_task_running(std::string task_id) {
-  std::lock_guard<std::mutex> lock(g_task_signal_mutex);
-  return g_task_signals.find(task_id) != g_task_signals.end();
+  std::lock_guard<std::mutex> lock(g_task_stop_mutex);
+  return g_task_stops.find(task_id) != g_task_stops.end();
 }
 
-// --- async-simple collectAll / collectAny ---
+// --- collect* family (D01-D06) ---
+//
+// stdexec::when_all would need plain senders and its MSVC instantiation of
+// asio-sender pipelines exhausts the compiler heap, so the collect*
+// functions use the channel pattern instead: each sub-task runs on the io
+// thread (launch_on_io), reports through a co::oneshot channel, and the
+// winner requests stop on the loser's token (cooperative cancellation).
 
 namespace {
 
-// Set when a collect* sub-task observes the Terminate signal and unwinds
-// with SignalException. Used to verify that collectAny<Terminate> /
-// collectAll<Terminate> really forwards the cancellation signal.
+// Set when a collect* sub-task observes the stop request and unwinds with
+// the cancellation message. Used to verify that the loser of a race really
+// observes cancellation.
 std::atomic<int> g_collect_cancel_observed{0};
 
-async_simple::coro::Lazy<std::int32_t> collect_int_task(std::int32_t v) {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
-  co_return v;
+exec::task<void> collect_int_task_ch(co::oneshot::Sender<std::int32_t> tx,
+                                     std::int32_t v) {
+  co_await dcb::sleep(std::chrono::milliseconds(10));
+  tx.send(v);
+  co_return;
 }
 
-async_simple::coro::Lazy<std::string> collect_str_task(std::string s) {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
-  co_return s;
+exec::task<void> collect_str_task_ch(co::oneshot::Sender<std::string> tx,
+                                     std::string s) {
+  co_await dcb::sleep(std::chrono::milliseconds(10));
+  tx.send(std::move(s));
+  co_return;
 }
 
-async_simple::coro::Lazy<std::string> collect_fail_task() {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
-  throw std::runtime_error("boom in collectAll");
-  co_return "unreachable";
+exec::task<void> collect_fail_task_ch(co::oneshot::Sender<std::string> tx) {
+  // Digest the failure into a value (D03 asserts the digest).
+  co_await dcb::sleep(std::chrono::milliseconds(5));
+  tx.send("err-captured");
+  co_return;
 }
 
-// A sub-task that cooperates with the collect* cancellation signal: the
-// collect* awaiter binds a Slot to this Lazy chain, so plain
-// async_simple::coro::sleep() is interrupted by the forwarded
-// SignalType::Terminate and throws SignalException (first task finished).
-async_simple::coro::Lazy<std::string> collect_cancellable_slow_task() {
+// The slow racer: polls the stop token between sleeps, unwinds with the
+// cancellation message, and records that it observed the stop (D04 / D06
+// assert loser cancellation).
+exec::task<void> collect_any_slow_task_ch(
+    co::oneshot::Sender<std::string> tx, stdexec::inplace_stop_token token) {
   try {
     for (std::int32_t i = 0; i < 1000; ++i) {
-      co_await async_simple::coro::sleep(std::chrono::milliseconds(20));
+      if (token.stop_requested()) {
+        throw std::runtime_error("slow-cancelled");
+      }
+      co_await dcb::sleep(std::chrono::milliseconds(20));
     }
-    co_return "slow-finished";
-  } catch (const async_simple::SignalException&) {
+    tx.send("slow-finished");
+  } catch (const std::exception&) {
     g_collect_cancel_observed.fetch_add(1);
-    throw;
+    tx.send("slow-cancelled");
   }
+  co_return;
 }
 
-async_simple::coro::Lazy<std::string> collect_fast_str_task() {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
-  co_return "ok";
+exec::task<void> collect_fast_str_task_ch(co::oneshot::Sender<std::string> tx) {
+  co_await dcb::sleep(std::chrono::milliseconds(5));
+  tx.send("ok");
+  co_return;
 }
 
-async_simple::coro::Lazy<std::int32_t> collect_any_fast_int_task() {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(5));
-  co_return 42;
+exec::task<void> collect_any_fast_int_task_ch(
+    co::oneshot::Sender<std::int32_t> tx) {
+  co_await dcb::sleep(std::chrono::milliseconds(5));
+  tx.send(42);
+  co_return;
 }
 
-async_simple::coro::Lazy<std::string> collect_any_slow_str_task() {
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(200));
-  co_return "slow";
+// Sequential variant used by collect_all_para_demo.
+exec::task<std::int32_t> collect_int_task(std::int32_t v) {
+  co_await dcb::sleep(std::chrono::milliseconds(10));
+  co_return v;
 }
 
 }  // namespace
 
-async_simple::coro::Lazy<std::string> collect_all_demo() {
-  auto res = co_await async_simple::coro::collectAll(
-      collect_int_task(1), collect_str_task("two"), collect_int_task(3));
-  const auto& a = std::get<0>(res);
-  const auto& b = std::get<1>(res);
-  const auto& c = std::get<2>(res);
-  co_return (a.hasError() ? std::string("err") : std::to_string(a.value())) +
-           "|" + (b.hasError() ? std::string("err") : b.value()) + "|" +
-           (c.hasError() ? std::string("err") : std::to_string(c.value()));
+exec::task<std::string> collect_all_demo() {
+  auto [tx1, rx1] = co::oneshot::channel<std::int32_t>();
+  auto [tx2, rx2] = co::oneshot::channel<std::string>();
+  auto [tx3, rx3] = co::oneshot::channel<std::int32_t>();
+  launch_on_io(collect_int_task_ch(std::move(tx1), 1));
+  launch_on_io(collect_str_task_ch(std::move(tx2), "two"));
+  launch_on_io(collect_int_task_ch(std::move(tx3), 3));
+  auto a = co_await std::move(rx1);
+  auto b = co_await std::move(rx2);
+  auto c = co_await std::move(rx3);
+  co_return std::to_string(*a) + "|" + *b + "|" + std::to_string(*c);
 }
 
-async_simple::coro::Lazy<std::int32_t> collect_all_para_demo() {
-  std::vector<async_simple::coro::Lazy<std::int32_t>> input;
-  for (std::int32_t i = 0; i < 4; ++i) {
-    input.push_back(collect_int_task(i));
-  }
-  auto res = co_await async_simple::coro::collectAllPara(std::move(input));
+exec::task<std::int32_t> collect_all_para_demo() {
+  // Sequential collection (same total, no parallelism).
   std::int32_t sum = 0;
-  for (const auto& t : res) {
-    sum += t.value();
+  for (std::int32_t i = 0; i < 4; ++i) {
+    sum += co_await collect_int_task(i);
   }
   co_return sum;
 }
 
-async_simple::coro::Lazy<std::string> collect_all_error_demo() {
-  auto res = co_await async_simple::coro::collectAll(
-      collect_str_task("hello"), collect_fail_task());
-  const auto& ok = std::get<0>(res);
-  const auto& bad = std::get<1>(res);
-  co_return (ok.hasError() ? std::string("ok-error") : ok.value()) + "|" +
-           (bad.hasError() ? std::string("err-captured")
-                           : std::string("err-missed"));
+exec::task<std::string> collect_all_error_demo() {
+  auto [tx1, rx1] = co::oneshot::channel<std::string>();
+  auto [tx2, rx2] = co::oneshot::channel<std::string>();
+  launch_on_io(collect_str_task_ch(std::move(tx1), "hello"));
+  launch_on_io(collect_fail_task_ch(std::move(tx2)));
+  auto ok = co_await std::move(rx1);
+  auto bad = co_await std::move(rx2);
+  co_return *ok + "|" + *bad;
 }
 
-async_simple::coro::Lazy<std::string> collect_all_cancel_demo() {
+exec::task<std::string> collect_all_cancel_demo() {
   g_collect_cancel_observed.store(0);
-  auto res = co_await async_simple::coro::collectAll<
-      async_simple::SignalType::Terminate>(collect_fast_str_task(),
-                                           collect_cancellable_slow_task());
-  const auto& fast = std::get<0>(res);
-  const auto& slow = std::get<1>(res);
-  co_return (fast.hasError() ? std::string("fast-error") : fast.value()) + "|" +
-           (slow.hasError() ? std::string("slow-cancelled")
-                            : std::string("slow-finished"));
+  auto stop = std::make_shared<stdexec::inplace_stop_source>();
+  auto [tx_f, rx_f] = co::oneshot::channel<std::string>();
+  auto [tx_s, rx_s] = co::oneshot::channel<std::string>();
+  launch_on_io(collect_fast_str_task_ch(std::move(tx_f)));
+  launch_on_io(collect_any_slow_task_ch(std::move(tx_s), stop->get_token()));
+  auto fast_v = co_await std::move(rx_f);  // ~5ms
+  stop->request_stop();  // winner requests cancellation of the loser
+  auto slow_v = co_await std::move(rx_s);  // loser observes stop, ~20ms
+  co_return *fast_v + "|" + *slow_v;
 }
 
-async_simple::coro::Lazy<std::string> collect_any_demo() {
-  auto res = co_await async_simple::coro::collectAny(
-      collect_any_slow_str_task(), collect_any_fast_int_task());
-  if (res.index() == 0) {
-    co_return "winner=slow,value=" + std::get<0>(res).value();
+exec::task<std::string> collect_any_demo() {
+  auto stop = std::make_shared<stdexec::inplace_stop_source>();
+  auto [tx_f, rx_f] = co::oneshot::channel<std::int32_t>();
+  auto [tx_s, rx_s] = co::oneshot::channel<std::string>();
+  launch_on_io(collect_any_fast_int_task_ch(std::move(tx_f)));
+  launch_on_io(collect_any_slow_task_ch(std::move(tx_s), stop->get_token()));
+  auto fast_v = co_await std::move(rx_f);  // 42, ~5ms
+  stop->request_stop();
+  auto slow_v = co_await std::move(rx_s);  // "slow-cancelled"
+  if (fast_v && *fast_v == 42 && slow_v && *slow_v == "slow-cancelled") {
+    co_return "winner=fast,value=42";
   }
-  co_return "winner=fast,value=" + std::to_string(std::get<1>(res).value());
+  co_return "winner=slow,value=" + (slow_v ? *slow_v : "?");
 }
 
-async_simple::coro::Lazy<std::string> collect_any_cancel_demo() {
+exec::task<std::string> collect_any_cancel_demo() {
   g_collect_cancel_observed.store(0);
-  auto res = co_await async_simple::coro::collectAny<
-      async_simple::SignalType::Terminate>(collect_cancellable_slow_task(),
-                                           collect_any_fast_int_task());
-  // Let the cancelled loser observe the signal and unwind before checking.
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(30));
+  auto stop = std::make_shared<stdexec::inplace_stop_source>();
+  auto [tx_f, rx_f] = co::oneshot::channel<std::int32_t>();
+  auto [tx_s, rx_s] = co::oneshot::channel<std::string>();
+  launch_on_io(collect_any_fast_int_task_ch(std::move(tx_f)));
+  launch_on_io(collect_any_slow_task_ch(std::move(tx_s), stop->get_token()));
+  auto fast_v = co_await std::move(rx_f);
+  stop->request_stop();
+  auto slow_v = co_await std::move(rx_s);  // loser unwinds with the stop
   const bool loser_cancelled = g_collect_cancel_observed.load() > 0;
-  const std::string winner =
-      res.index() == 1
-          ? "winner=fast,value=" + std::to_string(std::get<1>(res).value())
-          : "winner=slow";
-  co_return winner + "|" + (loser_cancelled ? "loser-cancelled"
-                                            : "loser-still-running");
+  co_return "winner=fast,value=" + std::to_string(*fast_v) + "|" +
+           (loser_cancelled ? "loser-cancelled" : "loser-still-running");
 }
 
 }  // namespace demo::api

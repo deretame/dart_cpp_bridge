@@ -362,7 +362,7 @@ def _collect_classes(
                     else:
                         method_kind = "sync"  # default for constructors
 
-                    # Strip Lazy wrapper; wire payload carries the inner type.
+                    # Strip the task wrapper; wire payload carries the inner type.
                     was_lazy = ret.get("kind") == "lazy"
                     if was_lazy:
                         ret = ret["inner"]
@@ -391,7 +391,7 @@ def _collect_classes(
                             violations.append(
                                 f"method `{ch.spelling}` at {loc}: "
                                 f"BRIDGE_TO_STRING must be synchronous "
-                                f"(return std::string, not Lazy)"
+                                f"(return std::string, not a coroutine task)"
                             )
                         elif ret.get("kind") != "string":
                             violations.append(
@@ -761,7 +761,7 @@ def _type_ir(
             loc=loc,
         )
 
-    if s.startswith("async_simple::coro::Lazy"):
+    if s.startswith("exec::task") or s.startswith("stdexec::task"):
         args = _template_args(s)
         if args:
             return {"kind": "lazy", "inner": _rec(args[0])}
@@ -998,7 +998,7 @@ def _collect_functions(
                         file=sys.stderr,
                     )
                 return
-            # unwrap Lazy for return payload type
+            # unwrap the coroutine task wrapper for the return payload type
             ret_payload = ret["inner"] if ret.get("kind") == "lazy" else ret
             qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
             out.append(
@@ -1040,9 +1040,21 @@ def _clang_system_includes() -> list[str]:
     ``clang -E -x c++ - -v``.  Returns an empty list if clang is not
     available or detection fails.
     """
+    # Prefer `clang` on PATH; on Windows also probe common LLVM install
+    # locations (PATH may not include them).
+    import shutil
+
+    candidates = ["clang"]
+    candidates += [
+        r"C:\Program Files\LLVM\bin\clang.exe",
+        r"C:\Program Files (x86)\LLVM\bin\clang.exe",
+    ]
+    clang = next((c for c in candidates if shutil.which(c) or os.path.exists(c)), None)
+    if clang is None:
+        return []
     try:
         out = subprocess.check_output(
-            ["clang", "-E", "-x", "c++", "-", "-v"],
+            [clang, "-E", "-x", "c++", "-", "-v"],
             input=b"",
             stderr=subprocess.STDOUT,
             timeout=10,
@@ -1059,7 +1071,8 @@ def _clang_system_includes() -> list[str]:
         if line.startswith("End of search list"):
             in_inc = False
             continue
-        if in_inc and line.startswith("/"):
+        # Windows paths start with a drive letter (C:\...), POSIX with '/'.
+        if in_inc and (line.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", line)):
             incs.append(f"-I{line}")
     return incs
 
@@ -1217,9 +1230,9 @@ def parse_project(config_path: Path) -> dict[str, Any]:
 
     args = [f"-std={cfg['std']}", "-x", "c++"]
     # Disable clang's default error limit (20). The bridge runtime headers
-    # (asio_executor.hpp / runtime.hpp) and the fetched asio/async_simple
-    # internals produce benign parse diagnostics under libclang that we do not
-    # care about for codegen. Without this, hitting the limit makes clang emit
+    # (asio_executor.hpp / runtime.hpp) and the fetched asio internals produce
+    # benign parse diagnostics under libclang that we do not care about for
+    # codegen. Without this, hitting the limit makes clang emit
     # "too many errors emitted, stopping now" and degrade later template types
     # (e.g. std::vector<T>) to `int`, silently corrupting the IR on Windows
     # where the host-clang include detection below returns nothing.
@@ -1238,20 +1251,33 @@ def parse_project(config_path: Path) -> dict[str, Any]:
             deps = candidate
             break
     if deps is not None:
+        # stdexec is vendored (third_party/stdexec); no async-simple fetch
+        # remains. Keep the asio include for headers that use asio types.
         for inc in (
-            deps / "async_simple-src",
             deps / "asio-src" / "asio" / "include",
         ):
             if inc.is_dir():
                 cfg["include_paths"].append(inc)
 
-    # Auto-include stubs from dcb_gen_tool (async_simple/asio stub headers for
-    # parsing) via DCB_PACKAGE_ROOT env var set by the Dart CLI.
+    # The bridge runtime headers (dart_cpp_bridge/*.hpp) include the vendored
+    # stdexec (third_party/stdexec/include), which libclang must resolve so
+    # templates such as std::vector / exec::task are not degraded to `int`.
+    for ancestor in (base, *base.parents):
+        vendored = ancestor / "third_party" / "stdexec" / "include"
+        if vendored.is_dir():
+            cfg["include_paths"].append(vendored)
+            break
+
+    # Auto-include stubs from dcb_gen_tool (parse-only stub headers for
+    # dart_cpp_bridge/*, exec/ and asio/) via DCB_PACKAGE_ROOT env var set by
+    # the Dart CLI. Stubs take precedence over the real headers: libclang is
+    # not a full C++ compiler and the real stdexec/asio header chain does not
+    # parse cleanly enough to keep templates (std::vector etc.) undegraded.
     pkg_root = os.environ.get("DCB_PACKAGE_ROOT")
     if pkg_root:
         stubs = Path(pkg_root) / "stubs"
         if stubs.is_dir():
-            cfg["include_paths"].append(stubs)
+            cfg["include_paths"].insert(0, stubs)
 
     # Auto-include dart_cpp_bridge native headers by resolving the package
     # location from .dart_tool/package_config.json.

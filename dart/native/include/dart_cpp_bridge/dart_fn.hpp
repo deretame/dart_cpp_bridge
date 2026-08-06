@@ -21,6 +21,28 @@ namespace dcb {
 
 namespace detail {
 
+// Environment for dartfn_sender.
+//
+// The sender's base pipeline already bakes in continues_on(io_scheduler), so
+// its completion is always delivered on the bridge io thread (affine). We
+// report that explicitly: when a business coroutine co_awaits a DartFn inside
+// an exec::task, task's await_transform consults the sender's
+// __get_completion_behavior and — seeing affine — skips wrapping the sender
+// in continues_on(task_sticky_scheduler, ...).
+//
+// Without this, stdexec instantiates a continues_on(__any_scheduler,
+// schedule_from(...)) chain per co_await site. On MSVC 14.51 that chain
+// (a) fails `__variant.hpp: 'Type not in variant'` for the sender's
+// value/error-only completion signatures and (b) peaks >100 GB of commit
+// memory while doing so (see docs/known_issues.md).
+struct dartfn_env {
+  template <class Tag, class... Envs>
+  constexpr auto query(stdexec::__get_completion_behavior_t<Tag>,
+                       Envs const&...) const noexcept {
+    return stdexec::__completion_behavior::__asynchronous_affine;
+  }
+};
+
 // Sender that performs a DartFn reverse call: posts to Dart, waits for the
 // oneshot reply, migrates the completion to the io thread, decodes the
 // payload, and completes with Ret. Errors (channel closed, Dart-side failure,
@@ -67,7 +89,7 @@ struct dartfn_sender {
   dartfn_sender(const dartfn_sender&) = delete;
   dartfn_sender& operator=(const dartfn_sender&) = delete;
 
-  auto get_env() const noexcept { return base_.get_env(); }
+  auto get_env() const noexcept { return dartfn_env{}; }
 
   template <stdexec::receiver Rcvr>
   auto connect(Rcvr rcvr) && {

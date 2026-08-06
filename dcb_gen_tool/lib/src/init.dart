@@ -344,7 +344,7 @@ std::string heavy_compute(std::int32_t input) {
   return "computed: " + std::to_string(input * input);
 }
 
-async_simple::coro::Lazy<std::string> fetch_greeting(std::string name) {
+exec::task<std::string> fetch_greeting(std::string name) {
   co_return "Hello, " + name + "! (from coroutine)";
 }
 ''';
@@ -354,7 +354,7 @@ String _headerTemplate(String libName) => '''
 
 #include "dart_cpp_bridge/annotate.h"
 
-#include <async_simple/coro/Lazy.h>
+#include <exec/task.hpp>
 
 #include <cstdint>
 #include <string>
@@ -373,5 +373,5 @@ std::string heavy_compute(std::int32_t input);
 
 /// Coroutine async → Dart: Future<String> fetchGreeting(String name)
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> fetch_greeting(std::string name);
+exec::task<std::string> fetch_greeting(std::string name);
 ''';
