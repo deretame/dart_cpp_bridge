@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dart_cpp_bridge/stream.hpp"
+#include "dart_cpp_bridge/stream_base.hpp"
 
 #include <rigtorp/MPMCQueue.h>
 
