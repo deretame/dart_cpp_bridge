@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feat/stdexec-migration
   pull_request:
     branches:
       - main
