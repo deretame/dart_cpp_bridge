@@ -9,6 +9,7 @@
 #include "dart_cpp_bridge/dcb_codec.h"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
+#include "dart_cpp_bridge/stream.hpp"
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <stdexec/execution.hpp>
@@ -101,6 +102,30 @@ exec::task<std::string> ask_uv(std::string message) {
     throw std::runtime_error("uv worker dropped");
   }
   co_return *reply;
+}
+
+exec::task<std::int32_t> uv_interval_demo(std::int32_t count,
+                                          std::int32_t interval_ms) {
+  UvScheduler sched;
+  {
+    std::lock_guard lock(g_mu);
+    if (!g_uv_worker || !g_uv_worker->running()) {
+      throw std::runtime_error("uv worker not running");
+    }
+    sched = g_uv_worker->scheduler();
+  }
+
+  // Ticks run on the uv worker's own timed scheduler: after the first
+  // co_await the coroutine resumes on the uv loop thread (dcb::sleep with an
+  // explicit scheduler), so the dcb runtime io thread is not involved at all.
+  auto s = co::stream::interval_on<std::int32_t>(
+      sched, std::chrono::milliseconds(interval_ms));
+  std::int32_t n = 0;
+  while (auto v = co_await s.next()) {
+    (void)v;
+    if (++n >= count) break;
+  }
+  co_return n;
 }
 
 exec::task<std::int32_t> uv_compute(std::int32_t n) {

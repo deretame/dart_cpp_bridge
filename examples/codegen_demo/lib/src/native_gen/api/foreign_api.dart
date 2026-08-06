@@ -46,6 +46,9 @@ Future<int> uvCompute({required int n}) => BridgeApiImpl.instance.uvCompute(n);
 Future<String> testForeignSleepCancel() =>
     BridgeApiImpl.instance.testForeignSleepCancel();
 
+Future<int> uvIntervalDemo({required int count, required int intervalMs}) =>
+    BridgeApiImpl.instance.uvIntervalDemo(count, intervalMs);
+
 Future<String> askUv({required String message}) =>
     BridgeApiImpl.instance.askUv(message);
 

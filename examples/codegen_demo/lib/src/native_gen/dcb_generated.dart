@@ -123,6 +123,7 @@ final class BridgeApiImpl {
   static const int testForeignSleepCancelId = 1614762534;
   static const int collectAllCancelDemoId = 1616407596;
   static const int tickStreamId = 1673543649;
+  static const int uvIntervalDemoId = 1695622618;
   static const int registerDartFnId = 1702006080;
   static const int collectAnyDemoId = 1731712822;
   static const int askUvId = 1739046069;
@@ -932,6 +933,18 @@ final class BridgeApiImpl {
       _payload.takeBytes(),
       (final _r) => _r.i32(),
     );
+  }
+
+  Future<int> uvIntervalDemo(int count, int intervalMs) async {
+    final _payload = ByteWriter();
+    _payload.i32(count);
+    _payload.i32(intervalMs);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(
+      uvIntervalDemoId,
+      _payloadBytes,
+    );
+    return ByteReader(_bytes).i32();
   }
 
   bool registerDartFn(Future<String> Function(String) callback) {

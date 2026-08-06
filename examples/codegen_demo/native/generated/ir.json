@@ -2067,6 +2067,35 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "uv_interval_demo",
+      "qualified": "demo::api::uv_interval_demo",
+      "kind": "async",
+      "method_id": 1695622618,
+      "args": [
+        {
+          "name": "count",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        },
+        {
+          "name": "interval_ms",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "i32"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\foreign_api.h"
+    },
+    {
       "name": "register_dart_fn",
       "qualified": "demo::api::register_dart_fn",
       "kind": "sync",

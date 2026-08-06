@@ -27,6 +27,12 @@ exec::task<std::string> stop_uv_worker();
 BRIDGE_ASYNC
 exec::task<std::string> ask_uv(std::string message);
 
+/// Consume co::stream::interval_on on the uv worker's own timed scheduler
+/// (ticks run entirely on the uv loop thread, not the dcb runtime io thread).
+BRIDGE_ASYNC
+exec::task<std::int32_t> uv_interval_demo(std::int32_t count,
+                                          std::int32_t interval_ms);
+
 /// Get a computed result from libuv worker (demonstrates CPU task on uv thread).
 BRIDGE_ASYNC
 exec::task<std::int32_t> uv_compute(std::int32_t n);

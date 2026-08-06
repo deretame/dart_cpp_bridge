@@ -1177,6 +1177,24 @@ collect_all_cancel_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
+exec::task<void> uv_interval_demo_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method,
+                                           std::int32_t count,
+                                           std::int32_t interval_ms) {
+  try {
+    auto out = co_await ::demo::api::uv_interval_demo(count, interval_ms);
+    ByteWriter w;
+    w.i32(out);
+    post_ok(session, gen, req, method, w.raw());
+  } catch (const std::exception &e) {
+    post_err(session, gen, req, method, "uv_interval_demo", e.what());
+  } catch (...) {
+    post_err(session, gen, req, method, "uv_interval_demo", "unknown");
+  }
+  co_return;
+}
+
 exec::task<void> collect_any_demo_dispatch(std::shared_ptr<Session> session,
                                            std::uint64_t gen, std::uint64_t req,
                                            std::uint32_t method) {
@@ -2043,6 +2061,15 @@ void dispatch_request(std::shared_ptr<Session> session,
                                                   return w.raw();
                                                 });
       ::demo::api::tick_stream(std::move(sink), count, interval_ms);
+      break;
+    }
+
+    case 1695622618: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto count = r.i32();
+      const auto interval_ms = r.i32();
+      spawn_on_io(uv_interval_demo_dispatch(session, gen, req, method, count,
+                                            interval_ms));
       break;
     }
 

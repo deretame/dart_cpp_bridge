@@ -106,6 +106,17 @@ class Stream {
   // singleton from dart_cpp_bridge/runtime.hpp).
   static Stream<T> interval(std::chrono::milliseconds period);
 
+  // Same as interval(), but ticks on the given timed scheduler (any type
+  // providing `schedule_after(duration)`, e.g. dcb::IoContextScheduler or
+  // the libuv-backed UvScheduler). The interval continues to work for
+  // runtimes that are not the global dcb Runtime:
+  //
+  //   auto s = co::stream::interval_on(uv_worker.scheduler(), 100ms);
+  //
+  // Defined in stream.hpp alongside interval().
+  template <typename Sched>
+  static Stream<T> interval_on(Sched sched, std::chrono::milliseconds period);
+
   static Stream<T> once(T value)
   {
     return from_vector(std::vector<T>{std::move(value)});

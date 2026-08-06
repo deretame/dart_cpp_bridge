@@ -920,6 +920,18 @@ void main() {
       await stopUvWorker();
     });
 
+    testWidgets('uv_interval_demo: interval_on ticks on uv timed scheduler',
+        (tester) async {
+      await startUvWorker();
+
+      // Ticks run on the uv worker's own scheduler (custom timed scheduler),
+      // not on the dcb runtime io thread.
+      expect(await uvIntervalDemo(count: 3, intervalMs: 30), 3);
+      expect(await uvIntervalDemo(count: 1, intervalMs: 5), 1);
+
+      await stopUvWorker();
+    });
+
     testWidgets('multiple concurrent requests', (tester) async {
       await startUvWorker();
 

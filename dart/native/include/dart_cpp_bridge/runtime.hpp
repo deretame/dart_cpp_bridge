@@ -66,6 +66,21 @@ class IoContextScheduler {
     return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
   }
 
+  // Timed scheduling on the io_context: asio::steady_timer +
+  // async_wait(use_sender). This is what makes the scheduler usable as a
+  // timed scheduler (schedule_after) by dcb::sleep / co::stream::interval.
+  // Completion: set_value_t() on the io thread; cancellation via the
+  // standard stop_token machinery (stop cancels the timer, set_stopped).
+  template <typename Rep, typename Period>
+  stdexec::sender auto schedule_after(std::chrono::duration<Rep, Period> dur) const noexcept {
+    // The timer must outlive the pending async operation: the shared_ptr is
+    // held by the then-step until the pipeline completes (or is cancelled).
+    auto timer = std::make_shared<asio::steady_timer>(*ioc_);
+    timer->expires_after(dur);
+    return timer->async_wait(exec::asio::use_sender)
+         | stdexec::then([timer] { (void)timer; });
+  }
+
   asio::io_context& io() const noexcept { return *ioc_; }
 
   asio::io_context::executor_type executor() const noexcept {
@@ -247,21 +262,27 @@ auto spawn_blocking(F&& f, Sched sched = detail::default_blocking_scheduler())
        | stdexec::continues_on(*rt.io_scheduler());
 }
 
-// Sleep for `dur` on the runtime's io scheduler (official exec::asio adapter:
-// asio::steady_timer + async_wait(use_sender); the io thread stays
-// responsive). Completion: set_value_t() on the io thread. Supports
-// cancellation through the standard stop_token machinery (write_env with an
-// inplace_stop_token; a stop request cancels the timer and completes with
-// set_stopped).
-template <typename Rep, typename Period>
-stdexec::sender auto sleep(std::chrono::duration<Rep, Period> dur) {
-  auto& rt = Runtime::instance();
-  // The timer must outlive the pending async operation: the shared_ptr is
-  // held by the then-step until the pipeline completes (or is cancelled).
-  auto timer = std::make_shared<asio::steady_timer>(rt.io());
-  timer->expires_after(dur);
-  return timer->async_wait(exec::asio::use_sender)
-       | stdexec::then([timer] { (void)timer; });
+// Sleep for `dur` on a timed scheduler. Defaults to the runtime's io
+// scheduler (official exec::asio adapter: asio::steady_timer +
+// async_wait(use_sender); the io thread stays responsive). Completion:
+// set_value_t() on the scheduler's own thread. Supports cancellation through
+// the standard stop_token machinery (a stop request cancels the timer and
+// completes with set_stopped).
+//
+// Any scheduler providing `schedule_after(duration)` works, e.g. the
+// libuv-backed UvScheduler in codegen_demo:
+//
+//   co_await dcb::sleep(100ms);              // runtime io thread
+//   co_await dcb::sleep(100ms, uv_sched);    // custom timed scheduler
+//
+// Durations are truncated to milliseconds (the granularity every current
+// timed scheduler implements).
+template <typename Rep, typename Period,
+          typename Sched = std::decay_t<decltype(*Runtime::instance().io_scheduler())>>
+  requires requires(Sched s, std::chrono::milliseconds ms) { s.schedule_after(ms); }
+stdexec::sender auto sleep(std::chrono::duration<Rep, Period> dur,
+                           Sched sched = *Runtime::instance().io_scheduler()) {
+  return sched.schedule_after(std::chrono::duration_cast<std::chrono::milliseconds>(dur));
 }
 
 }  // namespace dcb

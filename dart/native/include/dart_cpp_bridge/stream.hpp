@@ -23,26 +23,40 @@ namespace co::stream {
 template <typename T>
 Stream<T> Stream<T>::interval(std::chrono::milliseconds period)
 {
+  return interval_on(*dcb::Runtime::instance().io_scheduler(), period);
+}
+
+template <typename T>
+template <typename Sched>
+Stream<T> Stream<T>::interval_on(Sched sched, std::chrono::milliseconds period)
+{
   static_assert(std::is_integral_v<T>, "interval requires integral type");
   struct Impl : StreamImpl<T> {
+    Sched sched;
     std::chrono::milliseconds period;
     T counter = 0;
-    explicit Impl(std::chrono::milliseconds p) : period(p) {}
+    Impl(Sched s, std::chrono::milliseconds p) : sched(std::move(s)), period(p) {}
 
     exec::task<std::optional<T>> next() override
     {
-      co_await dcb::sleep(period);
+      co_await dcb::sleep(period, sched);
       co_return counter++;
     }
 
   };
-  return Stream<T>(std::make_unique<Impl>(period));
+  return Stream<T>(std::make_unique<Impl>(std::move(sched), period));
 }
 
 template <typename T>
 Stream<T> interval(std::chrono::milliseconds period)
 {
   return Stream<T>::interval(period);
+}
+
+template <typename T, typename Sched>
+Stream<T> interval_on(Sched sched, std::chrono::milliseconds period)
+{
+  return Stream<T>::interval_on(std::move(sched), period);
 }
 
 }  // namespace co::stream
