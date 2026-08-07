@@ -17,7 +17,6 @@
 #include "api/multi_runtime_api.h"
 
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 #include <stdexec/execution.hpp>
 
 #include <chrono>
@@ -38,11 +37,9 @@ namespace {
 
 // The environment starts_on(io_scheduler, sndr) actually provides to the
 // child sender: get_scheduler and get_start_scheduler both answer the io
-// scheduler. exec::task completion signatures are computed against this env
-// (they require get_start_scheduler), so `sender_in<S, spawn_env_t>` accepts
-// exec::task and rejects non-senders with a clear compile error at the call
-// site. (The plain stdexec::sender concept would reject exec::task: its
-// signatures are not computable in the root environment.)
+// scheduler. stdexec::task's completion signatures are env-independent, but
+// `sender_in<S, spawn_env_t>` is kept so non-senders are rejected with a
+// clear compile error at the call site while stdexec::task is accepted.
 using spawn_env_t = decltype(stdexec::env{
     stdexec::prop{stdexec::get_scheduler,
                   std::declval<const dcb::IoContextScheduler &>()},
@@ -52,7 +49,7 @@ using spawn_env_t = decltype(stdexec::env{
 // Launch a dispatch coroutine on the bridge io thread. The official
 // exec::start_detached terminates on set_error, so an upon_error log is
 // appended (the coroutine bodies below catch everything anyway). Every
-// dispatch function returns exec::task<void>, so S deduces to the same type
+// dispatch function returns stdexec::task<void>, so S deduces to the same type
 // at every call site and the chain below instantiates exactly once.
 template <class S>
   requires stdexec::sender_in<S, spawn_env_t>
@@ -211,11 +208,11 @@ namespace {
 // Per-method dispatch coroutines are placed after the generated data-class
 // codecs and alive counters they reference.
 
-exec::task<void> Counter_value_dispatch(std::shared_ptr<Session> session,
-                                        std::uint64_t session_id,
-                                        std::uint64_t gen, std::uint64_t req,
-                                        std::uint32_t method,
-                                        std::shared_ptr<void> obj) {
+stdexec::task<void> Counter_value_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t session_id,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method,
+                                           std::shared_ptr<void> obj) {
   try {
     auto out = co_await static_cast<::demo::api::Counter *>(obj.get())->value();
     ByteWriter w;
@@ -229,7 +226,7 @@ exec::task<void> Counter_value_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 Counter_increment_dispatch(std::shared_ptr<Session> session,
                            std::uint64_t session_id, std::uint64_t gen,
                            std::uint64_t req, std::uint32_t method,
@@ -247,12 +244,10 @@ Counter_increment_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> Counter_addList_dispatch(std::shared_ptr<Session> session,
-                                          std::uint64_t session_id,
-                                          std::uint64_t gen, std::uint64_t req,
-                                          std::uint32_t method,
-                                          std::shared_ptr<void> obj,
-                                          std::vector<std::int32_t> values) {
+stdexec::task<void> Counter_addList_dispatch(
+    std::shared_ptr<Session> session, std::uint64_t session_id,
+    std::uint64_t gen, std::uint64_t req, std::uint32_t method,
+    std::shared_ptr<void> obj, std::vector<std::int32_t> values) {
   try {
     auto out = co_await static_cast<::demo::api::Counter *>(obj.get())->addList(
         values);
@@ -267,12 +262,10 @@ exec::task<void> Counter_addList_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> Counter_setValue_dispatch(std::shared_ptr<Session> session,
-                                           std::uint64_t session_id,
-                                           std::uint64_t gen, std::uint64_t req,
-                                           std::uint32_t method,
-                                           std::shared_ptr<void> obj,
-                                           std::optional<std::int32_t> value) {
+stdexec::task<void> Counter_setValue_dispatch(
+    std::shared_ptr<Session> session, std::uint64_t session_id,
+    std::uint64_t gen, std::uint64_t req, std::uint32_t method,
+    std::shared_ptr<void> obj, std::optional<std::int32_t> value) {
   try {
     co_await static_cast<::demo::api::Counter *>(obj.get())->setValue(value);
     ByteWriter w;
@@ -286,12 +279,12 @@ exec::task<void> Counter_setValue_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> Counter_duplicate_dispatch(std::shared_ptr<Session> session,
-                                            std::uint64_t session_id,
-                                            std::uint64_t gen,
-                                            std::uint64_t req,
-                                            std::uint32_t method,
-                                            std::shared_ptr<void> obj) {
+stdexec::task<void> Counter_duplicate_dispatch(std::shared_ptr<Session> session,
+                                               std::uint64_t session_id,
+                                               std::uint64_t gen,
+                                               std::uint64_t req,
+                                               std::uint32_t method,
+                                               std::shared_ptr<void> obj) {
   try {
     auto out =
         co_await static_cast<::demo::api::Counter *>(obj.get())->duplicate();
@@ -314,12 +307,12 @@ exec::task<void> Counter_duplicate_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> Counter_addTo_dispatch(std::shared_ptr<Session> session,
-                                        std::uint64_t session_id,
-                                        std::uint64_t gen, std::uint64_t req,
-                                        std::uint32_t method,
-                                        std::shared_ptr<void> obj,
-                                        ::demo::api::Counter other) {
+stdexec::task<void> Counter_addTo_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t session_id,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method,
+                                           std::shared_ptr<void> obj,
+                                           ::demo::api::Counter other) {
   try {
     auto out =
         co_await static_cast<::demo::api::Counter *>(obj.get())->addTo(other);
@@ -334,7 +327,7 @@ exec::task<void> Counter_addTo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> Counter_greetDartFn_dispatch(
+stdexec::task<void> Counter_greetDartFn_dispatch(
     std::shared_ptr<Session> session, std::uint64_t session_id,
     std::uint64_t gen, std::uint64_t req, std::uint32_t method,
     std::shared_ptr<void> obj, dcb::DartFn<std::string(std::string)> callback,
@@ -354,10 +347,11 @@ exec::task<void> Counter_greetDartFn_dispatch(
   co_return;
 }
 
-exec::task<void> sum_set_ordered_dispatch(std::shared_ptr<Session> session,
-                                          std::uint64_t gen, std::uint64_t req,
-                                          std::uint32_t method,
-                                          std::set<std::int32_t> values) {
+stdexec::task<void> sum_set_ordered_dispatch(std::shared_ptr<Session> session,
+                                             std::uint64_t gen,
+                                             std::uint64_t req,
+                                             std::uint32_t method,
+                                             std::set<std::int32_t> values) {
   try {
     auto out = co_await ::demo::api::sum_set_ordered(values);
     ByteWriter w;
@@ -371,7 +365,7 @@ exec::task<void> sum_set_ordered_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> call_dart_from_worker_a_dispatch(
+stdexec::task<void> call_dart_from_worker_a_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, dcb::DartFn<std::string(std::string)> callback,
     std::string input) {
@@ -388,9 +382,10 @@ exec::task<void> call_dart_from_worker_a_dispatch(
   co_return;
 }
 
-exec::task<void> collect_all_demo_dispatch(std::shared_ptr<Session> session,
-                                           std::uint64_t gen, std::uint64_t req,
-                                           std::uint32_t method) {
+stdexec::task<void> collect_all_demo_dispatch(std::shared_ptr<Session> session,
+                                              std::uint64_t gen,
+                                              std::uint64_t req,
+                                              std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::collect_all_demo();
     ByteWriter w;
@@ -404,7 +399,7 @@ exec::task<void> collect_all_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 sum_scores_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                     std::uint64_t req, std::uint32_t method,
                     std::unordered_map<std::string, std::int32_t> scores) {
@@ -421,10 +416,11 @@ sum_scores_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> distance_dispatch(std::shared_ptr<Session> session,
-                                   std::uint64_t gen, std::uint64_t req,
-                                   std::uint32_t method, ::demo::api::Point a,
-                                   ::demo::api::Point b) {
+stdexec::task<void> distance_dispatch(std::shared_ptr<Session> session,
+                                      std::uint64_t gen, std::uint64_t req,
+                                      std::uint32_t method,
+                                      ::demo::api::Point a,
+                                      ::demo::api::Point b) {
   try {
     auto out = co_await ::demo::api::distance(a, b);
     ByteWriter w;
@@ -438,7 +434,7 @@ exec::task<void> distance_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 pair_echo_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                    std::uint64_t req, std::uint32_t method,
                    std::pair<std::int32_t, std::string> value) {
@@ -457,7 +453,7 @@ pair_echo_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 tuple_echo_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                     std::uint64_t req, std::uint32_t method,
                     std::tuple<std::int32_t, std::string, bool> value) {
@@ -476,10 +472,9 @@ tuple_echo_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> test_foreign_sleep_dispatch(std::shared_ptr<Session> session,
-                                             std::uint64_t gen,
-                                             std::uint64_t req,
-                                             std::uint32_t method) {
+stdexec::task<void>
+test_foreign_sleep_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                            std::uint64_t req, std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::test_foreign_sleep();
     ByteWriter w;
@@ -493,9 +488,10 @@ exec::task<void> test_foreign_sleep_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> fan_out_dispatch(std::shared_ptr<Session> session,
-                                  std::uint64_t gen, std::uint64_t req,
-                                  std::uint32_t method, std::string message) {
+stdexec::task<void> fan_out_dispatch(std::shared_ptr<Session> session,
+                                     std::uint64_t gen, std::uint64_t req,
+                                     std::uint32_t method,
+                                     std::string message) {
   try {
     auto out = co_await ::demo::api::fan_out(message);
     ByteWriter w;
@@ -511,9 +507,9 @@ exec::task<void> fan_out_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> stop_workers_dispatch(std::shared_ptr<Session> session,
-                                       std::uint64_t gen, std::uint64_t req,
-                                       std::uint32_t method) {
+stdexec::task<void> stop_workers_dispatch(std::shared_ptr<Session> session,
+                                          std::uint64_t gen, std::uint64_t req,
+                                          std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::stop_workers();
     ByteWriter w;
@@ -527,7 +523,7 @@ exec::task<void> stop_workers_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 call_dart_from_uv_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                            std::uint64_t req, std::uint32_t method,
                            dcb::DartFn<std::string(std::string)> callback,
@@ -545,9 +541,10 @@ call_dart_from_uv_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> stop_uv_worker_dispatch(std::shared_ptr<Session> session,
-                                         std::uint64_t gen, std::uint64_t req,
-                                         std::uint32_t method) {
+stdexec::task<void> stop_uv_worker_dispatch(std::shared_ptr<Session> session,
+                                            std::uint64_t gen,
+                                            std::uint64_t req,
+                                            std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::stop_uv_worker();
     ByteWriter w;
@@ -561,9 +558,9 @@ exec::task<void> stop_uv_worker_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> fail_async_dispatch(std::shared_ptr<Session> session,
-                                     std::uint64_t gen, std::uint64_t req,
-                                     std::uint32_t method, std::string msg) {
+stdexec::task<void> fail_async_dispatch(std::shared_ptr<Session> session,
+                                        std::uint64_t gen, std::uint64_t req,
+                                        std::uint32_t method, std::string msg) {
   try {
     auto out = co_await ::demo::api::fail_async(msg);
     ByteWriter w;
@@ -577,7 +574,7 @@ exec::task<void> fail_async_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> download_with_progress_dispatch(
+stdexec::task<void> download_with_progress_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, std::string url,
     std::optional<dcb::StreamSink<std::int32_t>> sink) {
@@ -595,9 +592,10 @@ exec::task<void> download_with_progress_dispatch(
   co_return;
 }
 
-exec::task<void> start_uv_worker_dispatch(std::shared_ptr<Session> session,
-                                          std::uint64_t gen, std::uint64_t req,
-                                          std::uint32_t method) {
+stdexec::task<void> start_uv_worker_dispatch(std::shared_ptr<Session> session,
+                                             std::uint64_t gen,
+                                             std::uint64_t req,
+                                             std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::start_uv_worker();
     ByteWriter w;
@@ -611,10 +609,10 @@ exec::task<void> start_uv_worker_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> maybe_double_dispatch(std::shared_ptr<Session> session,
-                                       std::uint64_t gen, std::uint64_t req,
-                                       std::uint32_t method,
-                                       std::optional<std::int32_t> value) {
+stdexec::task<void> maybe_double_dispatch(std::shared_ptr<Session> session,
+                                          std::uint64_t gen, std::uint64_t req,
+                                          std::uint32_t method,
+                                          std::optional<std::int32_t> value) {
   try {
     auto out = co_await ::demo::api::maybe_double(value);
     ByteWriter w;
@@ -628,10 +626,10 @@ exec::task<void> maybe_double_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> add_dispatch(std::shared_ptr<Session> session,
-                              std::uint64_t gen, std::uint64_t req,
-                              std::uint32_t method, std::int32_t a,
-                              std::int32_t b) {
+stdexec::task<void> add_dispatch(std::shared_ptr<Session> session,
+                                 std::uint64_t gen, std::uint64_t req,
+                                 std::uint32_t method, std::int32_t a,
+                                 std::int32_t b) {
   try {
     auto out = co_await ::demo::api::add(a, b);
     ByteWriter w;
@@ -645,10 +643,10 @@ exec::task<void> add_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> sum_array_dispatch(std::shared_ptr<Session> session,
-                                    std::uint64_t gen, std::uint64_t req,
-                                    std::uint32_t method,
-                                    std::array<std::int32_t, 4> values) {
+stdexec::task<void> sum_array_dispatch(std::shared_ptr<Session> session,
+                                       std::uint64_t gen, std::uint64_t req,
+                                       std::uint32_t method,
+                                       std::array<std::int32_t, 4> values) {
   try {
     auto out = co_await ::demo::api::sum_array(values);
     ByteWriter w;
@@ -662,7 +660,7 @@ exec::task<void> sum_array_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> test_cbridge_invoke_dispatch(
+stdexec::task<void> test_cbridge_invoke_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, dcb::DartFn<std::string(std::string)> callback,
     std::string input) {
@@ -679,10 +677,9 @@ exec::task<void> test_cbridge_invoke_dispatch(
   co_return;
 }
 
-exec::task<void> test_cbridge_async_dispatch(std::shared_ptr<Session> session,
-                                             std::uint64_t gen,
-                                             std::uint64_t req,
-                                             std::uint32_t method) {
+stdexec::task<void>
+test_cbridge_async_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                            std::uint64_t req, std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::test_cbridge_async();
     ByteWriter w;
@@ -696,7 +693,7 @@ exec::task<void> test_cbridge_async_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 sum_scores_ordered_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                             std::uint64_t req, std::uint32_t method,
                             std::map<std::string, std::int32_t> scores) {
@@ -713,10 +710,11 @@ sum_scores_ordered_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> echo_bool_list_dispatch(std::shared_ptr<Session> session,
-                                         std::uint64_t gen, std::uint64_t req,
-                                         std::uint32_t method,
-                                         std::vector<bool> values) {
+stdexec::task<void> echo_bool_list_dispatch(std::shared_ptr<Session> session,
+                                            std::uint64_t gen,
+                                            std::uint64_t req,
+                                            std::uint32_t method,
+                                            std::vector<bool> values) {
   try {
     auto out = co_await ::demo::api::echo_bool_list(values);
     ByteWriter w;
@@ -730,10 +728,10 @@ exec::task<void> echo_bool_list_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> ping_worker_dispatch(std::shared_ptr<Session> session,
-                                      std::uint64_t gen, std::uint64_t req,
-                                      std::uint32_t method,
-                                      std::string payload) {
+stdexec::task<void> ping_worker_dispatch(std::shared_ptr<Session> session,
+                                         std::uint64_t gen, std::uint64_t req,
+                                         std::uint32_t method,
+                                         std::string payload) {
   try {
     auto out = co_await ::demo::api::ping_worker(payload);
     ByteWriter w;
@@ -747,7 +745,7 @@ exec::task<void> ping_worker_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 collect_any_cancel_demo_dispatch(std::shared_ptr<Session> session,
                                  std::uint64_t gen, std::uint64_t req,
                                  std::uint32_t method) {
@@ -764,7 +762,7 @@ collect_any_cancel_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_foreign_sleep_long_dispatch(std::shared_ptr<Session> session,
                                  std::uint64_t gen, std::uint64_t req,
                                  std::uint32_t method) {
@@ -781,9 +779,10 @@ test_foreign_sleep_long_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> pipeline_dispatch(std::shared_ptr<Session> session,
-                                   std::uint64_t gen, std::uint64_t req,
-                                   std::uint32_t method, std::string message) {
+stdexec::task<void> pipeline_dispatch(std::shared_ptr<Session> session,
+                                      std::uint64_t gen, std::uint64_t req,
+                                      std::uint32_t method,
+                                      std::string message) {
   try {
     auto out = co_await ::demo::api::pipeline(message);
     ByteWriter w;
@@ -797,10 +796,10 @@ exec::task<void> pipeline_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> increment_i64_dispatch(std::shared_ptr<Session> session,
-                                        std::uint64_t gen, std::uint64_t req,
-                                        std::uint32_t method,
-                                        std::int64_t value) {
+stdexec::task<void> increment_i64_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method,
+                                           std::int64_t value) {
   try {
     auto out = co_await ::demo::api::increment_i64(value);
     ByteWriter w;
@@ -814,7 +813,7 @@ exec::task<void> increment_i64_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_channel_service_concurrent_dispatch(std::shared_ptr<Session> session,
                                          std::uint64_t gen, std::uint64_t req,
                                          std::uint32_t method) {
@@ -833,7 +832,7 @@ test_channel_service_concurrent_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 echo_time_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                    std::uint64_t req, std::uint32_t method,
                    std::chrono::system_clock::time_point value) {
@@ -853,7 +852,7 @@ echo_time_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 collect_all_para_demo_dispatch(std::shared_ptr<Session> session,
                                std::uint64_t gen, std::uint64_t req,
                                std::uint32_t method) {
@@ -870,9 +869,9 @@ collect_all_para_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> start_workers_dispatch(std::shared_ptr<Session> session,
-                                        std::uint64_t gen, std::uint64_t req,
-                                        std::uint32_t method) {
+stdexec::task<void> start_workers_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::start_workers();
     ByteWriter w;
@@ -886,12 +885,11 @@ exec::task<void> start_workers_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> cancellable_task_dispatch(std::shared_ptr<Session> session,
-                                           std::uint64_t gen, std::uint64_t req,
-                                           std::uint32_t method,
-                                           std::string task_id,
-                                           std::int32_t steps,
-                                           std::int32_t interval_ms) {
+stdexec::task<void>
+cancellable_task_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                          std::uint64_t req, std::uint32_t method,
+                          std::string task_id, std::int32_t steps,
+                          std::int32_t interval_ms) {
   try {
     auto out =
         co_await ::demo::api::cancellable_task(task_id, steps, interval_ms);
@@ -906,7 +904,7 @@ exec::task<void> cancellable_task_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 optional_status_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                          std::uint64_t req, std::uint32_t method,
                          std::optional<::demo::api::OrderStatus> value) {
@@ -923,10 +921,10 @@ optional_status_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> echo_list_dispatch(std::shared_ptr<Session> session,
-                                    std::uint64_t gen, std::uint64_t req,
-                                    std::uint32_t method,
-                                    std::vector<std::int32_t> values) {
+stdexec::task<void> echo_list_dispatch(std::shared_ptr<Session> session,
+                                       std::uint64_t gen, std::uint64_t req,
+                                       std::uint32_t method,
+                                       std::vector<std::int32_t> values) {
   try {
     auto out = co_await ::demo::api::echo_list(values);
     ByteWriter w;
@@ -940,7 +938,7 @@ exec::task<void> echo_list_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 collect_all_error_demo_dispatch(std::shared_ptr<Session> session,
                                 std::uint64_t gen, std::uint64_t req,
                                 std::uint32_t method) {
@@ -957,7 +955,7 @@ collect_all_error_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 invoke_registered_async_dispatch(std::shared_ptr<Session> session,
                                  std::uint64_t gen, std::uint64_t req,
                                  std::uint32_t method, std::string input) {
@@ -974,7 +972,7 @@ invoke_registered_async_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> test_cbridge_invoke_pure_c_dispatch(
+stdexec::task<void> test_cbridge_invoke_pure_c_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, dcb::DartFn<std::string(std::string)> callback,
     std::string input) {
@@ -993,10 +991,10 @@ exec::task<void> test_cbridge_invoke_pure_c_dispatch(
   co_return;
 }
 
-exec::task<void> scale_dispatch(std::shared_ptr<Session> session,
-                                std::uint64_t gen, std::uint64_t req,
-                                std::uint32_t method, ::demo::api::Point p,
-                                double factor) {
+stdexec::task<void> scale_dispatch(std::shared_ptr<Session> session,
+                                   std::uint64_t gen, std::uint64_t req,
+                                   std::uint32_t method, ::demo::api::Point p,
+                                   double factor) {
   try {
     auto out = co_await ::demo::api::scale(p, factor);
     ByteWriter w;
@@ -1010,9 +1008,9 @@ exec::task<void> scale_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> negate_bool_dispatch(std::shared_ptr<Session> session,
-                                      std::uint64_t gen, std::uint64_t req,
-                                      std::uint32_t method, bool value) {
+stdexec::task<void> negate_bool_dispatch(std::shared_ptr<Session> session,
+                                         std::uint64_t gen, std::uint64_t req,
+                                         std::uint32_t method, bool value) {
   try {
     auto out = co_await ::demo::api::negate_bool(value);
     ByteWriter w;
@@ -1026,7 +1024,7 @@ exec::task<void> negate_bool_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_cbridge_async_fail_dispatch(std::shared_ptr<Session> session,
                                  std::uint64_t gen, std::uint64_t req,
                                  std::uint32_t method) {
@@ -1043,9 +1041,10 @@ test_cbridge_async_fail_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> echo_u128_dispatch(std::shared_ptr<Session> session,
-                                    std::uint64_t gen, std::uint64_t req,
-                                    std::uint32_t method, dcb::UInt128 value) {
+stdexec::task<void> echo_u128_dispatch(std::shared_ptr<Session> session,
+                                       std::uint64_t gen, std::uint64_t req,
+                                       std::uint32_t method,
+                                       dcb::UInt128 value) {
   try {
     auto out = co_await ::demo::api::echo_u128(value);
     ByteWriter w;
@@ -1059,7 +1058,7 @@ exec::task<void> echo_u128_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> call_dart_from_worker_b_dispatch(
+stdexec::task<void> call_dart_from_worker_b_dispatch(
     std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req,
     std::uint32_t method, dcb::DartFn<std::string(std::string)> callback,
     std::string input) {
@@ -1076,9 +1075,9 @@ exec::task<void> call_dart_from_worker_b_dispatch(
   co_return;
 }
 
-exec::task<void> uv_compute_dispatch(std::shared_ptr<Session> session,
-                                     std::uint64_t gen, std::uint64_t req,
-                                     std::uint32_t method, std::int32_t n) {
+stdexec::task<void> uv_compute_dispatch(std::shared_ptr<Session> session,
+                                        std::uint64_t gen, std::uint64_t req,
+                                        std::uint32_t method, std::int32_t n) {
   try {
     auto out = co_await ::demo::api::uv_compute(n);
     ByteWriter w;
@@ -1092,9 +1091,9 @@ exec::task<void> uv_compute_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> fail_non_std_dispatch(std::shared_ptr<Session> session,
-                                       std::uint64_t gen, std::uint64_t req,
-                                       std::uint32_t method) {
+stdexec::task<void> fail_non_std_dispatch(std::shared_ptr<Session> session,
+                                          std::uint64_t gen, std::uint64_t req,
+                                          std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::fail_non_std();
     ByteWriter w;
@@ -1108,11 +1107,11 @@ exec::task<void> fail_non_std_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> addCounters_dispatch(std::shared_ptr<Session> session,
-                                      std::uint64_t gen, std::uint64_t req,
-                                      std::uint32_t method,
-                                      ::demo::api::Counter a,
-                                      ::demo::api::Counter b) {
+stdexec::task<void> addCounters_dispatch(std::shared_ptr<Session> session,
+                                         std::uint64_t gen, std::uint64_t req,
+                                         std::uint32_t method,
+                                         ::demo::api::Counter a,
+                                         ::demo::api::Counter b) {
   try {
     auto out = co_await ::demo::api::addCounters(a, b);
     ByteWriter w;
@@ -1126,10 +1125,10 @@ exec::task<void> addCounters_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> increment_u32_dispatch(std::shared_ptr<Session> session,
-                                        std::uint64_t gen, std::uint64_t req,
-                                        std::uint32_t method,
-                                        std::uint32_t value) {
+stdexec::task<void> increment_u32_dispatch(std::shared_ptr<Session> session,
+                                           std::uint64_t gen, std::uint64_t req,
+                                           std::uint32_t method,
+                                           std::uint32_t value) {
   try {
     auto out = co_await ::demo::api::increment_u32(value);
     ByteWriter w;
@@ -1143,7 +1142,7 @@ exec::task<void> increment_u32_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_foreign_sleep_cancel_dispatch(std::shared_ptr<Session> session,
                                    std::uint64_t gen, std::uint64_t req,
                                    std::uint32_t method) {
@@ -1160,7 +1159,7 @@ test_foreign_sleep_cancel_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 collect_all_cancel_demo_dispatch(std::shared_ptr<Session> session,
                                  std::uint64_t gen, std::uint64_t req,
                                  std::uint32_t method) {
@@ -1177,11 +1176,10 @@ collect_all_cancel_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> uv_interval_demo_dispatch(std::shared_ptr<Session> session,
-                                           std::uint64_t gen, std::uint64_t req,
-                                           std::uint32_t method,
-                                           std::int32_t count,
-                                           std::int32_t interval_ms) {
+stdexec::task<void>
+uv_interval_demo_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                          std::uint64_t req, std::uint32_t method,
+                          std::int32_t count, std::int32_t interval_ms) {
   try {
     auto out = co_await ::demo::api::uv_interval_demo(count, interval_ms);
     ByteWriter w;
@@ -1195,9 +1193,10 @@ exec::task<void> uv_interval_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> collect_any_demo_dispatch(std::shared_ptr<Session> session,
-                                           std::uint64_t gen, std::uint64_t req,
-                                           std::uint32_t method) {
+stdexec::task<void> collect_any_demo_dispatch(std::shared_ptr<Session> session,
+                                              std::uint64_t gen,
+                                              std::uint64_t req,
+                                              std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::collect_any_demo();
     ByteWriter w;
@@ -1211,9 +1210,9 @@ exec::task<void> collect_any_demo_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> ask_uv_dispatch(std::shared_ptr<Session> session,
-                                 std::uint64_t gen, std::uint64_t req,
-                                 std::uint32_t method, std::string message) {
+stdexec::task<void> ask_uv_dispatch(std::shared_ptr<Session> session,
+                                    std::uint64_t gen, std::uint64_t req,
+                                    std::uint32_t method, std::string message) {
   try {
     auto out = co_await ::demo::api::ask_uv(message);
     ByteWriter w;
@@ -1227,7 +1226,7 @@ exec::task<void> ask_uv_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 greet_dart_fn_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
                        std::uint64_t req, std::uint32_t method,
                        dcb::DartFn<std::string(std::string)> callback,
@@ -1245,10 +1244,10 @@ greet_dart_fn_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
   co_return;
 }
 
-exec::task<void> sum_set_dispatch(std::shared_ptr<Session> session,
-                                  std::uint64_t gen, std::uint64_t req,
-                                  std::uint32_t method,
-                                  std::unordered_set<std::int32_t> values) {
+stdexec::task<void> sum_set_dispatch(std::shared_ptr<Session> session,
+                                     std::uint64_t gen, std::uint64_t req,
+                                     std::uint32_t method,
+                                     std::unordered_set<std::int32_t> values) {
   try {
     auto out = co_await ::demo::api::sum_set(values);
     ByteWriter w;
@@ -1262,10 +1261,11 @@ exec::task<void> sum_set_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> process_message_dispatch(std::shared_ptr<Session> session,
-                                          std::uint64_t gen, std::uint64_t req,
-                                          std::uint32_t method,
-                                          std::string message) {
+stdexec::task<void> process_message_dispatch(std::shared_ptr<Session> session,
+                                             std::uint64_t gen,
+                                             std::uint64_t req,
+                                             std::uint32_t method,
+                                             std::string message) {
   try {
     auto out = co_await ::demo::api::process_message(message);
     ByteWriter w;
@@ -1279,7 +1279,7 @@ exec::task<void> process_message_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_cbridge_async_cancel_dispatch(std::shared_ptr<Session> session,
                                    std::uint64_t gen, std::uint64_t req,
                                    std::uint32_t method) {
@@ -1296,10 +1296,10 @@ test_cbridge_async_cancel_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> bounding_box_dispatch(std::shared_ptr<Session> session,
-                                       std::uint64_t gen, std::uint64_t req,
-                                       std::uint32_t method,
-                                       std::vector<::demo::api::Point> points) {
+stdexec::task<void>
+bounding_box_dispatch(std::shared_ptr<Session> session, std::uint64_t gen,
+                      std::uint64_t req, std::uint32_t method,
+                      std::vector<::demo::api::Point> points) {
   try {
     auto out = co_await ::demo::api::bounding_box(points);
     ByteWriter w;
@@ -1313,7 +1313,7 @@ exec::task<void> bounding_box_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void>
+stdexec::task<void>
 test_cbridge_pure_c_cancel_dispatch(std::shared_ptr<Session> session,
                                     std::uint64_t gen, std::uint64_t req,
                                     std::uint32_t method) {
@@ -1331,10 +1331,10 @@ test_cbridge_pure_c_cancel_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> test_channel_service_dispatch(std::shared_ptr<Session> session,
-                                               std::uint64_t gen,
-                                               std::uint64_t req,
-                                               std::uint32_t method) {
+stdexec::task<void>
+test_channel_service_dispatch(std::shared_ptr<Session> session,
+                              std::uint64_t gen, std::uint64_t req,
+                              std::uint32_t method) {
   try {
     auto out = co_await ::demo::api::test_channel_service();
     ByteWriter w;
@@ -1348,9 +1348,10 @@ exec::task<void> test_channel_service_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> echo_i128_dispatch(std::shared_ptr<Session> session,
-                                    std::uint64_t gen, std::uint64_t req,
-                                    std::uint32_t method, dcb::Int128 value) {
+stdexec::task<void> echo_i128_dispatch(std::shared_ptr<Session> session,
+                                       std::uint64_t gen, std::uint64_t req,
+                                       std::uint32_t method,
+                                       dcb::Int128 value) {
   try {
     auto out = co_await ::demo::api::echo_i128(value);
     ByteWriter w;
@@ -1364,10 +1365,11 @@ exec::task<void> echo_i128_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> optional_string_dispatch(std::shared_ptr<Session> session,
-                                          std::uint64_t gen, std::uint64_t req,
-                                          std::uint32_t method,
-                                          std::optional<std::string> value) {
+stdexec::task<void> optional_string_dispatch(std::shared_ptr<Session> session,
+                                             std::uint64_t gen,
+                                             std::uint64_t req,
+                                             std::uint32_t method,
+                                             std::optional<std::string> value) {
   try {
     auto out = co_await ::demo::api::optional_string(value);
     ByteWriter w;
@@ -1381,10 +1383,10 @@ exec::task<void> optional_string_dispatch(std::shared_ptr<Session> session,
   co_return;
 }
 
-exec::task<void> next_status_dispatch(std::shared_ptr<Session> session,
-                                      std::uint64_t gen, std::uint64_t req,
-                                      std::uint32_t method,
-                                      ::demo::api::OrderStatus current) {
+stdexec::task<void> next_status_dispatch(std::shared_ptr<Session> session,
+                                         std::uint64_t gen, std::uint64_t req,
+                                         std::uint32_t method,
+                                         ::demo::api::OrderStatus current) {
   try {
     auto out = co_await ::demo::api::next_status(current);
     ByteWriter w;

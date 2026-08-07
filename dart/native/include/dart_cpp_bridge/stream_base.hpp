@@ -1,6 +1,6 @@
 #pragma once
 
-#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <vector>
 
 // Tokio-style asynchronous stream abstraction built on std::exec.
-// Coroutine bodies are exec::task (which is itself a sender), so a Stream can
+// Coroutine bodies are stdexec::task (which is itself a sender), so a Stream can
 // be consumed with co_await or composed as a sender chain.
 //
 //   auto s = co::stream::from_vector({1, 2, 3})
@@ -46,7 +46,7 @@ class Stream;
 template <typename T>
 struct StreamImpl {
   virtual ~StreamImpl() = default;
-  virtual exec::task<std::optional<T>> next() = 0;
+  virtual stdexec::task<std::optional<T>> next() = 0;
 };
 
 template <typename T>
@@ -67,7 +67,7 @@ class Stream {
   explicit operator bool() const noexcept { return impl_ != nullptr; }
 
   // Core async pull. Returns std::nullopt when the stream ends.
-  exec::task<std::optional<T>> next()
+  stdexec::task<std::optional<T>> next()
   {
     if (!impl_) {
       co_return std::nullopt;
@@ -88,7 +88,7 @@ class Stream {
 
       explicit Impl(std::vector<T> v) : items(std::move(v)) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         if (idx >= items.size()) {
           co_return std::nullopt;
@@ -152,7 +152,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      exec::task<std::optional<U>> next() override
+      stdexec::task<std::optional<U>> next() override
       {
         auto v = co_await upstream.next();
         if (!v) {
@@ -174,7 +174,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         while (true) {
           auto v = co_await upstream.next();
@@ -203,7 +203,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      exec::task<std::optional<U>> next() override
+      stdexec::task<std::optional<U>> next() override
       {
         while (true) {
           if (current) {
@@ -234,7 +234,7 @@ class Stream {
 
       Impl(Stream<T> s, std::size_t n) : upstream(std::move(s)), remaining(n) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         if (remaining == 0) {
           co_return std::nullopt;
@@ -256,7 +256,7 @@ class Stream {
 
       Impl(Stream<T> s, std::size_t n) : upstream(std::move(s)), remaining(n) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         if (!skipped) {
           skipped = true;
@@ -284,7 +284,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         if (done) {
           co_return std::nullopt;
@@ -311,7 +311,7 @@ class Stream {
 
       Impl(Stream<T> s, F fn) : upstream(std::move(s)), f(std::forward<F>(fn)) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         if (skipping) {
           skipping = false;
@@ -345,7 +345,7 @@ class Stream {
         : upstream(std::move(s)), acc(std::move(a)), f(std::forward<F>(fn))
       {}
 
-      exec::task<std::optional<Acc>> next() override
+      stdexec::task<std::optional<Acc>> next() override
       {
         auto v = co_await upstream.next();
         if (!v) {
@@ -370,7 +370,7 @@ class Stream {
 
       Impl(Stream<T> a, Stream<U> b) : first(std::move(a)), second(std::move(b)) {}
 
-      exec::task<std::optional<std::pair<T, U>>> next() override
+      stdexec::task<std::optional<std::pair<T, U>>> next() override
       {
         auto a = co_await first.next();
         if (!a) {
@@ -402,7 +402,7 @@ class Stream {
 
       Impl(Stream<T> a, Stream<T> b) : first(std::move(a)), second(std::move(b)) {}
 
-      exec::task<std::optional<T>> next() override
+      stdexec::task<std::optional<T>> next() override
       {
         // Alternate between streams to avoid starvation.
         pull_first = !pull_first;
@@ -424,7 +424,7 @@ class Stream {
   // Terminators
   // ---------------------------------------------------------------------------
 
-  exec::task<std::vector<T>> collect()
+  stdexec::task<std::vector<T>> collect()
   {
     std::vector<T> out;
     while (auto v = co_await next()) {
@@ -434,7 +434,7 @@ class Stream {
   }
 
   template <typename F>
-  exec::task<void> for_each(F&& f)
+  stdexec::task<void> for_each(F&& f)
   {
     while (auto v = co_await next()) {
       f(std::move(*v));
@@ -442,9 +442,9 @@ class Stream {
     co_return;
   }
 
-  exec::task<std::optional<T>> first() { co_return co_await next(); }
+  stdexec::task<std::optional<T>> first() { co_return co_await next(); }
 
-  exec::task<std::size_t> count()
+  stdexec::task<std::size_t> count()
   {
     std::size_t n = 0;
     while (auto v = co_await next()) {
@@ -455,7 +455,7 @@ class Stream {
   }
 
   template <typename Acc, typename F>
-  exec::task<Acc> fold(Acc init, F&& f)
+  stdexec::task<Acc> fold(Acc init, F&& f)
   {
     Acc acc = std::move(init);
     while (auto v = co_await next()) {

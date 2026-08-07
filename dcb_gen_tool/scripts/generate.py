@@ -662,7 +662,7 @@ def _cpp_class_method_cases(
                 fn_label = f"{class_name}::{m['name']}"
                 dispatch_fn = f"{class_name}_{m['name']}_dispatch"
                 async_fns.append(f"""
-exec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
   try {{
     {call_stmt}
     ByteWriter w;
@@ -1639,7 +1639,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 
             dispatch_fn = f"{fn['name']}_dispatch"
             async_fns.append(f"""
-exec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
   try {{
     {call_stmt}
     ByteWriter w;
@@ -1792,7 +1792,6 @@ exec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -1812,11 +1811,9 @@ namespace {{
 
 // The environment starts_on(io_scheduler, sndr) actually provides to the
 // child sender: get_scheduler and get_start_scheduler both answer the io
-// scheduler. exec::task completion signatures are computed against this env
-// (they require get_start_scheduler), so `sender_in<S, spawn_env_t>` accepts
-// exec::task and rejects non-senders with a clear compile error at the call
-// site. (The plain stdexec::sender concept would reject exec::task: its
-// signatures are not computable in the root environment.)
+// scheduler. stdexec::task's completion signatures are env-independent, but
+// `sender_in<S, spawn_env_t>` is kept so non-senders are rejected with a
+// clear compile error at the call site while stdexec::task is accepted.
 using spawn_env_t = decltype(stdexec::env{{
     stdexec::prop{{stdexec::get_scheduler,
                    std::declval<const dcb::IoContextScheduler&>()}},
@@ -1826,7 +1823,7 @@ using spawn_env_t = decltype(stdexec::env{{
 // Launch a dispatch coroutine on the bridge io thread. The official
 // exec::start_detached terminates on set_error, so an upon_error log is
 // appended (the coroutine bodies below catch everything anyway). Every
-// dispatch function returns exec::task<void>, so S deduces to the same type
+// dispatch function returns stdexec::task<void>, so S deduces to the same type
 // at every call site and the chain below instantiates exactly once.
 template <class S>
   requires stdexec::sender_in<S, spawn_env_t>

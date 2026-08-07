@@ -18,7 +18,6 @@
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <chrono>
 #include <future>
@@ -61,7 +60,7 @@ UvScheduler require_worker() {
 
 }  // namespace
 
-exec::task<std::string> start_uv_worker() {
+stdexec::task<std::string> start_uv_worker() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker) {
     g_uv_worker = std::make_unique<UvWorker>("libuv-worker");
@@ -70,7 +69,7 @@ exec::task<std::string> start_uv_worker() {
   co_return std::string("uv worker started");
 }
 
-exec::task<std::string> stop_uv_worker() {
+stdexec::task<std::string> stop_uv_worker() {
   std::lock_guard lock(g_mu);
   if (g_uv_worker) {
     g_uv_worker->stop();
@@ -79,7 +78,7 @@ exec::task<std::string> stop_uv_worker() {
   co_return std::string("uv worker stopped");
 }
 
-exec::task<std::string> ask_uv(std::string message) {
+stdexec::task<std::string> ask_uv(std::string message) {
   // Take the scheduler under the lock, then release it before suspending:
   // holding g_mu across co_await would block the io thread (which must stay
   // free to resume this very coroutine).
@@ -88,7 +87,7 @@ exec::task<std::string> ask_uv(std::string message) {
     std::lock_guard lock(g_mu);
     sched = require_worker();
   }
-  // Run the work on the uv loop thread; the exec::task reschedules the
+  // Run the work on the uv loop thread; the stdexec::task reschedules the
   // completion back to the bridge io thread (the caller's home scheduler).
   auto result = co_await stdexec::starts_on(
       std::move(sched),
@@ -97,14 +96,14 @@ exec::task<std::string> ask_uv(std::string message) {
   co_return result;
 }
 
-exec::task<std::int32_t> uv_compute(std::int32_t n) {
+stdexec::task<std::int32_t> uv_compute(std::int32_t n) {
   UvScheduler sched;
   {
     std::lock_guard lock(g_mu);
     sched = require_worker();
   }
   // CPU-bound work via uv_queue_work (libuv thread pool); the result is
-  // delivered on the uv loop thread and the exec::task reschedules it back
+  // delivered on the uv loop thread and the stdexec::task reschedules it back
   // to the caller's home scheduler (io).
   auto work = sched.uv_work([n] {
     std::int32_t sum = 0;
@@ -119,7 +118,7 @@ exec::task<std::int32_t> uv_compute(std::int32_t n) {
 
 // Runs on the uv loop thread: emits `count` items with an async uv timer
 // between them, then ends the stream.
-static exec::task<void> uv_stream_coro(UvScheduler sched,
+static stdexec::task<void> uv_stream_coro(UvScheduler sched,
                                        dcb::StreamSink<std::string> sink,
                                        std::int32_t count, std::int32_t interval_ms) {
   for (std::int32_t i = 0; i < count; ++i) {
@@ -145,7 +144,7 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
       uv_stream_coro(g_uv_worker->scheduler(), std::move(sink), count, interval_ms)));
 }
 
-exec::task<std::string> call_dart_from_uv(dcb::DartFn<std::string(std::string)> callback,
+stdexec::task<std::string> call_dart_from_uv(dcb::DartFn<std::string(std::string)> callback,
                                           std::string input) {
   UvScheduler sched;
   {
@@ -154,7 +153,7 @@ exec::task<std::string> call_dart_from_uv(dcb::DartFn<std::string(std::string)> 
   }
   // Start the reverse DartFn call on the uv loop thread; dartfn_sender posts
   // to Dart, waits for the oneshot reply and migrates back to the io thread.
-  // The outer exec::task then reschedules to its home (io). A Dart-side
+  // The outer stdexec::task then reschedules to its home (io). A Dart-side
   // exception surfaces as a C++ error here; convert it to the demo's
   // "ERROR:..." result contract.
   try {
@@ -168,7 +167,7 @@ exec::task<std::string> call_dart_from_uv(dcb::DartFn<std::string(std::string)> 
 
 // ─── cbridge pure C API tests ────────────────────────────────────────────────
 
-exec::task<std::string> test_cbridge_async() {
+stdexec::task<std::string> test_cbridge_async() {
   // Create async operation
   uint64_t op = dcb_async_create();
 
@@ -185,7 +184,7 @@ exec::task<std::string> test_cbridge_async() {
   co_return std::string(data.begin(), data.end());
 }
 
-exec::task<std::string> test_cbridge_async_fail() {
+stdexec::task<std::string> test_cbridge_async_fail() {
   uint64_t op = dcb_async_create();
 
   std::thread failer([op] {
@@ -202,7 +201,7 @@ exec::task<std::string> test_cbridge_async_fail() {
   }
 }
 
-exec::task<std::string> test_cbridge_async_cancel() {
+stdexec::task<std::string> test_cbridge_async_cancel() {
   uint64_t op = dcb_async_create();
 
   std::thread canceller([op] {
@@ -219,7 +218,7 @@ exec::task<std::string> test_cbridge_async_cancel() {
   }
 }
 
-exec::task<std::string> test_cbridge_invoke(dcb::DartFn<std::string(std::string)> callback,
+stdexec::task<std::string> test_cbridge_invoke(dcb::DartFn<std::string(std::string)> callback,
                                             std::string input) {
   // Extract session_id and fn_id from DartFn
   auto session = callback.session();
@@ -294,9 +293,9 @@ struct ServiceRequest {
   co::oneshot::Sender<std::string> reply_tx;
 };
 
-// Service loop: runs on the uv loop thread; exec::task reschedules back to the
+// Service loop: runs on the uv loop thread; stdexec::task reschedules back to the
 // uv loop after every recv() completes (the send may come from the io thread).
-static exec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
+static stdexec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   while (auto req = co_await rx.recv()) {
     // Process the request: add a prefix
     std::string result = "[svc:" + req->payload + "]";
@@ -305,7 +304,7 @@ static exec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   co_return;  // channel closed, service ends
 }
 
-exec::task<std::string> test_channel_service() {
+stdexec::task<std::string> test_channel_service() {
   // Create the channel and start the service loop under the lock; release it
   // before waiting for replies (never hold g_mu across co_await).
   auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
@@ -337,7 +336,7 @@ exec::task<std::string> test_channel_service() {
 
 // Concurrent version: send all requests in one batch, then collect all replies.
 // Tests mpsc queuing + service loop processing one by one.
-exec::task<std::string> test_channel_service_concurrent() {
+stdexec::task<std::string> test_channel_service_concurrent() {
   auto [tx, rx] = co::mpsc::unbounded<ServiceRequest>();
   UvScheduler sched;
   {

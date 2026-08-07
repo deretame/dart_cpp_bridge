@@ -6,7 +6,7 @@
 //
 // Both are built on the stdexec migration (see docs/cpp26_executor_model_usage.md):
 // the async ops registry holds co::oneshot channels whose receiver side is a
-// stdexec sender; dcb_invoke_dart_fn launches an exec::task on the runtime's io
+// stdexec sender; dcb_invoke_dart_fn launches an stdexec::task on the runtime's io
 // scheduler (starts_on) and the task reschedules back to the io thread after the
 // Dart reply lands, so the C callback fires on the io thread as documented.
 
@@ -18,7 +18,6 @@
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <atomic>
 #include <cstdint>
@@ -72,7 +71,7 @@ co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id) {
 // ─── DartFn call internal coroutine ───────────────────────────────────────────
 
 // Invoke the C callback, never letting a throwing user callback escape the
-// coroutine: an escaping exception would complete the exec::task with set_error
+// coroutine: an escaping exception would complete the stdexec::task with set_error
 // and re-enter the error path below, double-firing the callback (and the
 // noexcept error lambda would then std::terminate on a second throw).
 static void fire_dartfn_callback(dcb_dart_fn_callback callback, void* userdata, int ok,
@@ -87,10 +86,10 @@ static void fire_dartfn_callback(dcb_dart_fn_callback callback, void* userdata, 
 
 // MSVC 19.51 coroutine lambda capture bug workaround:
 // Use a static coroutine function and pass all variables as parameters.
-// exec::task: home scheduler = the io scheduler it is starts_on'd from, so the
+// stdexec::task: home scheduler = the io scheduler it is starts_on'd from, so the
 // callback below always runs on the io thread (the oneshot reply may fire on
-// whichever thread called complete_dart_fn; exec::task reschedules back home).
-static exec::task<void> cbridge_invoke_coro(
+// whichever thread called complete_dart_fn; stdexec::task reschedules back home).
+static stdexec::task<void> cbridge_invoke_coro(
     std::shared_ptr<dcb::Session> session,
     std::uint64_t generation,
     std::uint64_t fn_id,
@@ -205,7 +204,7 @@ DCB_API int dcb_invoke_dart_fn(
     args_copy.assign(args, args + args_len);
   }
 
-  // Launch the reverse-call coroutine on the io thread. The exec::task reschedules
+  // Launch the reverse-call coroutine on the io thread. The stdexec::task reschedules
   // back to the io scheduler after the Dart reply, so the C callback runs on the io
   // thread (documented contract of dcb_dart_fn_callback). The coroutine body catches
   // every exception, so set_error/set_stopped below are defensive (normally

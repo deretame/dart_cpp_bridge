@@ -30,7 +30,7 @@
 //
 //   auto [tx, rx] = co::oneshot::channel<int>();
 //   tx.send(1);                                    // non-blocking, any thread
-//   auto v = co_await std::move(rx);               // optional<int> (in exec::task)
+//   auto v = co_await std::move(rx);               // optional<int> (in stdexec::task)
 //   // or as a pure sender chain:
 //   std::move(rx) | stdexec::then([](auto v) { ... }) | ...
 //
@@ -59,7 +59,7 @@
 //   //
 //   // receiving is identical for both kinds (and likewise honours the
 //   // stop token of the awaiting receiver):
-//   auto v = co_await rx.recv();                      // optional<T> (in exec::task)
+//   auto v = co_await rx.recv();                      // optional<T> (in stdexec::task)
 //   auto vec = co_await std::move(rx).map(...).filter(...).collect();
 
 namespace co {
@@ -1249,7 +1249,7 @@ class Receiver : public co::stream::Stream<T> {
       }
     }
 
-    exec::task<std::optional<T>> next() override
+    stdexec::task<std::optional<T>> next() override
     {
       if (!state) {
         co_return std::nullopt;
@@ -1293,13 +1293,13 @@ class Receiver : public co::stream::Stream<T> {
   // Single-consumer, enforced at runtime: calling recv() while a previous
   // recv() is still parked fails the new call with std::logic_error
   // (delivered as set_error) instead of silently clobbering the parked wait.
-  exec::task<std::optional<T>> recv()
+  stdexec::task<std::optional<T>> recv()
   {
     co_return co_await co::stream::Stream<T>::next();
   }
 
   // Raw sender form of recv() (advanced): the same receive operation without
-  // the exec::task wrapper, for connecting to a custom receiver — e.g. one
+  // the stdexec::task wrapper, for connecting to a custom receiver — e.g. one
   // whose environment carries a stop token.
   recv_sender<T> recv_raw()
   {

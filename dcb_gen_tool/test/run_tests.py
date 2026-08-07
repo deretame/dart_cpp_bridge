@@ -122,7 +122,7 @@ HEADER_PREAMBLE = """\
 #include <string>
 #include <vector>
 #include <dart_cpp_bridge/annotate.h>
-#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 """
 
 
@@ -162,7 +162,7 @@ def test_p04_forward_declaration() -> None:
 struct ForwardOnly;
 
 BRIDGE_ASYNC
-exec::task<ForwardOnly> get_thing();
+stdexec::task<ForwardOnly> get_thing();
 """
     with tempfile.TemporaryDirectory() as td:
         cfg = _write_test_project(Path(td), header)
@@ -184,7 +184,7 @@ exec::task<ForwardOnly> get_thing();
 def test_p06_function_pointer() -> None:
     header = HEADER_PREAMBLE + """
 BRIDGE_ASYNC
-exec::task<std::int32_t> apply(std::int32_t (*fn)(std::int32_t));
+stdexec::task<std::int32_t> apply(std::int32_t (*fn)(std::int32_t));
 """
     with tempfile.TemporaryDirectory() as td:
         cfg = _write_test_project(Path(td), header)
@@ -210,7 +210,7 @@ def test_p10_shared_ptr() -> None:
 struct SomeData { int x; };
 
 BRIDGE_ASYNC
-exec::task<std::shared_ptr<SomeData>> get_data();
+stdexec::task<std::shared_ptr<SomeData>> get_data();
 """
     with tempfile.TemporaryDirectory() as td:
         cfg = _write_test_project(Path(td), header)
@@ -280,7 +280,7 @@ struct ExternalType { int x; };
 #include "external.h"
 
 BRIDGE_ASYNC
-exec::task<ExternalType> get_external();
+stdexec::task<ExternalType> get_external();
 """
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
@@ -458,7 +458,7 @@ using IntVec = std::vector<std::int32_t>;
 using NestedVec = std::vector<IntVec>;
 
 BRIDGE_ASYNC
-exec::task<NestedVec> get_nested();
+stdexec::task<NestedVec> get_nested();
 """
     with tempfile.TemporaryDirectory() as td:
         cfg = _write_test_project(Path(td), header)
@@ -608,7 +608,7 @@ BRIDGE_SYNC
 std::int32_t add(std::int32_t a, std::int32_t b);
 
 BRIDGE_ASYNC
-exec::task<std::string> echo(std::string msg);
+stdexec::task<std::string> echo(std::string msg);
 """
     with tempfile.TemporaryDirectory() as td:
         cfg = _write_test_project(Path(td), header)
@@ -842,7 +842,7 @@ def test_ts05_to_string_async() -> None:
 class BRIDGE_OPAQUE Widget {
  public:
   BRIDGE_CONSTRUCTOR Widget();
-  BRIDGE_TO_STRING exec::task<std::string> toString() const;
+  BRIDGE_TO_STRING stdexec::task<std::string> toString() const;
 };
 """
     with tempfile.TemporaryDirectory() as td:
@@ -1029,7 +1029,7 @@ def test_st03_optional_sink_stays_async() -> None:
 #include <optional>
 
 BRIDGE_ASYNC
-exec::task<std::string> opt_stream(
+stdexec::task<std::string> opt_stream(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
 """
     with tempfile.TemporaryDirectory() as td:

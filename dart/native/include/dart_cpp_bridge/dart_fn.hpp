@@ -26,7 +26,7 @@ namespace detail {
 // The sender's base pipeline already bakes in continues_on(io_scheduler), so
 // its completion is always delivered on the bridge io thread (affine). We
 // report that explicitly: when a business coroutine co_awaits a DartFn inside
-// an exec::task, task's await_transform consults the sender's
+// a stdexec::task, task's await_transform consults the sender's
 // __get_completion_behavior and — seeing affine — skips wrapping the sender
 // in continues_on(task_sticky_scheduler, ...).
 //

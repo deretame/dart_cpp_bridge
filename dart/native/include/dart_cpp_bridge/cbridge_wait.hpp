@@ -13,17 +13,17 @@
 //   auto result = co_await dcb::async_wait(op);
 //   // result is payload bytes; throws std::runtime_error on failure
 //
-// async_wait returns an exec::task, so the awaiting environment must answer
+// async_wait returns a stdexec::task, so the awaiting environment must answer
 // get_start_scheduler (a stdexec::starts_on(...) chain, dcb::sync_wait, an outer
-// exec::task, or a scope). The completion of the C-side dcb_async_complete / fail /
-// cancel fires on whichever thread called it; exec::task then reschedules the
+// stdexec::task, or a scope). The completion of the C-side dcb_async_complete / fail /
+// cancel fires on whichever thread called it; stdexec::task then reschedules the
 // coroutine back to its home scheduler (the awaited sender completes on the home
 // scheduler), so downstream code keeps running in the original execution context.
 
 #include "dart_cpp_bridge/cbridge.h"
 #include "dart_cpp_bridge/channel.hpp"
 
-#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 
 #include <cstdint>
 #include <stdexcept>
@@ -49,9 +49,9 @@ co::oneshot::Receiver<OpResult> take_async_receiver(std::uint64_t op_id);
 /// Returns payload bytes on success; throws std::runtime_error on failure / cancellation.
 ///
 /// Must be awaited in an environment that answers get_start_scheduler (starts_on /
-/// outer exec::task / dcb::sync_wait). Completion is delivered on the caller's home
+/// outer stdexec::task / dcb::sync_wait). Completion is delivered on the caller's home
 /// scheduler regardless of which thread calls dcb_async_complete.
-inline exec::task<std::vector<std::uint8_t>> async_wait(std::uint64_t op_id) {
+inline stdexec::task<std::vector<std::uint8_t>> async_wait(std::uint64_t op_id) {
   auto rx = detail::take_async_receiver(op_id);
   if (!rx) {
     throw std::runtime_error("async_wait: invalid op_id");

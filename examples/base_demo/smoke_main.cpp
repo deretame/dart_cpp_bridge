@@ -990,7 +990,7 @@ void test_merge_concurrent() {
   Runtime::instance().start();
   auto* io = Runtime::instance().io_scheduler();
 
-  bool ok = std::get<0>(*dcb::sync_wait([io]() -> exec::task<bool> {
+  bool ok = std::get<0>(*dcb::sync_wait([io]() -> stdexec::task<bool> {
     auto s1 = co::stream::interval_on<int>(*io, std::chrono::milliseconds(5));
     auto s2 = co::stream::interval_on<int>(*io, std::chrono::milliseconds(5));
     // Stream is move-only, so initializer_list ({...}) is not usable.

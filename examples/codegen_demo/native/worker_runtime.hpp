@@ -15,7 +15,6 @@
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <asio/io_context.hpp>
 #include <asio/post.hpp>
@@ -67,7 +66,7 @@ class WorkerRuntime {
   dcb::IoContextScheduler& scheduler() { return *sched_; }
   asio::io_context& io() { return ioc_; }
 
-  /// Launch a sender/coroutine (exec::task) on this worker's event loop.
+  /// Launch a sender/coroutine (stdexec::task) on this worker's event loop.
   template <class S>
   void spawn(S&& sndr) {
     const std::string name = name_;

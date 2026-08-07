@@ -63,7 +63,14 @@ class IoContextScheduler {
   explicit IoContextScheduler(asio::io_context& ioc) : ioc_(&ioc) {}
 
   stdexec::sender auto schedule() const noexcept {
-    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
+    // asio::post + use_sender never fails and is not cancellable, but the
+    // exec::asio adapter still *declares* set_error / set_stopped. stdexec::task
+    // requires its start scheduler to be infallible (the default task_scheduler
+    // cannot be constructed from a scheduler that may send errors), so map the
+    // (never-firing) error/stopped branches to set_value() here.
+    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender)
+         | stdexec::upon_error([](std::exception_ptr) noexcept {})
+         | stdexec::upon_stopped([]() noexcept {});
   }
 
   // Timed scheduling on the io_context: asio::steady_timer +
@@ -175,7 +182,7 @@ class Runtime {
 namespace detail {
 
 // Environment that exposes a scheduler as both get_scheduler and
-// get_start_scheduler. Senders that depend on a scheduler (e.g. exec::task)
+// get_start_scheduler. Senders that depend on a scheduler (e.g. stdexec::task)
 // need it to compute completion signatures and to run.
 template <typename Sched>
 struct sched_env {

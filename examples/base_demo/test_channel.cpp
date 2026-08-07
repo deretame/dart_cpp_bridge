@@ -3,7 +3,7 @@
 // The channel primitives need no Runtime / io_context: all senders complete
 // inline or are woken by a peer thread, so the tests use stdexec::sync_wait
 // and starts_on(inline_scheduler) directly. The final section drives the
-// channel from exec::task coroutines — the shape business code actually
+// channel from stdexec::task coroutines — the shape business code actually
 // uses (co_await send()/recv(), Stream combinators, stop-token cancel).
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
@@ -889,7 +889,7 @@ TEST_CASE("mpsc unbounded recv stop requested before start completes stopped")
   CHECK(recv_expect_closed(rx));
 }
 
-TEST_CASE("exec::task forwards stop into a parked channel await")
+TEST_CASE("stdexec::task forwards stop into a parked channel await")
 {
   auto [tx, rx] = co::mpsc::bounded<int>(1);
   CHECK(sync_send_bounded(tx, 1));  // full: the co_awaited send(2) will park
@@ -898,7 +898,7 @@ TEST_CASE("exec::task forwards stop into a parked channel await")
   std::atomic<int> resumed{0};  // statements after the co_await
   std::atomic<int> values{0}, errors{0}, stopped{0};
 
-  auto worker = [&]() -> exec::task<void> {
+  auto worker = [&]() -> stdexec::task<void> {
     (void)co_await tx.send(2);
     resumed.fetch_add(1, std::memory_order_relaxed);  // must not run on stop
   };
@@ -938,7 +938,7 @@ TEST_CASE("exec::task forwards stop into a parked channel await")
     stdexec::start(op);
     src.request_stop();
 
-    // exec::task propagates the channel's set_stopped WITHOUT resuming the
+    // stdexec::task propagates the channel's set_stopped WITHOUT resuming the
     // coroutine (symmetric transfer to unhandled_stopped): the co_await
     // never produces a value and the task completes stopped.
     CHECK(stopped.load(std::memory_order_relaxed) == 1);
@@ -1200,7 +1200,7 @@ TEST_CASE("mpsc recv stop stress keeps every value")
 }
 
 // ---------------------------------------------------------------------------
-// Coroutine-style usage (exec::task)
+// Coroutine-style usage (stdexec::task)
 // ---------------------------------------------------------------------------
 //
 // The sections above drive the channel through raw connect/start or
@@ -1267,7 +1267,7 @@ struct TaskCountReceiver {
 // Free coroutine functions, not lambdas: everything the body touches is a
 // parameter copied/moved into the coroutine frame. A coroutine lambda's
 // captures dangle if the closure dies before the lazy task is started.
-exec::task<void> produce_values(co::mpsc::BoundedSender<int> tx, int count)
+stdexec::task<void> produce_values(co::mpsc::BoundedSender<int> tx, int count)
 {
   for (int i = 1; i <= count; ++i) {
     if (!co_await tx.send(i)) {
@@ -1277,14 +1277,14 @@ exec::task<void> produce_values(co::mpsc::BoundedSender<int> tx, int count)
   tx.close();
 }
 
-exec::task<void> collect_all(co::mpsc::Receiver<int> rx, std::vector<int>* out)
+stdexec::task<void> collect_all(co::mpsc::Receiver<int> rx, std::vector<int>* out)
 {
   while (auto v = co_await rx.recv()) {
     out->push_back(*v);
   }
 }
 
-exec::task<void> collect_mapped(co::mpsc::Receiver<int> rx, std::vector<int>* out)
+stdexec::task<void> collect_mapped(co::mpsc::Receiver<int> rx, std::vector<int>* out)
 {
   *out = co_await std::move(rx)
              .map([](int x) { return x * 2; })
@@ -1293,7 +1293,7 @@ exec::task<void> collect_mapped(co::mpsc::Receiver<int> rx, std::vector<int>* ou
              .collect();
 }
 
-exec::task<void> consume_one(co::mpsc::Receiver<int>* rx, std::atomic<int>* resumed)
+stdexec::task<void> consume_one(co::mpsc::Receiver<int>* rx, std::atomic<int>* resumed)
 {
   (void)co_await rx->recv();
   resumed->fetch_add(1, std::memory_order_relaxed);  // must not run on stop
@@ -1301,7 +1301,7 @@ exec::task<void> consume_one(co::mpsc::Receiver<int>* rx, std::atomic<int>* resu
 
 }  // namespace
 
-TEST_CASE("mpsc coroutine producer and consumer (exec::task)")
+TEST_CASE("mpsc coroutine producer and consumer (stdexec::task)")
 {
   auto [tx, rx] = co::mpsc::bounded<int>(2);
   std::vector<int> collected;
@@ -1348,7 +1348,7 @@ TEST_CASE("mpsc receiver stream combinators in a coroutine")
   CHECK(collected == std::vector<int>{6, 8});
 }
 
-TEST_CASE("exec::task co_await recv cancelled via stop token")
+TEST_CASE("stdexec::task co_await recv cancelled via stop token")
 {
   auto [tx, rx] = co::mpsc::bounded<int>(1);
   stdexec::inplace_stop_source src;
@@ -1386,7 +1386,7 @@ namespace {
 
 // Producer coroutine that records how many sends were accepted before a
 // cancellation hits.
-exec::task<void> produce_counted(co::mpsc::BoundedSender<int> tx, int count,
+stdexec::task<void> produce_counted(co::mpsc::BoundedSender<int> tx, int count,
                                  std::atomic<int>* accepted)
 {
   for (int i = 1; i <= count; ++i) {

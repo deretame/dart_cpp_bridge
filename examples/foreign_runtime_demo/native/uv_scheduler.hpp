@@ -175,7 +175,13 @@ class UvScheduler {
     // All trees in this codebase are start_detached-owned and destroyed only
     // after completion, so do not place this sender in stop_when /
     // take_until-style trees that destroy started children.
-    return schedule_sender{st_};
+    //
+    // stdexec::task requires its start scheduler to be infallible (the
+    // default task_scheduler cannot be constructed from a scheduler that may
+    // send errors/stopped), so the loop-closed set_stopped branch — which
+    // only fires on the worker-stop teardown race, when nothing can run
+    // anyway — is mapped to a no-op set_value().
+    return schedule_sender{st_} | stdexec::upon_stopped([]() noexcept {});
   }
 
   // Timer: completes with set_value() on the loop thread after `d` elapses.

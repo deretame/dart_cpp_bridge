@@ -761,7 +761,7 @@ def _type_ir(
             loc=loc,
         )
 
-    if s.startswith("exec::task") or s.startswith("stdexec::task"):
+    if s.startswith("stdexec::task"):
         args = _template_args(s)
         if args:
             return {"kind": "lazy", "inner": _rec(args[0])}
@@ -1272,7 +1272,7 @@ def parse_project(config_path: Path) -> dict[str, Any]:
 
     # The bridge runtime headers (dart_cpp_bridge/*.hpp) include the vendored
     # stdexec (third_party/stdexec/include), which libclang must resolve so
-    # templates such as std::vector / exec::task are not degraded to `int`.
+    # templates such as std::vector / stdexec::task are not degraded to `int`.
     for ancestor in (base, *base.parents):
         vendored = ancestor / "third_party" / "stdexec" / "include"
         if vendored.is_dir():

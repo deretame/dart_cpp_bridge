@@ -6,7 +6,6 @@
 #include <stdexec/execution.hpp>
 #include <stdexec/stop_token.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <asio/post.hpp>
 
@@ -23,7 +22,7 @@ namespace demo::api {
 
 std::int32_t bridge_version() { return 42; }
 
-exec::task<std::int32_t> add(std::int32_t a, std::int32_t b) {
+stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b) {
   co_return a + b;
 }
 
@@ -32,7 +31,7 @@ std::string sleep_greeting(std::string name) {
   return std::string("hello, ") + name;
 }
 
-exec::task<OrderStatus> next_status(OrderStatus current) {
+stdexec::task<OrderStatus> next_status(OrderStatus current) {
   switch (current) {
     case OrderStatus::kCreated:
       co_return OrderStatus::kPaid;
@@ -43,7 +42,7 @@ exec::task<OrderStatus> next_status(OrderStatus current) {
   }
 }
 
-exec::task<std::optional<std::int32_t>> maybe_double(
+stdexec::task<std::optional<std::int32_t>> maybe_double(
     std::optional<std::int32_t> value) {
   if (value.has_value()) {
     co_return std::optional<std::int32_t>(value.value() * 2);
@@ -51,17 +50,17 @@ exec::task<std::optional<std::int32_t>> maybe_double(
   co_return std::nullopt;
 }
 
-exec::task<std::uint32_t> increment_u32(std::uint32_t value) {
+stdexec::task<std::uint32_t> increment_u32(std::uint32_t value) {
   co_return value + 1;
 }
 
-exec::task<std::int64_t> increment_i64(std::int64_t value) {
+stdexec::task<std::int64_t> increment_i64(std::int64_t value) {
   co_return value + 1;
 }
 
-exec::task<bool> negate_bool(bool value) { co_return !value; }
+stdexec::task<bool> negate_bool(bool value) { co_return !value; }
 
-exec::task<std::optional<std::string>> optional_string(
+stdexec::task<std::optional<std::string>> optional_string(
     std::optional<std::string> value) {
   if (value.has_value()) {
     co_return std::optional<std::string>(value.value() + "!");
@@ -69,7 +68,7 @@ exec::task<std::optional<std::string>> optional_string(
   co_return std::nullopt;
 }
 
-exec::task<std::optional<OrderStatus>> optional_status(
+stdexec::task<std::optional<OrderStatus>> optional_status(
     std::optional<OrderStatus> value) {
   if (!value.has_value()) {
     co_return std::nullopt;
@@ -84,59 +83,59 @@ exec::task<std::optional<OrderStatus>> optional_status(
   }
 }
 
-exec::task<std::vector<std::int32_t>> echo_list(
+stdexec::task<std::vector<std::int32_t>> echo_list(
     std::vector<std::int32_t> values) {
   co_return values;
 }
 
-exec::task<std::vector<bool>> echo_bool_list(
+stdexec::task<std::vector<bool>> echo_bool_list(
     std::vector<bool> values) {
   co_return values;
 }
 
-exec::task<std::int32_t> sum_array(
+stdexec::task<std::int32_t> sum_array(
     std::array<std::int32_t, 4> values) {
   std::int32_t total = 0;
   for (auto v : values) total += v;
   co_return total;
 }
 
-exec::task<std::int32_t> sum_scores(
+stdexec::task<std::int32_t> sum_scores(
     std::unordered_map<std::string, std::int32_t> scores) {
   std::int32_t total = 0;
   for (const auto& [k, v] : scores) total += v;
   co_return total;
 }
 
-exec::task<std::int32_t> sum_set(
+stdexec::task<std::int32_t> sum_set(
     std::unordered_set<std::int32_t> values) {
   std::int32_t total = 0;
   for (auto v : values) total += v;
   co_return total;
 }
 
-exec::task<std::int32_t> sum_scores_ordered(
+stdexec::task<std::int32_t> sum_scores_ordered(
     std::map<std::string, std::int32_t> scores) {
   std::int32_t total = 0;
   for (const auto& [k, v] : scores) total += v;
   co_return total;
 }
 
-exec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values) {
+stdexec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values) {
   std::int32_t total = 0;
   for (auto v : values) total += v;
   co_return total;
 }
 
-exec::task<dcb::Int128> echo_i128(dcb::Int128 value) {
+stdexec::task<dcb::Int128> echo_i128(dcb::Int128 value) {
   co_return value;
 }
 
-exec::task<dcb::UInt128> echo_u128(dcb::UInt128 value) {
+stdexec::task<dcb::UInt128> echo_u128(dcb::UInt128 value) {
   co_return value;
 }
 
-exec::task<std::string> greet_dart_fn(
+stdexec::task<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
   auto reply = co_await callback(name);
   co_return std::string("hello, ") + reply;
@@ -176,7 +175,7 @@ std::string invoke_registered(std::string input) {
   return "registered:" + std::get<0>(*reply);
 }
 
-exec::task<std::string> invoke_registered_async(std::string input) {
+stdexec::task<std::string> invoke_registered_async(std::string input) {
   if (!g_registered_fn) {
     throw std::runtime_error("no registered dart fn");
   }
@@ -184,12 +183,12 @@ exec::task<std::string> invoke_registered_async(std::string input) {
   co_return "async_registered:" + reply;
 }
 
-exec::task<std::pair<std::int32_t, std::string>> pair_echo(
+stdexec::task<std::pair<std::int32_t, std::string>> pair_echo(
     std::pair<std::int32_t, std::string> value) {
   co_return value;
 }
 
-exec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+stdexec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
     std::tuple<std::int32_t, std::string, bool> value) {
   co_return value;
 }
@@ -208,7 +207,7 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
              });
 }
 
-exec::task<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   // Simulate a download with 5 progress steps. Events are emitted as part of
   // the asynchronous work (between co_await points), never by blocking io.
@@ -225,7 +224,7 @@ namespace {
 // Free coroutine function: parameters are copied into the coroutine frame, so
 // passing a moved-in StreamSink is safe (a coroutine lambda would instead
 // reference captures of the temporary lambda object, which dangles).
-exec::task<void> emit_sync_progress(dcb::StreamSink<std::int32_t> sink) {
+stdexec::task<void> emit_sync_progress(dcb::StreamSink<std::int32_t> sink) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     sink.add(i * 20);  // 20, 40, 60, 80, 100
   }
@@ -265,13 +264,13 @@ std::string sync_download_with_progress(
   return std::string("downloaded: ") + url;
 }
 
-exec::task<double> distance(Point a, Point b) {
+stdexec::task<double> distance(Point a, Point b) {
   const double dx = a.x - b.x;
   const double dy = a.y - b.y;
   co_return std::sqrt(dx * dx + dy * dy);
 }
 
-exec::task<Point> scale(Point p, double factor) {
+stdexec::task<Point> scale(Point p, double factor) {
   Point r;
   r.x = p.x * factor;
   r.y = p.y * factor;
@@ -279,7 +278,7 @@ exec::task<Point> scale(Point p, double factor) {
   co_return r;
 }
 
-exec::task<Rect> bounding_box(std::vector<Point> points) {
+stdexec::task<Rect> bounding_box(std::vector<Point> points) {
   Rect r;
   if (points.empty()) {
     r.top_left = {0.0, 0.0};
@@ -299,7 +298,7 @@ exec::task<Rect> bounding_box(std::vector<Point> points) {
 
 // --- Runtime error propagation tests ---
 
-exec::task<std::int32_t> fail_async(std::string msg) {
+stdexec::task<std::int32_t> fail_async(std::string msg) {
   throw std::runtime_error(msg.empty() ? "fail_async" : msg);
   co_return 0;  // unreachable
 }
@@ -312,7 +311,7 @@ std::int32_t fail_normal(std::string msg) {
   throw std::runtime_error(msg.empty() ? "fail_normal" : msg);
 }
 
-exec::task<std::int32_t> fail_non_std() {
+stdexec::task<std::int32_t> fail_non_std() {
   throw 42;  // non-std::exception
   co_return 0;  // unreachable
 }
@@ -346,7 +345,7 @@ std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n) 
 
 // --- Time (std::chrono::system_clock::time_point ↔ Dart DateTime) ---
 
-exec::task<std::chrono::system_clock::time_point> echo_time(
+stdexec::task<std::chrono::system_clock::time_point> echo_time(
     std::chrono::system_clock::time_point value) {
   co_return value;
 }
@@ -383,11 +382,11 @@ struct TaskStopGuard {
 }  // namespace
 
 // The task body. The stop token is passed explicitly; each iteration checks
-// it and throws a stable demo message (exec::task propagates set_stopped up
+// it and throws a stable demo message (stdexec::task propagates set_stopped up
 // the coroutine chain without unwinding into catch blocks, so cancellation
 // is surfaced as an ordinary exception here). Worst-case cancel latency is
 // one interval (50ms in C03, well under the 3s bound).
-exec::task<std::string> cancellable_task_impl(
+stdexec::task<std::string> cancellable_task_impl(
     std::string task_id, std::int32_t steps, std::int32_t interval_ms,
     stdexec::inplace_stop_token token) {
   for (std::int32_t i = 0; i < steps; ++i) {
@@ -399,7 +398,7 @@ exec::task<std::string> cancellable_task_impl(
   co_return std::string("done:") + task_id;
 }
 
-exec::task<std::string> cancellable_task(
+stdexec::task<std::string> cancellable_task(
     std::string task_id, std::int32_t steps, std::int32_t interval_ms) {
   auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
   {
@@ -450,21 +449,21 @@ namespace {
 // observes cancellation.
 std::atomic<int> g_collect_cancel_observed{0};
 
-exec::task<void> collect_int_task_ch(co::oneshot::Sender<std::int32_t> tx,
+stdexec::task<void> collect_int_task_ch(co::oneshot::Sender<std::int32_t> tx,
                                      std::int32_t v) {
   co_await dcb::sleep(std::chrono::milliseconds(10));
   tx.send(v);
   co_return;
 }
 
-exec::task<void> collect_str_task_ch(co::oneshot::Sender<std::string> tx,
+stdexec::task<void> collect_str_task_ch(co::oneshot::Sender<std::string> tx,
                                      std::string s) {
   co_await dcb::sleep(std::chrono::milliseconds(10));
   tx.send(std::move(s));
   co_return;
 }
 
-exec::task<void> collect_fail_task_ch(co::oneshot::Sender<std::string> tx) {
+stdexec::task<void> collect_fail_task_ch(co::oneshot::Sender<std::string> tx) {
   // Digest the failure into a value (D03 asserts the digest).
   co_await dcb::sleep(std::chrono::milliseconds(5));
   tx.send("err-captured");
@@ -474,7 +473,7 @@ exec::task<void> collect_fail_task_ch(co::oneshot::Sender<std::string> tx) {
 // The slow racer: polls the stop token between sleeps, unwinds with the
 // cancellation message, and records that it observed the stop (D04 / D06
 // assert loser cancellation).
-exec::task<void> collect_any_slow_task_ch(
+stdexec::task<void> collect_any_slow_task_ch(
     co::oneshot::Sender<std::string> tx, stdexec::inplace_stop_token token) {
   try {
     for (std::int32_t i = 0; i < 1000; ++i) {
@@ -491,13 +490,13 @@ exec::task<void> collect_any_slow_task_ch(
   co_return;
 }
 
-exec::task<void> collect_fast_str_task_ch(co::oneshot::Sender<std::string> tx) {
+stdexec::task<void> collect_fast_str_task_ch(co::oneshot::Sender<std::string> tx) {
   co_await dcb::sleep(std::chrono::milliseconds(5));
   tx.send("ok");
   co_return;
 }
 
-exec::task<void> collect_any_fast_int_task_ch(
+stdexec::task<void> collect_any_fast_int_task_ch(
     co::oneshot::Sender<std::int32_t> tx) {
   co_await dcb::sleep(std::chrono::milliseconds(5));
   tx.send(42);
@@ -505,14 +504,14 @@ exec::task<void> collect_any_fast_int_task_ch(
 }
 
 // Sequential variant used by collect_all_para_demo.
-exec::task<std::int32_t> collect_int_task(std::int32_t v) {
+stdexec::task<std::int32_t> collect_int_task(std::int32_t v) {
   co_await dcb::sleep(std::chrono::milliseconds(10));
   co_return v;
 }
 
 }  // namespace
 
-exec::task<std::string> collect_all_demo() {
+stdexec::task<std::string> collect_all_demo() {
   auto [tx1, rx1] = co::oneshot::channel<std::int32_t>();
   auto [tx2, rx2] = co::oneshot::channel<std::string>();
   auto [tx3, rx3] = co::oneshot::channel<std::int32_t>();
@@ -525,7 +524,7 @@ exec::task<std::string> collect_all_demo() {
   co_return std::to_string(*a) + "|" + *b + "|" + std::to_string(*c);
 }
 
-exec::task<std::int32_t> collect_all_para_demo() {
+stdexec::task<std::int32_t> collect_all_para_demo() {
   // Sequential collection (same total, no parallelism).
   std::int32_t sum = 0;
   for (std::int32_t i = 0; i < 4; ++i) {
@@ -534,7 +533,7 @@ exec::task<std::int32_t> collect_all_para_demo() {
   co_return sum;
 }
 
-exec::task<std::string> collect_all_error_demo() {
+stdexec::task<std::string> collect_all_error_demo() {
   auto [tx1, rx1] = co::oneshot::channel<std::string>();
   auto [tx2, rx2] = co::oneshot::channel<std::string>();
   launch_on_io(collect_str_task_ch(std::move(tx1), "hello"));
@@ -544,7 +543,7 @@ exec::task<std::string> collect_all_error_demo() {
   co_return *ok + "|" + *bad;
 }
 
-exec::task<std::string> collect_all_cancel_demo() {
+stdexec::task<std::string> collect_all_cancel_demo() {
   g_collect_cancel_observed.store(0);
   auto stop = std::make_shared<stdexec::inplace_stop_source>();
   auto [tx_f, rx_f] = co::oneshot::channel<std::string>();
@@ -557,7 +556,7 @@ exec::task<std::string> collect_all_cancel_demo() {
   co_return *fast_v + "|" + *slow_v;
 }
 
-exec::task<std::string> collect_any_demo() {
+stdexec::task<std::string> collect_any_demo() {
   auto stop = std::make_shared<stdexec::inplace_stop_source>();
   auto [tx_f, rx_f] = co::oneshot::channel<std::int32_t>();
   auto [tx_s, rx_s] = co::oneshot::channel<std::string>();
@@ -572,7 +571,7 @@ exec::task<std::string> collect_any_demo() {
   co_return "winner=slow,value=" + (slow_v ? *slow_v : "?");
 }
 
-exec::task<std::string> collect_any_cancel_demo() {
+stdexec::task<std::string> collect_any_cancel_demo() {
   g_collect_cancel_observed.store(0);
   auto stop = std::make_shared<stdexec::inplace_stop_source>();
   auto [tx_f, rx_f] = co::oneshot::channel<std::int32_t>();

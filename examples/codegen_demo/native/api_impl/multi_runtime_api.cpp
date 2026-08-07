@@ -10,10 +10,10 @@
 // the business logic: spawning coroutines on workers and communicating
 // via channels.
 //
-// Coroutines are static exec::task functions (MSVC 19.51 coroutine-lambda
+// Coroutines are static stdexec::task functions (MSVC 19.51 coroutine-lambda
 // capture bug, see docs/known_issues.md ID-009); WorkerRuntime::spawn
 // launches them with starts_on(worker_scheduler, ...), so co_await resuming
-// back to the worker loop is handled by exec::task.
+// back to the worker loop is handled by stdexec::task.
 
 #include "multi_runtime_api.h"
 
@@ -26,7 +26,6 @@
 
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -55,7 +54,7 @@ void spawn_on_io(S&& sndr) {
 
 // ─── Worker A / B coroutine bodies (static, run on the worker loops) ───
 
-exec::task<void> process_message_on_a(co::oneshot::Sender<std::string> tx,
+stdexec::task<void> process_message_on_a(co::oneshot::Sender<std::string> tx,
                                       std::string msg) {
   // Runs on Worker A's event loop thread.
   std::string result = "[A:" + msg + "]";
@@ -63,7 +62,7 @@ exec::task<void> process_message_on_a(co::oneshot::Sender<std::string> tx,
   co_return;
 }
 
-exec::task<void> ping_worker_on_b(co::oneshot::Sender<std::string> tx,
+stdexec::task<void> ping_worker_on_b(co::oneshot::Sender<std::string> tx,
                                   std::string payload, std::uint32_t id) {
   // Runs on Worker B's event loop thread.
   std::string result = "[B#" + std::to_string(id) + ":" + payload + "]";
@@ -71,14 +70,14 @@ exec::task<void> ping_worker_on_b(co::oneshot::Sender<std::string> tx,
   co_return;
 }
 
-exec::task<void> pipeline_stage1_on_a(co::oneshot::Sender<std::string> tx_ab,
+stdexec::task<void> pipeline_stage1_on_a(co::oneshot::Sender<std::string> tx_ab,
                                       std::string msg) {
   std::string stage1 = "A{" + msg + "}";
   tx_ab.send(std::move(stage1));
   co_return;
 }
 
-exec::task<void> pipeline_stage2_on_b(co::oneshot::Receiver<std::string> rx_ab,
+stdexec::task<void> pipeline_stage2_on_b(co::oneshot::Receiver<std::string> rx_ab,
                                       co::oneshot::Sender<std::string> tx_final) {
   auto from_a = co_await std::move(rx_ab);
   if (!from_a) {
@@ -90,19 +89,19 @@ exec::task<void> pipeline_stage2_on_b(co::oneshot::Receiver<std::string> rx_ab,
   co_return;
 }
 
-exec::task<void> fan_out_on_a(co::oneshot::Sender<std::string> tx,
+stdexec::task<void> fan_out_on_a(co::oneshot::Sender<std::string> tx,
                               std::string msg) {
   tx.send("A:" + msg);
   co_return;
 }
 
-exec::task<void> fan_out_on_b(co::oneshot::Sender<std::string> tx,
+stdexec::task<void> fan_out_on_b(co::oneshot::Sender<std::string> tx,
                               std::string msg) {
   tx.send("B:" + msg);
   co_return;
 }
 
-exec::task<void> worker_stream_produce(co::mpsc::Sender<std::string> tx,
+stdexec::task<void> worker_stream_produce(co::mpsc::Sender<std::string> tx,
                                        std::int32_t count,
                                        std::int32_t interval_ms) {
   for (std::int32_t i = 0; i < count; ++i) {
@@ -117,7 +116,7 @@ exec::task<void> worker_stream_produce(co::mpsc::Sender<std::string> tx,
   co_return;
 }
 
-exec::task<void> worker_stream_forward(dcb::StreamSink<std::string> sink,
+stdexec::task<void> worker_stream_forward(dcb::StreamSink<std::string> sink,
                                        co::mpsc::Receiver<std::string> rx) {
   while (true) {
     auto item = co_await rx.recv();
@@ -128,7 +127,7 @@ exec::task<void> worker_stream_forward(dcb::StreamSink<std::string> sink,
   co_return;
 }
 
-exec::task<void> call_dart_from_worker(
+stdexec::task<void> call_dart_from_worker(
     co::oneshot::Sender<std::string> tx,
     dcb::DartFn<std::string(std::string)> cb, std::string input) {
   try {
@@ -142,7 +141,7 @@ exec::task<void> call_dart_from_worker(
 
 }  // namespace
 
-exec::task<std::string> start_workers() {
+stdexec::task<std::string> start_workers() {
   std::lock_guard lock(g_mu);
   if (!g_worker_a) {
     g_worker_a = std::make_unique<WorkerRuntime>("processor");
@@ -155,7 +154,7 @@ exec::task<std::string> start_workers() {
   co_return std::string("workers started");
 }
 
-exec::task<std::string> stop_workers() {
+stdexec::task<std::string> stop_workers() {
   std::lock_guard lock(g_mu);
   if (g_worker_a) g_worker_a->stop();
   if (g_worker_b) g_worker_b->stop();
@@ -164,7 +163,7 @@ exec::task<std::string> stop_workers() {
   co_return std::string("workers stopped");
 }
 
-exec::task<std::string> process_message(std::string message) {
+stdexec::task<std::string> process_message(std::string message) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
   {
@@ -183,7 +182,7 @@ exec::task<std::string> process_message(std::string message) {
   co_return *reply;
 }
 
-exec::task<std::string> ping_worker(std::string payload) {
+stdexec::task<std::string> ping_worker(std::string payload) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
   {
@@ -202,7 +201,7 @@ exec::task<std::string> ping_worker(std::string payload) {
   co_return *reply;
 }
 
-exec::task<std::string> pipeline(std::string message) {
+stdexec::task<std::string> pipeline(std::string message) {
   // Final reply channel (Worker B → Main).
   auto [tx_final, rx_final] = co::oneshot::channel<std::string>();
   // Intermediate channel (Worker A → Worker B).
@@ -227,7 +226,7 @@ exec::task<std::string> pipeline(std::string message) {
   co_return reply.value_or("pipeline: lost");
 }
 
-exec::task<std::pair<std::string, std::string>> fan_out(
+stdexec::task<std::pair<std::string, std::string>> fan_out(
     std::string message) {
   auto [tx_a, rx_a] = co::oneshot::channel<std::string>();
   auto [tx_b, rx_b] = co::oneshot::channel<std::string>();
@@ -269,7 +268,7 @@ void worker_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
   spawn_on_io(worker_stream_forward(std::move(sink), std::move(rx)));
 }
 
-exec::task<std::string> call_dart_from_worker_a(
+stdexec::task<std::string> call_dart_from_worker_a(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
@@ -290,7 +289,7 @@ exec::task<std::string> call_dart_from_worker_a(
   co_return *reply;
 }
 
-exec::task<std::string> call_dart_from_worker_b(
+stdexec::task<std::string> call_dart_from_worker_b(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 

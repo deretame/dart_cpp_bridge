@@ -40,7 +40,7 @@ Stream<T> Stream<T>::interval_on(Sched sched, std::chrono::milliseconds period)
     T counter = 0;
     Impl(Sched s, std::chrono::milliseconds p) : sched(std::move(s)), period(p) {}
 
-    exec::task<std::optional<T>> next() override
+    stdexec::task<std::optional<T>> next() override
     {
       co_await dcb::sleep(period, sched);
       co_return counter++;
@@ -113,7 +113,7 @@ struct MergeQueue {
     }
   }
 
-  exec::task<std::optional<T>> pop() {
+  stdexec::task<std::optional<T>> pop() {
     while (true) {
       {
         std::lock_guard lock(mu);
@@ -154,7 +154,7 @@ struct MergeQueue {
 };
 
 template <typename T>
-exec::task<void> merge_driver(Stream<T> src, std::shared_ptr<MergeQueue<T>> st) {
+stdexec::task<void> merge_driver(Stream<T> src, std::shared_ptr<MergeQueue<T>> st) {
   while (auto v = co_await src.next()) {
     st->push(std::move(*v));
   }
@@ -186,7 +186,7 @@ Stream<T> Stream<T>::merge_concurrent(std::vector<Stream<T>> sources)
     std::shared_ptr<detail::MergeQueue<T>> st;
     explicit Impl(std::shared_ptr<detail::MergeQueue<T>> s) : st(std::move(s)) {}
 
-    exec::task<std::optional<T>> next() override {
+    stdexec::task<std::optional<T>> next() override {
       co_return co_await st->pop();
     }
   };

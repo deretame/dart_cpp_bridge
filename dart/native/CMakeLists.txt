@@ -96,6 +96,13 @@ FetchContent_MakeAvailable(mpmcqueue)
 # hence cmake_minimum_required above. When built as a subproject
 # (STDEXEC_MAIN_PROJECT=OFF) tests/docs default OFF; examples default ON,
 # so disable them explicitly.
+#
+# PATCH_COMMAND: stdexec's __any_allocator relies on [class.access] (members
+# of a class template may access private members of other specializations),
+# which MSVC does not implement; the patch adds an explicit friend
+# declaration. stdexec::task's type-erased task_scheduler is built on
+# __any_allocator, so without the patch no MSVC build using stdexec::task
+# (or a scheduler that cannot be stored inline) would compile.
 set(STDEXEC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(STDEXEC_BUILD_DOCS OFF CACHE BOOL "" FORCE)
@@ -110,6 +117,9 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
   GIT_TAG        nvhpc-26.05
   GIT_SHALLOW    TRUE
+  PATCH_COMMAND  "${CMAKE_COMMAND}"
+                   -DSTDEXEC_SRC=<SOURCE_DIR>
+                   -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_stdexec_any_allocator.cmake"
 )
 FetchContent_MakeAvailable(stdexec)
 
@@ -145,6 +155,13 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
+# stdexec::task's task_scheduler preallocates a fixed-size operation state
+# (STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE, default 72 bytes) to schedule work
+# on the task's home scheduler. Storing the asio::post operation state of
+# dcb::IoContextScheduler needs more than 72 bytes (measured: between 128
+# and 256), so raise the cap. PUBLIC so downstream business code and
+# generated wire dispatch see the same value.
+target_compile_definitions(dcb_runtime PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
 target_link_libraries(dcb_runtime PUBLIC asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
 
 if(WIN32)
@@ -178,6 +195,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
+  target_compile_definitions(dcb_shared PRIVATE STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
   target_link_libraries(dcb_shared PRIVATE asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)

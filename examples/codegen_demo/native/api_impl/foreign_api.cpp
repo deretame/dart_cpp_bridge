@@ -15,7 +15,6 @@
 #include <stdexec/execution.hpp>
 #include <stdexec/stop_token.hpp>
 #include <exec/start_detached.hpp>
-#include <exec/task.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -57,7 +56,7 @@ void spawn_on_io(S&& sndr) {
 
 }  // namespace
 
-exec::task<std::string> start_uv_worker() {
+stdexec::task<std::string> start_uv_worker() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker) {
     g_uv_worker = std::make_unique<UvWorker>("libuv-worker");
@@ -66,7 +65,7 @@ exec::task<std::string> start_uv_worker() {
   co_return std::string("uv worker started");
 }
 
-exec::task<std::string> stop_uv_worker() {
+stdexec::task<std::string> stop_uv_worker() {
   std::lock_guard lock(g_mu);
   if (g_uv_worker) {
     g_uv_worker->stop();
@@ -75,7 +74,7 @@ exec::task<std::string> stop_uv_worker() {
   co_return std::string("uv worker stopped");
 }
 
-exec::task<std::string> ask_uv(std::string message) {
+stdexec::task<std::string> ask_uv(std::string message) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
   {
@@ -104,7 +103,7 @@ exec::task<std::string> ask_uv(std::string message) {
   co_return *reply;
 }
 
-exec::task<std::int32_t> uv_interval_demo(std::int32_t count,
+stdexec::task<std::int32_t> uv_interval_demo(std::int32_t count,
                                           std::int32_t interval_ms) {
   UvScheduler sched;
   {
@@ -128,7 +127,7 @@ exec::task<std::int32_t> uv_interval_demo(std::int32_t count,
   co_return n;
 }
 
-exec::task<std::int32_t> uv_compute(std::int32_t n) {
+stdexec::task<std::int32_t> uv_compute(std::int32_t n) {
   auto [tx, rx] = co::oneshot::channel<std::int32_t>();
 
   {
@@ -158,7 +157,7 @@ exec::task<std::int32_t> uv_compute(std::int32_t n) {
 
 // Forward mpsc items to the Dart StreamSink on the bridge io thread.
 // Static coroutine function: MSVC 19.51 coroutine-lambda capture bug workaround.
-static exec::task<void> uv_stream_forward(dcb::StreamSink<std::string> sink,
+static stdexec::task<void> uv_stream_forward(dcb::StreamSink<std::string> sink,
                                           co::mpsc::Receiver<std::string> rx) {
   while (true) {
     auto item = co_await rx.recv();
@@ -203,7 +202,7 @@ void uv_stream(dcb::StreamSink<std::string> sink, std::int32_t count,
 
 // Workaround for MSVC 19.51 coroutine lambda capture bug:
 // Use a separate static coroutine function and pass all variables as parameters.
-static exec::task<void> uv_dart_fn_coro(
+static stdexec::task<void> uv_dart_fn_coro(
     std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
     dcb::DartFn<std::string(std::string)> cb,
     std::string input) {
@@ -216,7 +215,7 @@ static exec::task<void> uv_dart_fn_coro(
   co_return;
 }
 
-exec::task<std::string> call_dart_from_uv(
+stdexec::task<std::string> call_dart_from_uv(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   auto [tx, rx] = co::oneshot::channel<std::string>();
 
@@ -230,7 +229,7 @@ exec::task<std::string> call_dart_from_uv(
     auto tx_ptr = std::make_shared<co::oneshot::Sender<std::string>>(std::move(tx));
 
     // Start a coroutine on the uv loop thread that co_awaits the DartFn
-    // non-blockingly, then let exec::task reschedule back to the uv loop.
+    // non-blockingly, then let stdexec::task reschedule back to the uv loop.
     run_on_uv(sched, [tx_ptr, cb = std::move(callback), input = std::move(input), sched]() mutable {
       spawn_on_uv(sched,
                   uv_dart_fn_coro(std::move(tx_ptr), std::move(cb), std::move(input)));
@@ -248,12 +247,12 @@ exec::task<std::string> call_dart_from_uv(
 // --- UvScheduler sleep (cooperative cancellation via stop token) ---
 //
 // dcb::sleep() accepts an optional stop token through write_env; when the
-// token is requested the timer is cancelled. exec::task propagates
+// token is requested the timer is cancelled. stdexec::task propagates
 // set_stopped up the coroutine chain without unwinding into catch blocks, so
 // this demo polls the token in 20ms slices instead (10s = 500 slices) and
 // throws a plain exception, which the caller surfaces as an error reply.
 
-static exec::task<void> uv_sleep_coro(
+static stdexec::task<void> uv_sleep_coro(
     std::shared_ptr<co::oneshot::Sender<std::string>> tx_ptr,
     std::shared_ptr<stdexec::inplace_stop_source> stop_source, bool cancel,
     std::chrono::milliseconds normal_dur) {
@@ -276,7 +275,7 @@ static exec::task<void> uv_sleep_coro(
   co_return;
 }
 
-exec::task<std::string> test_foreign_sleep() {
+stdexec::task<std::string> test_foreign_sleep() {
   auto [tx, rx] = co::oneshot::channel<std::string>();
   {
     std::lock_guard lock(g_mu);
@@ -298,7 +297,7 @@ exec::task<std::string> test_foreign_sleep() {
   co_return *reply;
 }
 
-exec::task<std::string> test_foreign_sleep_long() {
+stdexec::task<std::string> test_foreign_sleep_long() {
   auto [tx, rx] = co::oneshot::channel<std::string>();
   {
     std::lock_guard lock(g_mu);
@@ -320,7 +319,7 @@ exec::task<std::string> test_foreign_sleep_long() {
   co_return *reply;
 }
 
-exec::task<std::string> test_foreign_sleep_cancel() {
+stdexec::task<std::string> test_foreign_sleep_cancel() {
   auto [tx, rx] = co::oneshot::channel<std::string>();
   auto stop_source = std::make_shared<stdexec::inplace_stop_source>();
   {
@@ -352,7 +351,7 @@ exec::task<std::string> test_foreign_sleep_cancel() {
 
 // ─── cbridge pure C API tests ────────────────────────────────────────────────
 
-exec::task<std::string> test_cbridge_async() {
+stdexec::task<std::string> test_cbridge_async() {
   // Create async operation
   uint64_t op = dcb_async_create();
 
@@ -369,7 +368,7 @@ exec::task<std::string> test_cbridge_async() {
   co_return std::string(data.begin(), data.end());
 }
 
-exec::task<std::string> test_cbridge_async_fail() {
+stdexec::task<std::string> test_cbridge_async_fail() {
   uint64_t op = dcb_async_create();
 
   std::thread failer([op] {
@@ -386,7 +385,7 @@ exec::task<std::string> test_cbridge_async_fail() {
   }
 }
 
-exec::task<std::string> test_cbridge_async_cancel() {
+stdexec::task<std::string> test_cbridge_async_cancel() {
   uint64_t op = dcb_async_create();
 
   std::thread canceller([op] {
@@ -403,7 +402,7 @@ exec::task<std::string> test_cbridge_async_cancel() {
   }
 }
 
-exec::task<std::string> test_cbridge_invoke(
+stdexec::task<std::string> test_cbridge_invoke(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   // Extract session_id and fn_id from DartFn
   auto session = callback.session();
@@ -519,7 +518,7 @@ static void c_invoke_dart(uint64_t session_id, uint64_t fn_id,
   }
 }
 
-exec::task<std::string> test_cbridge_invoke_pure_c(
+stdexec::task<std::string> test_cbridge_invoke_pure_c(
     dcb::DartFn<std::string(std::string)> callback, std::string input) {
   // 1. Extract IDs required by the pure C API
   auto session = callback.session();
@@ -553,7 +552,7 @@ static void c_schedule_cancel(uint64_t op_id) {
   }).detach();
 }
 
-exec::task<std::string> test_cbridge_pure_c_cancel() {
+stdexec::task<std::string> test_cbridge_pure_c_cancel() {
   // 1. Create async operation
   uint64_t op_id = dcb_async_create();
 
@@ -578,7 +577,7 @@ struct ServiceRequest {
 };
 
 // Service loop: runs for a long time on the uv worker's loop thread
-static exec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
+static stdexec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   while (auto req = co_await rx.recv()) {
     // Process the request: add a prefix
     std::string result = "[svc:" + req->payload + "]";
@@ -587,7 +586,7 @@ static exec::task<void> service_loop(co::mpsc::Receiver<ServiceRequest> rx) {
   co_return;  // channel closed, service ends
 }
 
-exec::task<std::string> test_channel_service() {
+stdexec::task<std::string> test_channel_service() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker || !g_uv_worker->running()) {
     throw std::runtime_error("uv worker not running");
@@ -620,7 +619,7 @@ exec::task<std::string> test_channel_service() {
 
 // Concurrent version: send all requests in one batch, then collect all replies.
 // Tests mpsc queuing + service loop processing one by one.
-exec::task<std::string> test_channel_service_concurrent() {
+stdexec::task<std::string> test_channel_service_concurrent() {
   std::lock_guard lock(g_mu);
   if (!g_uv_worker || !g_uv_worker->running()) {
     throw std::runtime_error("uv worker not running");

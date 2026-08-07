@@ -6,7 +6,7 @@
 #include "dart_cpp_bridge/stream_sink.hpp"
 
 #include <array>
-#include <exec/task.hpp>
+#include <stdexec/execution.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -41,7 +41,7 @@ std::int32_t bridge_version();
 
 // async → Dart: Future<int> add(int a, int b)
 BRIDGE_ASYNC
-exec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
+stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 
 // normal (pool) → Dart: Future<String> sleepGreeting(String name)
 BRIDGE_NORMAL
@@ -56,80 +56,80 @@ enum class BRIDGE_EXPORT OrderStatus : std::int32_t {
 
 // async → Dart: Future<OrderStatus> nextStatus(OrderStatus current)
 BRIDGE_ASYNC
-exec::task<OrderStatus> next_status(OrderStatus current);
+stdexec::task<OrderStatus> next_status(OrderStatus current);
 
 // async → Dart: Future<int?> maybeDouble(int? value)
 BRIDGE_ASYNC
-exec::task<std::optional<std::int32_t>> maybe_double(
+stdexec::task<std::optional<std::int32_t>> maybe_double(
     std::optional<std::int32_t> value);
 
 // async → Dart: Future<int> incrementU32(int value)
 BRIDGE_ASYNC
-exec::task<std::uint32_t> increment_u32(std::uint32_t value);
+stdexec::task<std::uint32_t> increment_u32(std::uint32_t value);
 
 // async → Dart: Future<int> incrementI64(int value)
 BRIDGE_ASYNC
-exec::task<std::int64_t> increment_i64(std::int64_t value);
+stdexec::task<std::int64_t> increment_i64(std::int64_t value);
 
 // async → Dart: Future<bool> negateBool(bool value)
 BRIDGE_ASYNC
-exec::task<bool> negate_bool(bool value);
+stdexec::task<bool> negate_bool(bool value);
 
 // async → Dart: Future<String?> optionalString(String? value)
 BRIDGE_ASYNC
-exec::task<std::optional<std::string>> optional_string(
+stdexec::task<std::optional<std::string>> optional_string(
     std::optional<std::string> value);
 
 // async → Dart: Future<OrderStatus?> optionalStatus(OrderStatus? value)
 BRIDGE_ASYNC
-exec::task<std::optional<OrderStatus>> optional_status(
+stdexec::task<std::optional<OrderStatus>> optional_status(
     std::optional<OrderStatus> value);
 
 // async → Dart: Future<List<int>> echoList(List<int> values)
 BRIDGE_ASYNC
-exec::task<std::vector<std::int32_t>> echo_list(
+stdexec::task<std::vector<std::int32_t>> echo_list(
     std::vector<std::int32_t> values);
 
 // async → Dart: Future<List<bool>> echoBoolList(List<bool> values)
 BRIDGE_ASYNC
-exec::task<std::vector<bool>> echo_bool_list(
+stdexec::task<std::vector<bool>> echo_bool_list(
     std::vector<bool> values);
 
 // async → Dart: Future<int> sumArray(List<int> values)
 BRIDGE_ASYNC
-exec::task<std::int32_t> sum_array(
+stdexec::task<std::int32_t> sum_array(
     std::array<std::int32_t, 4> values);
 
 // async → Dart: Future<int> sumScores(Map<String, int> scores)
 BRIDGE_ASYNC
-exec::task<std::int32_t> sum_scores(
+stdexec::task<std::int32_t> sum_scores(
     std::unordered_map<std::string, std::int32_t> scores);
 
 // async → Dart: Future<int> sumSet(Set<int> values)
 BRIDGE_ASYNC
-exec::task<std::int32_t> sum_set(
+stdexec::task<std::int32_t> sum_set(
     std::unordered_set<std::int32_t> values);
 
 // async → Dart: Future<int> sumScoresOrdered(Map<String, int> scores)
 BRIDGE_ASYNC
-exec::task<std::int32_t> sum_scores_ordered(
+stdexec::task<std::int32_t> sum_scores_ordered(
     std::map<std::string, std::int32_t> scores);
 
 // async → Dart: Future<int> sumSetOrdered(Set<int> values)
 BRIDGE_ASYNC
-exec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values);
+stdexec::task<std::int32_t> sum_set_ordered(std::set<std::int32_t> values);
 
 // async → Dart: Future<BigInt> echoI128(BigInt value)
 BRIDGE_ASYNC
-exec::task<dcb::Int128> echo_i128(dcb::Int128 value);
+stdexec::task<dcb::Int128> echo_i128(dcb::Int128 value);
 
 // async → Dart: Future<BigInt> echoU128(BigInt value)
 BRIDGE_ASYNC
-exec::task<dcb::UInt128> echo_u128(dcb::UInt128 value);
+stdexec::task<dcb::UInt128> echo_u128(dcb::UInt128 value);
 
 // async → Dart: Future<String> greetDartFn(String Function(String) callback, String name)
 BRIDGE_ASYNC
-exec::task<std::string> greet_dart_fn(
+stdexec::task<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name);
 
 // normal (pool) + syncAwait → Dart: Future<String> concatDartFn(String Function(String, String) callback, ...)
@@ -152,16 +152,16 @@ std::string invoke_registered(std::string input);
 
 // FRB-style pattern variant: invoke via coroutine (co_await fn(...) on io thread)
 BRIDGE_ASYNC
-exec::task<std::string> invoke_registered_async(std::string input);
+stdexec::task<std::string> invoke_registered_async(std::string input);
 
 // async → Dart: Future<(int, String)> pairEcho((int, String) value)
 BRIDGE_ASYNC
-exec::task<std::pair<std::int32_t, std::string>> pair_echo(
+stdexec::task<std::pair<std::int32_t, std::string>> pair_echo(
     std::pair<std::int32_t, std::string> value);
 
 // async → Dart: Future<(int, String, bool)> tupleEcho((int, String, bool) value)
 BRIDGE_ASYNC
-exec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
+stdexec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
     std::tuple<std::int32_t, std::string, bool> value);
 
 // stream → Dart: Stream<int> tickStream({int count = 5, int intervalMs = 10})
@@ -171,7 +171,7 @@ void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count = 5,
 
 // async + optional sink → Dart: Future<String> downloadWithProgress({required String url, StreamController<int>? progress})
 BRIDGE_ASYNC
-exec::task<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
 
 // sync + optional sink → Dart: String syncDownloadWithProgress({required String url, StreamController<int>? progress})
@@ -182,21 +182,21 @@ std::string sync_download_with_progress(
 // data class tests
 // async → Dart: Future<double> distance(Point a, Point b)
 BRIDGE_ASYNC
-exec::task<double> distance(Point a, Point b);
+stdexec::task<double> distance(Point a, Point b);
 
 // async → Dart: Future<Point> scale(Point p, double factor)
 BRIDGE_ASYNC
-exec::task<Point> scale(Point p, double factor);
+stdexec::task<Point> scale(Point p, double factor);
 
 // async → Dart: Future<Rect> boundingBox(List<Point> points)
 BRIDGE_ASYNC
-exec::task<Rect> bounding_box(std::vector<Point> points);
+stdexec::task<Rect> bounding_box(std::vector<Point> points);
 
 // --- Runtime error propagation tests (R01-R05) ---
 
 // R01: async throw → Dart Future receives StateError
 BRIDGE_ASYNC
-exec::task<std::int32_t> fail_async(std::string msg);
+stdexec::task<std::int32_t> fail_async(std::string msg);
 
 // R02: sync throw → Dart throws StateError
 BRIDGE_SYNC
@@ -208,7 +208,7 @@ std::int32_t fail_normal(std::string msg);
 
 // R04: non-std exception → Dart receives "unknown"
 BRIDGE_ASYNC
-exec::task<std::int32_t> fail_non_std();
+stdexec::task<std::int32_t> fail_non_std();
 
 // R05: stream emits data then errors
 BRIDGE_NORMAL
@@ -225,7 +225,7 @@ std::vector<std::vector<std::vector<std::int32_t>>> nested_cube(std::int32_t n);
 
 // async → Dart: Future<DateTime> echoTime(DateTime value)
 BRIDGE_ASYNC
-exec::task<std::chrono::system_clock::time_point> echo_time(
+stdexec::task<std::chrono::system_clock::time_point> echo_time(
     std::chrono::system_clock::time_point value);
 
 // sync → Dart: DateTime echoTimeSync(DateTime value)
@@ -236,7 +236,7 @@ std::chrono::system_clock::time_point echo_time_sync(
 // --- stdexec stop-token cancellation (C01-C06) ---
 //
 // Dart cannot forcibly cancel a Future that is already mapped to a running
-// exec::task coroutine. The bridge instead exposes cooperative cancellation:
+// stdexec::task coroutine. The bridge instead exposes cooperative cancellation:
 // each task registers an stdexec::inplace_stop_source in a global task_id →
 // stop-source map, and cancelTask(taskId) requests stop on it. The coroutine
 // observes the token through its own inplace_stop_callback and throws
@@ -244,7 +244,7 @@ std::chrono::system_clock::time_point echo_time_sync(
 
 // async → Dart: Future<String> cancellableTask({required String taskId, int steps = 100, int intervalMs = 20})
 BRIDGE_ASYNC
-exec::task<std::string> cancellable_task(
+stdexec::task<std::string> cancellable_task(
     std::string task_id, std::int32_t steps = 100,
     std::int32_t interval_ms = 20);
 
@@ -266,26 +266,26 @@ bool is_task_running(std::string task_id);
 
 // async → Dart: Future<String> collectAllDemo()
 BRIDGE_ASYNC
-exec::task<std::string> collect_all_demo();
+stdexec::task<std::string> collect_all_demo();
 
 // async → Dart: Future<int> collectAllParaDemo()
 BRIDGE_ASYNC
-exec::task<std::int32_t> collect_all_para_demo();
+stdexec::task<std::int32_t> collect_all_para_demo();
 
 // async → Dart: Future<String> collectAllErrorDemo()
 BRIDGE_ASYNC
-exec::task<std::string> collect_all_error_demo();
+stdexec::task<std::string> collect_all_error_demo();
 
 // async → Dart: Future<String> collectAllCancelDemo()
 BRIDGE_ASYNC
-exec::task<std::string> collect_all_cancel_demo();
+stdexec::task<std::string> collect_all_cancel_demo();
 
 // async → Dart: Future<String> collectAnyDemo()
 BRIDGE_ASYNC
-exec::task<std::string> collect_any_demo();
+stdexec::task<std::string> collect_any_demo();
 
 // async → Dart: Future<String> collectAnyCancelDemo()
 BRIDGE_ASYNC
-exec::task<std::string> collect_any_cancel_demo();
+stdexec::task<std::string> collect_any_cancel_demo();
 
 }  // namespace demo::api
