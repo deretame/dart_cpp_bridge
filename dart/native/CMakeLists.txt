@@ -195,7 +195,7 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
-  target_compile_definitions(dcb_shared PRIVATE STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
+  target_compile_definitions(dcb_shared PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
   target_link_libraries(dcb_shared PRIVATE asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)

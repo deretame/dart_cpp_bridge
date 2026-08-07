@@ -179,8 +179,10 @@ class UvScheduler {
     // stdexec::task requires its start scheduler to be infallible (the
     // default task_scheduler cannot be constructed from a scheduler that may
     // send errors/stopped), so the loop-closed set_stopped branch — which
-    // only fires on the worker-stop teardown race, when nothing can run
-    // anyway — is mapped to a no-op set_value().
+    // only fires on the worker-stop teardown race — is mapped to a no-op
+    // set_value(). Note: on that race the task body resumes on the thread
+    // that called schedule() instead of stopping; business code must not
+    // spawn new work on a stopped worker (teardown order guarantees it).
     return schedule_sender{st_} | stdexec::upon_stopped([]() noexcept {});
   }
 
