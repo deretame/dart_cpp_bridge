@@ -5,9 +5,12 @@
 
 ## Current initiative: async-simple → stdexec migration
 
-The project is migrating its C++ concurrency foundation from
+The project migrated its C++ concurrency foundation from
 [async-simple](https://github.com/alibaba/async_simple) (`Lazy`/`Executor`/`Signal`)
 to **stdexec** (P2300 senders/receivers, the future `std::execution`).
+The migration is **complete** (all code is stdexec; see "Migration status"
+below) — this section is kept as the authoritative reference for the
+resulting model.
 
 **Authoritative references — read before writing any async C++:**
 
@@ -28,31 +31,34 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
    surface only. (`foreign_runtime.h` was removed in the migration: it never
    shipped in a release — its `dcb_foreign_*` symbols were excluded from the
    build — and external loops now plug in via plain stdexec schedulers.)
-2. New or touched async C++ code uses **stdexec senders / `stdexec::task<T>`**
-   (or `exec::task<T>` when scheduler affinity is needed). Do not add new
-   `async_simple::coro::Lazy` usages; legacy `Lazy` stays only until its
-   module is migrated.
+2. All async C++ code uses **stdexec senders / `stdexec::task<T>`**.
+   `stdexec::task` has scheduler affinity built in (the coroutine resumes on
+   the scheduler it started on), so there is no `exec::task` / separate
+   affinity wrapper anymore. The async-simple → stdexec migration is
+   **complete**; do not reintroduce `async_simple::coro::Lazy`.
 3. Use only **current** stdexec names — no deprecated aliases
    (`starts_on`/`continues_on`/`read_env`/`write_env`, not
    `start_on`/`transfer`/`read`/`write`). See the usage guide §1.3.
-4. **Codegen coupling — change in lockstep.** "Async function" currently means
-   "returns `async_simple::coro::Lazy`" to the generator. When the runtime
-   switches coroutine types, update all of these in the same change:
-   - `dcb_gen_tool/scripts/parse_api.py` (Lazy detection/unwrapping, ~:764, :1009)
-   - `dcb_gen_tool/scripts/generate.py` (emits `Lazy<>` code + includes)
-   - `dcb_gen_tool/stubs/` (parse-only stub headers for libclang)
-   - `dcb_gen_tool/test/run_tests.py` fixtures and `lib/src/init.dart` template
-   - The scanned-header include rule (see [Code style](#code-style-guidelines)).
-5. Cancellation moves from `Signal`/`Slot` to **stop tokens**
-   (`inplace_stop_source`/`stop_token`); semantics stay cooperative.
+4. **Codegen emits `stdexec::task`.** "Async function" means "returns
+   `stdexec::task`" to the generator. The generator emits each async
+   dispatch as a **zero-capture IIFE lambda** —
+   `auto task = [](params) -> stdexec::task<void> {...}(args); spawn_on_io(std::move(task));` —
+   so all state travels as coroutine parameters (see `docs/known_issues.md`
+   ID-022; captures would dangle on lazy coroutines). Detection lives in
+   `dcb_gen_tool/scripts/parse_api.py` (`stdexec::task` prefix check,
+   ~:764/:1009); stubs live in `dcb_gen_tool/stubs/` (stdexec/ + asio/),
+   mirrored by `dcb_gen_tool/test/run_tests.py` fixtures and
+   `lib/src/init.dart`.
+5. Cancellation uses **stop tokens** (`inplace_stop_source`/`stop_token`)
+   everywhere — `Signal`/`Slot` are gone; semantics stay cooperative.
 
 **API mapping (approximate — details in the usage guide):**
 
 | async-simple                              | stdexec                                                                                          |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `async_simple::coro::Lazy<T>`             | `stdexec::task<T>` (coroutine) or a sender pipeline; `exec::task<T>` for scheduler affinity      |
+| `async_simple::coro::Lazy<T>`             | `stdexec::task<T>` (coroutine, scheduler-affine by default) or a sender pipeline      |
 | `async_simple::Executor` (`AsioExecutor`, `ForeignExecutor`) | a `stdexec::scheduler` (`schedule(sch)` → sender); wrap the Asio loop with a scheduler adaptor |
-| `lazy.via(ex)`                            | `stdexec::starts_on(sch, sndr)` / `stdexec::on(sch, sndr)`; in `exec::task`: `co_await exec::reschedule_coroutine_on(sch)` |
+| `lazy.via(ex)`                            | `stdexec::starts_on(sch, sndr)` / `stdexec::on(sch, sndr)`; `stdexec::task` resumes on its start scheduler automatically (affine) |
 | `syncAwait(lazy)`                         | `stdexec::sync_wait(sndr)` (non-coroutine functions only; calling it on the io thread self-deadlocks — unchanged rule) |
 | `collectAll(...)`                         | `stdexec::when_all(...)` (values flattened)                                                      |
 | `collectAny(...)`                         | `exec::when_any(...)` (winner requests stop on losers)                                           |
@@ -60,26 +66,28 @@ to **stdexec** (P2300 senders/receivers, the future `std::execution`).
 | `coro::sleep(dur, ex)`                    | `exec::schedule_after(timed_sched, dur)` (needs a timed scheduler)                               |
 | `Future<T>` / `Promise<T>`                | oneshot channel / sender (migrate together with `channel.hpp`)                                   |
 
-**Migration touchpoints (async-simple still lives here):**
+**Migration status**: the async-simple → stdexec migration is **complete**
+for all code — base runtime, `dcb_gen_tool` (generator emits `stdexec::task`
+IIFEs, parser detects `stdexec::task`), and both fixtures
+(`examples/codegen_demo/`, `examples/foreign_runtime_demo/`). The only
+remaining async-simple content is the historical narrative in `docs-site/`
+(last cleanup phase, docs only).
 
-- `dcb_gen_tool/` (see rule 4 above)
-- `examples/codegen_demo/` (API headers, generated `wire_dispatch.*`,
-  `worker_runtime.hpp`; still awaits full port)
-- `docs-site/` async-simple guides (last phase)
-
-The **base runtime is fully migrated**: `channel.hpp`, `dart_fn.hpp`,
-`runtime.hpp`, `session.hpp`, `stream*.hpp`, `src/runtime/runtime.cpp`,
-`cbridge_wait.hpp`, `cbridge.cpp` are all stdexec (`exec::task` / senders /
-stop tokens); `foreign_executor.hpp` and `foreign_runtime.h` were **deleted**
-— foreign event loops now plug in as plain stdexec schedulers, see
-`examples/foreign_runtime_demo/native/uv_scheduler.hpp`.
+The migration is **complete** across the codebase: the base runtime
+(`channel.hpp`, `dart_fn.hpp`, `runtime.hpp`, `session.hpp`, `stream*.hpp`,
+`src/runtime/runtime.cpp`, `cbridge_wait.hpp`, `cbridge.cpp`) is all stdexec
+(`stdexec::task` / senders / stop tokens); `foreign_executor.hpp` and
+`foreign_runtime.h` were **deleted** — foreign event loops now plug in as
+plain stdexec schedulers, see
+`examples/foreign_runtime_demo/native/uv_scheduler.hpp`. The codegen tool
+and both demo fixtures were migrated in the same sweep.
 
 ## Project overview
 
 `dart_cpp_bridge` is a released **Dart ↔ C++20** interoperability bridge inspired by [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/). It lets existing C/C++ code expose sync, async, stream, and reverse Dart-closure APIs to Dart/Flutter with a runtime that feels like FRB.
 
 - **Status**: Released / stable. `dart_cpp_bridge` (dart package) and
-  `dcb_gen_tool` are both published at **1.2.4**. Public APIs are stable;
+  `dcb_gen_tool` are both published at **1.3.0**. Public APIs are stable;
   avoid breaking changes (see [Compatibility policy](#compatibility-policy)).
 - **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines/senders and a single-threaded Asio event loop.
 - **Repository**: <https://github.com/deretame/dart_cpp_bridge>
@@ -97,11 +105,11 @@ Runtime (process-wide)
   wire: sync / async coroutine-sender / stream / DartFn
 ```
 
-Core principle: **business C++ code is written as normal functions or one coroutine/sender type (`exec::task<T>` / stdexec senders today; the legacy `async_simple::coro::Lazy<T>` remains only in codegen_demo); the bridge handles codec, scheduling, and Dart API generation.** Do not invent bridge-specific Future/Stream wrapper types in business code.
+Core principle: **business C++ code is written as normal functions or one coroutine/sender type (`stdexec::task<T>` / stdexec senders; the async-simple → stdexec migration is complete); the bridge handles codec, scheduling, and Dart API generation.** Do not invent bridge-specific Future/Stream wrapper types in business code.
 
 ## Compatibility policy
 
-The project is in a **released / stable state** (1.2.4). Treat every public
+The project is in a **released / stable state** (1.3.0). Treat every public
 surface as part of the compatibility contract:
 
 - Dart package public API (`dart/lib/`) and generated code contracts;
@@ -148,11 +156,11 @@ internals and the documented coroutine-type switch.
 | ------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | C++ standard | C++20 minimum                                                | Coroutines, concepts. Requires recent MSVC/GCC/Clang. stdexec needs **only** C++20.             |
 | Event loop   | [Asio](https://think-async.com/Asio/) standalone             | `asio::io_context` single-threaded; timers, post, completion.                                   |
-| Concurrency  | stdexec (P2300 senders/receivers), vendored `third_party/stdexec` | Base runtime migrated from async-simple (`Lazy`/`Executor`/`Signal`); legacy `Lazy` remains only in `dcb_gen_tool` / `codegen_demo`. See [Current initiative](#current-initiative-async-simple--stdexec-migration). |
+| Concurrency  | stdexec (P2300 senders/receivers), vendored `third_party/stdexec` | async-simple fully removed — migration complete (base runtime, generator, both demo fixtures). See [Current initiative](#current-initiative-async-simple--stdexec-migration). |
 | Dart side    | Dart 3 + `package:ffi`                                       | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                              |
-| Dart SDK     | `>= 3.10.0`                                                  | `dart/pubspec.yaml` floor. Native Assets hooks need 3.10+; link hooks need 3.13+.               |
+| Dart SDK     | `>= 3.10.0` (dev: puro)                                       | `dart/pubspec.yaml` floor; develop with `puro dart` / `puro flutter`. Native Assets hooks need 3.10+; link hooks need 3.13+.               |
 | Codegen      | Pinned Python 3.13.13 + libclang-ng 22.1.4.2                 | Downloaded from remote, cached, hash-verified. No host Python/LLVM.                             |
-| Build        | CMake 3.24+                                                  | FetchContent pulls Asio; stdexec is vendored (`third_party/stdexec`). Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
+| Build        | CMake 3.24+                                                  | FetchContent pulls Asio + patches stdexec; both optional (`DCB_FETCH_ASIO=OFF` / `DCB_FETCH_STDEXEC=OFF` for upstream-provided deps) and standalone asio can be replaced by boost (`DCB_USE_BOOST_ASIO=ON`). Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
 
 ## Directory structure
 
@@ -199,15 +207,15 @@ internals and the documented coroutine-type switch.
 │   ├── bin/dcb_gen_tool.dart       # CLI entry: generate / bootstrap / doctor
 │   ├── lib/src/               # platform detection, lock parsing, bootstrap logic
 │   ├── versions.lock          # Pinned Python + libclang-ng URLs/hashes
-│   ├── scripts/               # parse/generate Python scripts (Lazy-aware; migration target)
-│   ├── stubs/                 # Stub headers for codegen parsing (async_simple/ + asio/)
+│   ├── scripts/               # parse/generate Python scripts (stdexec-aware)
+│   ├── stubs/                 # Stub headers for codegen parsing (stdexec/ + asio/)
 │   └── tests/                 # Parser defensive tests (Python)
 └── examples/
     ├── base_demo/             # Hand-written wire dispatch demo + C++ smoke test
     │   ├── demo_api.cpp       # Hand-written demo wire dispatch
     │   ├── smoke_main.cpp     # C++ smoke test (no Dart VM)
     │   └── CMakeLists.txt     # Builds dart_cpp_bridge.dll + dcb_smoke
-    ├── codegen_demo/          # Phase 2 fixture (still async-simple; awaits port)
+    ├── codegen_demo/          # Phase 2 fixture (stdexec; generated wire_dispatch)
         ├── dart_cpp_bridge.yaml
         ├── native/api/bridge_api.h
         ├── native/api_impl/bridge_api.cpp
@@ -224,13 +232,28 @@ internals and the documented coroutine-type switch.
         └── CMakeLists.txt
 ```
 
+## Development environment (Dart/Flutter)
+
+Prefer **puro** for all Dart/Flutter tooling in this repo:
+
+- `puro dart ...` / `puro flutter ...` — run any dart/flutter command in the
+  project's puro environment (e.g. `puro dart pub get`, `puro dart test`,
+  `puro flutter test integration_test/...`).
+- `puro ls` lists installed environments; pin one per project with
+  `puro use <name>` or a `.puro.json` at the repo root.
+- The default dev env here is Flutter 3.44.5 / Dart 3.12.2 (verify with
+  `puro flutter --version`). The SDK floor stays `>= 3.10.0` (pubspec).
+- Plain `dart` / `flutter` on PATH also works (they point at the puro
+  default env on this machine), but prefer the explicit `puro` form so the
+  environment never depends on the shell's PATH setup.
+
 ## Build commands
 
 ### Requirements
 
 - CMake >= 3.24
 - C++20 compiler (MSVC 2019+, GCC 10+, Clang 12+)
-- Dart SDK >= 3.10.0
+- Dart SDK >= 3.10.0 (use `puro dart` / `puro flutter`, see [Development environment](#development-environment))
 - Git (for FetchContent)
 - Network for first C++ build (Asio + vendored stdexec) and codegen toolchain
 
@@ -256,10 +279,10 @@ cmake --build examples/base_demo/build --config Release
 
 ```bash
 cd dart
-dart pub get
+puro dart pub get
 
 # Build the C++ library first, then:
-dart test
+puro dart test
 ```
 
 Override native library path:
@@ -279,17 +302,21 @@ DCB_LIBRARY_PATH=/path/to/libdart_cpp_bridge.so dart test
 # 1. Configure base library deps (reuses _deps for asio)
 cmake -S dart/native -B dart/native/build -DCMAKE_BUILD_TYPE=Release
 
-# 2. Run codegen for the demo fixture
-cd examples/codegen_demo
-dcb_gen_tool generate dart_cpp_bridge.yaml
+# 2. Run codegen for the demo fixture — ALWAYS via the Dart CLI (never run
+#    scripts/generate.py with Python directly: it skips the clang-format /
+#    dart format post-processing and silently degrades container types when
+#    DCB_PACKAGE_ROOT is unset). Run from the dcb_gen_tool directory:
+cd ../..
+puro dart run bin/dcb_gen_tool.dart generate ../examples/codegen_demo/dart_cpp_bridge.yaml
+cd ../examples/codegen_demo
 
 # 3. Build the demo library
 cmake -S . -B build
 cmake --build build --config Release
 
 # 4. Run Dart tests
-dart pub get
-dart test
+puro dart pub get
+puro dart test
 ```
 
 ## Code organization and module divisions
@@ -348,16 +375,14 @@ Errors are always encoded as frames with `msg_type=responseErr` and payload `cod
 
 - **C++**: C++20, no extensions, no RTTI/exception changes beyond standard C++ exceptions. Use `std::` consistently.
 - **Concurrency**: write new async business code as stdexec senders or
-  `stdexec::task<T>` (`exec::task<T>` for scheduler affinity). Legacy
-  `async_simple::coro::Lazy<T>` remains only in not-yet-migrated code — do
-  not add new usages. Do not write custom `bridge::Future<T>` wrappers.
+  `stdexec::task<T>` (scheduler-affine by default). Do not write custom
+  `bridge::Future<T>` wrappers; `async_simple::coro::Lazy` is gone.
 - **Codegen parses API headers transitively**: `native/api/*.h` and everything
   it includes are parsed by libclang; a missing or unparseable header can
   silently degrade template types (`std::vector`, `std::unordered_map`, ...) to
   `int` in generated bindings. Scanned headers may only include C++ standard
-  headers, `dart_cpp_bridge/*`, and the designated coroutine header (today
-  `async_simple/coro/Lazy.h`; after the migration, the stdexec task header —
-  update `dcb_gen_tool/stubs` in the same change).
+  headers, `dart_cpp_bridge/*`, and the coroutine header
+  (`stdexec/execution.hpp` — mirrored by `dcb_gen_tool/stubs/`).
 - **Threading**: never block the `io_context` thread. Blocking work goes to the thread pool (normal/stream kind) or a blocking-offload scheduler.
 - **Error handling**: at the wire boundary always catch `const std::exception&` first, then `(...)`. Encode errors into frames; do not let exceptions propagate across FFI.
 - **Dart**: follows standard Dart package conventions, `package:lints` for static analysis. Use `final` and `StateError` for runtime failures.
@@ -429,7 +454,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
   `on()` returns to the *start* scheduler, it does not stay on the target;
   mark trailing lambdas `noexcept` before `stdexec::spawn`/`start_detached`;
   scopes must be drained (`on_empty()`/`join()`) before destruction.
-- **Stable API — no breaking changes**: packages are released (`1.2.4`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
+- **Stable API — no breaking changes**: packages are released (`1.3.0`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
 
 ## Where to find more
 
