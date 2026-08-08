@@ -497,12 +497,11 @@ def _cpp_data_class_helpers(classes: list[dict[str, Any]]) -> str:
 
 def _cpp_class_method_cases(
     classes: list[dict[str, Any]],
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str]]:
     """Generate C++ dispatch cases for opaque class methods (constructor,
-    instance, static). Returns (cases, sync_cases, async_fns)."""
+    instance, static). Returns (cases, sync_cases)."""
     cases: list[str] = []
     sync_cases: list[str] = []
-    async_fns: list[str] = []
 
     for cls in classes:
         if cls.get("kind") != "opaque_class":
@@ -643,8 +642,13 @@ def _cpp_class_method_cases(
                 sync_cases.append(sync_body)
 
             elif kind == "async":
-                # Static coroutine functions (not lambdas): MSVC 19.51 has a
-                # coroutine-lambda capture bug (see docs/known_issues.md ID-009).
+                # Lazy-coroutine lambda with IMMEDIATE invocation (IIFE):
+                # plain capture in a lazy coroutine is a dangling read once the
+                # closure dies before the coroutine body first runs — a
+                # language-level lifetime rule, not compiler-specific (see
+                # docs/known_issues.md ID-022). All state is passed in by
+                # value as coroutine parameters (copied into the coroutine
+                # frame), so the lambda itself must not capture anything.
                 fn_params = ["std::shared_ptr<Session> session", "std::uint64_t session_id",
                              "std::uint64_t gen", "std::uint64_t req", "std::uint32_t method"]
                 fn_args = ["session", "session_id", "gen", "req", "method"]
@@ -660,9 +664,7 @@ def _cpp_class_method_cases(
                     )
                 call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
                 fn_label = f"{class_name}::{m['name']}"
-                dispatch_fn = f"{class_name}_{m['name']}_dispatch"
-                async_fns.append(f"""
-stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+                iife = f"""[]( {', '.join(fn_params)}) -> stdexec::task<void> {{
   try {{
     {call_stmt}
     ByteWriter w;
@@ -674,12 +676,13 @@ stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
     post_err(session, gen, req, method, "{fn_label}", "unknown");
   }}
   co_return;
-}}""")
+}}({', '.join(fn_args)})"""
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {handle_block}
-        spawn_on_io({dispatch_fn}({', '.join(fn_args)}));
+        auto task = {iife};
+        spawn_on_io(std::move(task));
         break;
       }}"""
                 cases.append(body)
@@ -756,7 +759,7 @@ stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
             else:
                 raise ValueError(f"kind not supported yet: {kind}")
 
-    return cases, sync_cases, async_fns
+    return cases, sync_cases
 
 
 def _dart_data_class_defs(
@@ -1503,7 +1506,6 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     inc_lines = "\n".join(f'#include "{p}"' for p in api_includes)
     cases = []
     sync_cases = []
-    async_fns: list[str] = []
 
     for fn in fns:
         mid = fn["method_id"]
@@ -1598,8 +1600,12 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             sync_cases.append(sync_body)
 
         elif kind == "async":
-            # Static coroutine functions (not lambdas): MSVC 19.51 has a
-            # coroutine-lambda capture bug (see docs/known_issues.md ID-009).
+            # Lazy-coroutine lambda with IMMEDIATE invocation (IIFE): plain
+            # capture in a lazy coroutine is a dangling read once the closure
+            # dies before the coroutine body first runs — a language-level
+            # lifetime rule, not compiler-specific (docs/known_issues.md
+            # ID-022). All state is passed in by value as coroutine parameters
+            # (copied into the coroutine frame); the lambda must not capture.
             fn_params = ["std::shared_ptr<Session> session", "std::uint64_t gen",
                          "std::uint64_t req", "std::uint32_t method"]
             fn_args = ["session", "gen", "req", "method"]
@@ -1637,9 +1643,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             else:
                 call_stmt = f"auto out = co_await {call};"
 
-            dispatch_fn = f"{fn['name']}_dispatch"
-            async_fns.append(f"""
-stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
+            iife = f"""[]( {', '.join(fn_params)}) -> stdexec::task<void> {{
   try {{
     {call_stmt}
     ByteWriter w;
@@ -1651,13 +1655,14 @@ stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
     post_err(session, gen, req, method, "{fn['name']}", "unknown");
   }}
   co_return;
-}}""")
+}}({', '.join(fn_args)})"""
 
             body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
         {reads}{sink_setup}
-        spawn_on_io({dispatch_fn}({', '.join(fn_args)}));
+        auto task = {iife};
+        spawn_on_io(std::move(task));
         break;
       }}"""
             cases.append(body)
@@ -1753,27 +1758,23 @@ stdexec::task<void> {dispatch_fn}({', '.join(fn_params)}) {{
         else:
             raise ValueError(f"kind not supported yet: {kind}")
 
-    class_cases, class_sync_cases, class_async_fns = _cpp_class_method_cases(ir.get("classes", []))
+    class_cases, class_sync_cases = _cpp_class_method_cases(ir.get("classes", []))
     cases.extend(class_cases)
     sync_cases.extend(class_sync_cases)
-    async_fns = class_async_fns + async_fns
 
     cases_s = "\n".join(cases) if cases else ""
     sync_s = "\n".join(sync_cases) if sync_cases else ""
-    async_fns_s = "\n".join(async_fns) if async_fns else ""
 
     # Diagnostic aid (not for production): DCB_GEN_MAX_DISPATCH truncates the
-    # generated dispatch functions and cases so MSVC template-bloat OOM can be
-    # bisected by compiling increasingly large slices.
+    # generated dispatch cases so MSVC template-bloat OOM can be bisected by
+    # compiling increasingly large slices.
     import os as _os
 
     _max_dispatch = _os.environ.get("DCB_GEN_MAX_DISPATCH")
     if _max_dispatch:
         _n = int(_max_dispatch)
-        async_fns = async_fns[:_n]
         cases = cases[:_n]
         cases_s = "\n".join(cases) if cases else ""
-        async_fns_s = "\n".join(async_fns) if async_fns else ""
 
     cpp = f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 #include "wire_dispatch.hpp"
@@ -1927,14 +1928,6 @@ void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen,
 {alive_counters}
 
 {cpp_helpers}
-
-namespace {{
-// Per-method dispatch coroutines are placed after the generated data-class
-// codecs and alive counters they reference.
-
-{async_fns_s}
-
-}}  // namespace
 
 void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
                       const std::uint8_t* data, std::size_t len) {{
@@ -3006,14 +2999,20 @@ def run_generate(config_path: Path) -> dict[str, Any]:
     dart_out.mkdir(parents=True, exist_ok=True)
     api_out.mkdir(parents=True, exist_ok=True)
 
-    (cpp_out / "wire_dispatch.hpp").write_text(hpp, encoding="utf-8")
-    (cpp_out / "wire_dispatch.cpp").write_text(cpp, encoding="utf-8")
+    def _strip_ws(text: str) -> str:
+        # Generated templates may leave blank lines with trailing indentation
+        # (e.g. an empty arg_reads block); keep the output clean for
+        # git diff --check and formatter hygiene.
+        return "\n".join(line.rstrip() for line in text.split("\n"))
+
+    (cpp_out / "wire_dispatch.hpp").write_text(_strip_ws(hpp), encoding="utf-8")
+    (cpp_out / "wire_dispatch.cpp").write_text(_strip_ws(cpp), encoding="utf-8")
     (cpp_out / "ir.json").write_text(json.dumps(ir, indent=2) + "\n", encoding="utf-8")
-    (dart_out / impl_file).write_text(dart_impl, encoding="utf-8")
-    (dart_out / "dcb_bindings.dart").write_text(dart_bindings, encoding="utf-8")
-    (api_out / "init.dart").write_text(dart_init, encoding="utf-8")
+    (dart_out / impl_file).write_text(_strip_ws(dart_impl), encoding="utf-8")
+    (dart_out / "dcb_bindings.dart").write_text(_strip_ws(dart_bindings), encoding="utf-8")
+    (api_out / "init.dart").write_text(_strip_ws(dart_init), encoding="utf-8")
     for filename, content in api_files.items():
-        (api_out / filename).write_text(content, encoding="utf-8")
+        (api_out / filename).write_text(_strip_ws(content), encoding="utf-8")
 
     return {
         "functions": len(ir["functions"]),
