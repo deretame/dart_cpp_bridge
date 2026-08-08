@@ -3,7 +3,7 @@
 // WorkerRuntime — an independent asio event loop with a stdexec scheduler.
 //
 // Each WorkerRuntime owns:
-//   - its own asio::io_context (single-threaded)
+//   - its own DCB_ASIO_NS::io_context (single-threaded)
 //   - its own dcb::IoContextScheduler (stdexec scheduler over the loop)
 //   - its own std::thread
 //
@@ -16,9 +16,9 @@
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
 
-#include <asio/io_context.hpp>
-#include <asio/post.hpp>
-#include <asio/executor_work_guard.hpp>
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
 
 #include <atomic>
 #include <cstdio>
@@ -42,7 +42,7 @@ class WorkerRuntime {
   void start() {
     if (running_.load(std::memory_order_acquire)) return;
     running_.store(true, std::memory_order_release);
-    guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
+    guard_ = std::make_unique<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>>(
         ioc_.get_executor());
     sched_ = std::make_shared<dcb::IoContextScheduler>(ioc_);
     thread_ = std::make_unique<std::thread>([this] { ioc_.run(); });
@@ -64,7 +64,7 @@ class WorkerRuntime {
   bool running() const { return running_.load(std::memory_order_acquire); }
   const std::string& name() const { return name_; }
   dcb::IoContextScheduler& scheduler() { return *sched_; }
-  asio::io_context& io() { return ioc_; }
+  DCB_ASIO_NS::io_context& io() { return ioc_; }
 
   /// Launch a sender/coroutine (stdexec::task) on this worker's event loop.
   template <class S>
@@ -91,9 +91,9 @@ class WorkerRuntime {
 
  private:
   std::string name_;
-  asio::io_context ioc_;
+  DCB_ASIO_NS::io_context ioc_;
   std::shared_ptr<dcb::IoContextScheduler> sched_;
-  std::unique_ptr<asio::executor_work_guard<asio::io_context::executor_type>> guard_;
+  std::unique_ptr<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>> guard_;
   std::unique_ptr<std::thread> thread_;
   std::atomic<bool> running_{false};
 };

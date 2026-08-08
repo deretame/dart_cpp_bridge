@@ -9,8 +9,8 @@
 #include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
 
-#include <asio/io_context.hpp>
-#include <asio/post.hpp>
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
 
 #include <atomic>
 #include <chrono>
@@ -236,7 +236,7 @@ void test_io_not_blocked_while_awaiting() {
   std::this_thread::sleep_for(std::chrono::milliseconds(30));
 
   for (int i = 0; i < 5; ++i) {
-    asio::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
+    DCB_ASIO_NS::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   if (side_work.load() != 5) {
@@ -470,7 +470,7 @@ void test_spawn_blocking_awaited_no_block_io() {
   // While the pool thread is sleeping, io must stay responsive.
   std::this_thread::sleep_for(std::chrono::milliseconds(30));
   for (int i = 0; i < 5; ++i) {
-    asio::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
+    DCB_ASIO_NS::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(40));
   if (side_work.load() != 5) {
@@ -737,7 +737,7 @@ void test_coro_sleep_no_block_io() {
   // While the sender is sleeping on the timer, io must stay responsive.
   std::this_thread::sleep_for(std::chrono::milliseconds(30));
   for (int i = 0; i < 5; ++i) {
-    asio::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
+    DCB_ASIO_NS::post(Runtime::instance().io(), [&] { side_work.fetch_add(1); });
   }
   std::this_thread::sleep_for(std::chrono::milliseconds(40));
   if (side_work.load() != 5) {

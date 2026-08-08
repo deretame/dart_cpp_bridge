@@ -50,27 +50,78 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
+# =============================================================================
+# Optional dependency fetching (decided by the parent project)
+#   DCB_FETCH_STDEXEC   default ON  - this library FetchContent-fetches and
+#                       patches stdexec. Set OFF when the parent provides the
+#                       STDEXEC::stdexec target itself (vcpkg, FetchContent
+#                       with a pinned version, ...); this library will not
+#                       fetch or patch in that case.
+#   DCB_FETCH_ASIO      default ON  - this library fetches standalone asio
+#                       (chriskohlhoff). Set OFF when the parent provides
+#                       asio (an `asio_iface` target or find_package(asio)).
+#   DCB_USE_BOOST_ASIO  default OFF - use boost::asio instead of standalone
+#                       asio. When enabled, standalone asio is not fetched
+#                       (DCB_FETCH_ASIO is ignored); Boost is provided by the
+#                       parent (vcpkg / BOOST_ROOT / system). The business
+#                       namespace switches to boost::asio via the DCB_ASIO_NS
+#                       macro.
+# =============================================================================
+option(DCB_FETCH_STDEXEC "Fetch stdexec via FetchContent; OFF when the parent provides STDEXEC::stdexec" ON)
+option(DCB_FETCH_ASIO "Fetch standalone asio via FetchContent; OFF when the parent provides asio" ON)
+option(DCB_USE_BOOST_ASIO "Use boost::asio instead of standalone asio" OFF)
+
 # --- asio (header-only) ---
 # Version bumped to 1.31.0: stdexec's official standalone-asio integration
 # (STDEXEC_ENABLE_ASIO) pins asio-1-31-0 as its floor.
-FetchContent_Declare(
-  asio
-  GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
-  GIT_TAG        asio-1-31-0
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(asio)
+if(DCB_USE_BOOST_ASIO)
+  # Boost.Asio mode: standalone asio is not fetched. Boost is provided by
+  # stdexec's ConfigureASIO (rapids_cpm_find Boost) or by the parent; the
+  # Boost header paths are resolved from the Boost::asio target after stdexec
+  # has been populated (see below). Here we only create asio_iface and declare
+  # the macro.
+  if(NOT TARGET asio_iface)
+    add_library(asio_iface INTERFACE)
+    target_compile_definitions(asio_iface INTERFACE DCB_USE_BOOST_ASIO)
+  endif()
+elseif(DCB_FETCH_ASIO)
+  FetchContent_Declare(
+    asio
+    GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
+    GIT_TAG        asio-1-31-0
+    GIT_SHALLOW    TRUE
+  )
+  FetchContent_MakeAvailable(asio)
 
-add_library(asio_iface INTERFACE)
-target_include_directories(asio_iface INTERFACE ${asio_SOURCE_DIR}/asio/include)
-target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+  if(NOT TARGET asio_iface)
+    add_library(asio_iface INTERFACE)
+    target_include_directories(asio_iface INTERFACE ${asio_SOURCE_DIR}/asio/include)
+    target_compile_definitions(asio_iface INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+  endif()
 
-# The asio repo has no CMakeLists.txt, so MakeAvailable only populates the
-# source tree — no target is created. stdexec's ConfigureASIO reuses an
-# existing target named `asio` (import_standalone_asio returns early when it
-# finds one) instead of CPM-fetching its own asio-1-31-0. Create that target
-# as an alias of asio_iface so the whole build shares one asio copy/version.
-add_library(asio ALIAS asio_iface)
+  # The asio repo has no CMakeLists.txt, so MakeAvailable only populates the
+  # source tree — no target is created. stdexec's ConfigureASIO reuses an
+  # existing target named `asio` (import_standalone_asio returns early when it
+  # finds one) instead of CPM-fetching its own asio-1-31-0. Create that target
+  # as an alias of asio_iface so the whole build shares one asio copy/version.
+  if(NOT TARGET asio)
+    add_library(asio ALIAS asio_iface)
+  endif()
+else()
+  # Parent-provided asio: reuse an existing `asio_iface` target if present,
+  # otherwise find_package(asio).
+  if(NOT TARGET asio_iface)
+    find_package(asio CONFIG QUIET)
+    if(TARGET asio::asio)
+      add_library(asio_iface INTERFACE)
+      target_link_libraries(asio_iface INTERFACE asio::asio)
+    else()
+      message(FATAL_ERROR
+        "DCB_FETCH_ASIO=OFF but no asio found: provide an `asio_iface` target "
+        "or a CMake package `asio` (e.g. vcpkg), or keep DCB_FETCH_ASIO=ON.")
+    endif()
+  endif()
+endif()
 
 # --- rigtorp::MPMCQueue (header-only, lock-free bounded MPMC queue) ---
 # Strict-FIFO bounded queue (ring buffer, atomic ticket order) used as the
@@ -110,18 +161,58 @@ set(STDEXEC_INSTALL OFF CACHE BOOL "" FORCE)
 # Enable the Asio adapter (experimental::execution::asio): use_sender
 # completion token, asio_thread_pool (STDEXEC::asio_pool alias), etc. It is
 # header-only and links against the `asio` alias target declared above.
+# The asio implementation follows DCB_USE_BOOST_ASIO: boost / standalone.
 set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
-set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
-FetchContent_Declare(
-  stdexec
-  GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
-  GIT_TAG        nvhpc-26.05
-  GIT_SHALLOW    TRUE
-  PATCH_COMMAND  "${CMAKE_COMMAND}"
-                   -DSTDEXEC_SRC=<SOURCE_DIR>
-                   -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_stdexec_any_allocator.cmake"
-)
-FetchContent_MakeAvailable(stdexec)
+if(DCB_USE_BOOST_ASIO)
+  set(STDEXEC_ASIO_IMPLEMENTATION "boost" CACHE STRING "" FORCE)
+else()
+  set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
+endif()
+if(DCB_FETCH_STDEXEC)
+  FetchContent_Declare(
+    stdexec
+    GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
+    GIT_TAG        nvhpc-26.05
+    GIT_SHALLOW    TRUE
+    PATCH_COMMAND  "${CMAKE_COMMAND}"
+                     -DSTDEXEC_SRC=<SOURCE_DIR>
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_stdexec_any_allocator.cmake"
+  )
+  FetchContent_MakeAvailable(stdexec)
+  # Boost.Asio mode: stdexec's ConfigureASIO has provided Boost::asio via
+  # rapids_cpm_find (official boost-cmake, an INTERFACE target). Grab the
+  # Boost header paths from it for the business side (DCB_ASIO_NS =
+  # boost::asio); the same applies when the parent provides Boost::asio in
+  # another way (e.g. a vcpkg config).
+  if(DCB_USE_BOOST_ASIO AND NOT Boost_INCLUDE_DIRS)
+    if(TARGET Boost::asio)
+      get_target_property(_dcb_boost_incs Boost::asio INTERFACE_INCLUDE_DIRECTORIES)
+      if(_dcb_boost_incs)
+        target_include_directories(asio_iface INTERFACE ${_dcb_boost_incs})
+      endif()
+    else()
+      find_package(Boost REQUIRED)
+      target_include_directories(asio_iface INTERFACE ${Boost_INCLUDE_DIRS})
+    endif()
+  endif()
+else()
+  # Parent-provided stdexec (vcpkg, FetchContent with a pinned version, ...):
+  # require the STDEXEC::stdexec target to exist. Note: in this mode the
+  # patch_stdexec_any_allocator.cmake patch is NOT applied, so the parent must
+  # use a stdexec version that already contains the __any_allocator fix (or
+  # handle it itself); the STDEXEC_* options must also be configured by the
+  # parent before add_subdirectory (setting them after MakeAvailable has no
+  # effect).
+  if(NOT TARGET STDEXEC::stdexec)
+    find_package(stdexec CONFIG QUIET)
+    if(NOT TARGET STDEXEC::stdexec)
+      message(FATAL_ERROR
+        "DCB_FETCH_STDEXEC=OFF but no STDEXEC::stdexec target found. "
+        "The parent project must provide stdexec (vcpkg or FetchContent "
+        "with STDEXEC_ENABLE_ASIO matching DCB_USE_BOOST_ASIO).")
+    endif()
+  endif()
+endif()
 
 # --- dart_api_dl (downloaded via fetch_dart_api.cmake) ---
 set(DCB_DART_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dart_api)
@@ -162,7 +253,7 @@ target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
 # and 256), so raise the cap. PUBLIC so downstream business code and
 # generated wire dispatch see the same value.
 target_compile_definitions(dcb_runtime PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
-target_link_libraries(dcb_runtime PUBLIC asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
+target_link_libraries(dcb_runtime PUBLIC STDEXEC::stdexec STDEXEC::asioexec asio_iface MPMCQueue)
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)

@@ -8,9 +8,22 @@
 #include <exec/asio/asio_thread_pool.hpp>
 #include <exec/asio/use_sender.hpp>
 
-#include <asio/io_context.hpp>
-#include <asio/post.hpp>
-#include <asio/steady_timer.hpp>
+// asio namespace switch: standalone asio (default) or boost::asio (when
+// DCB_USE_BOOST_ASIO is defined, e.g. via the CMake option of the same name).
+// Business code should use DCB_ASIO_NS instead of a hard-coded asio::.
+#if defined(DCB_USE_BOOST_ASIO)
+#  include <boost/asio/io_context.hpp>
+#  include <boost/asio/post.hpp>
+#  include <boost/asio/steady_timer.hpp>
+#  include <boost/asio/executor_work_guard.hpp>
+#  define DCB_ASIO_NS boost::asio
+#else
+#  include <asio/io_context.hpp>
+#  include <asio/post.hpp>
+#  include <asio/steady_timer.hpp>
+#  include <asio/executor_work_guard.hpp>
+#  define DCB_ASIO_NS asio
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -32,7 +45,7 @@ struct Unit {};
 
 // P2300 (std::execution / stdexec) scheduler adapter that runs sender work on
 // an asio::io_context event loop — the single-threaded io thread. Design
-// reference: docs/cpp26_executor_model_usage.md §12.6 (Asio 适配).
+// reference: docs/cpp26_executor_model_usage.md §12.6 (Asio adapter).
 //
 // `stdexec::schedule(*sched)` returns the official exec::asio adapter sender
 // for `asio::post(io_context, use_sender)`: the posted handler runs on the io
@@ -60,7 +73,7 @@ class IoContextScheduler {
  public:
   using scheduler_concept = stdexec::scheduler_tag;
 
-  explicit IoContextScheduler(asio::io_context& ioc) : ioc_(&ioc) {}
+  explicit IoContextScheduler(DCB_ASIO_NS::io_context& ioc) : ioc_(&ioc) {}
 
   stdexec::sender auto schedule() const noexcept {
     // asio::post + use_sender never fails and is not cancellable, but the
@@ -82,15 +95,15 @@ class IoContextScheduler {
   stdexec::sender auto schedule_after(std::chrono::duration<Rep, Period> dur) const noexcept {
     // The timer must outlive the pending async operation: the shared_ptr is
     // held by the then-step until the pipeline completes (or is cancelled).
-    auto timer = std::make_shared<asio::steady_timer>(*ioc_);
+    auto timer = std::make_shared<DCB_ASIO_NS::steady_timer>(*ioc_);
     timer->expires_after(dur);
     return timer->async_wait(exec::asio::use_sender)
          | stdexec::then([timer] { (void)timer; });
   }
 
-  asio::io_context& io() const noexcept { return *ioc_; }
+  DCB_ASIO_NS::io_context& io() const noexcept { return *ioc_; }
 
-  asio::io_context::executor_type executor() const noexcept {
+  DCB_ASIO_NS::io_context::executor_type executor() const noexcept {
     return ioc_->get_executor();
   }
 
@@ -104,7 +117,7 @@ class IoContextScheduler {
   friend bool operator==(const IoContextScheduler&, const IoContextScheduler&) = default;
 
  private:
-  asio::io_context* ioc_;
+  DCB_ASIO_NS::io_context* ioc_;
 };
 
 using DartPostFn = void (*)(std::int64_t port, const std::uint8_t* data, std::size_t len,
@@ -130,10 +143,10 @@ class Runtime {
     }
   }
 
-  asio::io_context& io() { return io_; }
+  DCB_ASIO_NS::io_context& io() { return io_; }
 
   /// The blocking thread pool executor (asio interop: asio::post(rt.pool(), ...)).
-  asio::thread_pool::executor_type pool() { return pool_->get_executor(); }
+  DCB_ASIO_NS::thread_pool::executor_type pool() { return pool_->get_executor(); }
 
   /// The scheduler that runs on the single-threaded io_context event loop.
   /// Business senders are launched here (stdexec::starts_on(*io_scheduler(),
@@ -163,10 +176,10 @@ class Runtime {
   Runtime();
   ~Runtime();
 
-  asio::io_context io_;
+  DCB_ASIO_NS::io_context io_;
   IoContextScheduler io_sched_{io_};
   std::unique_ptr<exec::asio::asio_thread_pool> pool_;
-  std::unique_ptr<asio::executor_work_guard<asio::io_context::executor_type>> guard_;
+  std::unique_ptr<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>> guard_;
   std::unique_ptr<std::thread> io_thread_;
   std::atomic<bool> started_{false};
   std::uint32_t pool_threads_{4};

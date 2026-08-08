@@ -4,7 +4,7 @@
 
 #include <stdexec/execution.hpp>
 
-#include <asio/post.hpp>
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
 
 #include <chrono>
 #include <string>
@@ -77,7 +77,7 @@ stdexec::task<std::string> Counter::greetDartFn(
 void Counter::tickStream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
                          std::int32_t intervalMs) {
   const auto current = value_;
-  asio::post(dcb::Runtime::instance().pool(),
+  DCB_ASIO_NS::post(dcb::Runtime::instance().pool(),
              [sink = std::move(sink), count, intervalMs, current]() mutable {
                for (std::int32_t i = 0; i < count; ++i) {
                  sink.add(current);

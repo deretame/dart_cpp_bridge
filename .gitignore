@@ -27,6 +27,7 @@ out/
 
 # Agent tooling
 .reasonix/
+.clice/
 CMakeSettings.json
 CMakeUserPresets.json
 

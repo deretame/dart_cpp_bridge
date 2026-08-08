@@ -7,7 +7,7 @@
 #include <stdexec/stop_token.hpp>
 #include <exec/start_detached.hpp>
 
-#include <asio/post.hpp>
+// asio headers provided by dart_cpp_bridge/runtime.hpp (DCB_ASIO_NS)
 
 #include <atomic>
 #include <chrono>
@@ -195,7 +195,7 @@ stdexec::task<std::tuple<std::int32_t, std::string, bool>> tuple_echo(
 
 void tick_stream(dcb::StreamSink<std::int32_t> sink, std::int32_t count,
                  std::int32_t interval_ms) {
-  asio::post(dcb::Runtime::instance().pool(),
+  DCB_ASIO_NS::post(dcb::Runtime::instance().pool(),
              [sink = std::move(sink), count, interval_ms]() mutable {
                for (std::int32_t i = 0; i < count; ++i) {
                  sink.add(i);
@@ -317,7 +317,7 @@ stdexec::task<std::int32_t> fail_non_std() {
 }
 
 void fail_stream(dcb::StreamSink<std::int32_t> sink, std::string msg) {
-  asio::post(dcb::Runtime::instance().pool(),
+  DCB_ASIO_NS::post(dcb::Runtime::instance().pool(),
              [sink = std::move(sink), msg = std::move(msg)]() mutable {
                sink.add(1);
                sink.add(2);

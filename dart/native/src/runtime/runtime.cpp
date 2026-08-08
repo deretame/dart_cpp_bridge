@@ -25,8 +25,8 @@ void Runtime::start() {
   }
   io_.restart();
   pool_ = std::make_unique<exec::asio::asio_thread_pool>(pool_threads_);
-  guard_ = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
-      asio::make_work_guard(io_));
+  guard_ = std::make_unique<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>>(
+      DCB_ASIO_NS::make_work_guard(io_));
   io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
   // current_thread_is_io() (used by sync_wait's deadlock guard) queries
   // asio's running_in_this_thread() and needs no bookkeeping here.
