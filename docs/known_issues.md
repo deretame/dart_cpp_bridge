@@ -1,6 +1,6 @@
 # dart_cpp_bridge 已知问题与技术债
 
-> 更新日期：2026-08-06（ID-021 追加第 1 次修复记录：uv_stop 不唤醒 poll 导致 join 死锁，CI Android 命中；iOS 偶发挂起观察与 CI timeout-minutes 兜底）
+> 更新日期：2026-08-08（新增 ID-022：惰性协程 lambda 捕获悬垂——语言级生命周期问题，非 MSVC 独有；追加 ID-009 补充说明更正归因）
 >
 > **维护规则（每次编辑本文件必须遵守）：**
 > 1. **更新日期**：每次增改内容后，把头部「更新日期」改成当天日期（YYYY-MM-DD）。
@@ -41,6 +41,7 @@
     - [2.3.7 [ID-019] stdexec `inplace_stop_source::request_stop()` 返回值语义与 `std::stop_source` 相反（cancel_task 契约回归）](#237-id-019-stdexec-inplace_stop_sourcerequest_stop-返回值语义与-stdstop_source-相反cancel_task-契约回归)
     - [2.3.8 [ID-020] stdexec 迁移中 cbridge DartFn 回调契约回归（错误改抛异常 / 丢失 "C:" 前缀）](#238-id-020-stdexec-迁移中-cbridge-dartfn-回调契约回归错误改抛异常--丢失-c-前缀)
     - [2.3.9 [ID-021] codegen_demo 全量集成测试偶发挂起（libuv multiple concurrent requests 超时 5 分钟）](#239-id-021-codegen_demo-全量集成测试偶发挂起libuv-multiple-concurrent-requests-超时-5-分钟)
+    - [2.3.10 [ID-022] 惰性协程 lambda 按值捕获悬垂（闭包先销毁、协程后启动）——IIFE 立即调用传参为正确写法](#2310-id-022-惰性协程-lambda-按值捕获悬垂闭包先销毁协程后启动iife-立即调用传参为正确写法)
 
 ---
 
@@ -396,6 +397,12 @@ tokio 用 `recv(&mut self)` 在编译期强制单消费者；C++ 没有借用检
 - **方案**：`wire_dispatch.cpp` 全部异步 case 改为**静态协程函数**，参数显式传递（`spawn_on_io(静态函数(session, gen, req, method, ...))`）。
 - **验证**：修复后测试 1 立即通过，全套 19/19。
 - **遗留**：codegen 生成器仍产出协程 lambda，重新生成会退回坏代码；生成器迁移到 stdexec 时（AGENTS.md 规则 4）必须同时改为静态函数或避免捕获。
+
+#### 补充说明（2026-08-08）
+
+> 更正「问题描述」的归因：原记录把此现象归为「MSVC 19.51 协程 lambda 捕获损坏（编译器 bug）」。经最小复现验证（vendored `stdexec::task`，MSVC cl 19.51 Release，见 [ID-022]）确认根因是**语言级生命周期规则，与编译器无关**：惰性协程（`Lazy` / `task`）的函数体在 `sync_wait` / `co_await` 时才首次执行；lambda 按值捕获的变量是**闭包对象成员**，闭包对象（尤其临时 lambda）销毁早于协程启动 → 首次 resume 读 `this->cb` 悬垂 → UB（崩溃或垃圾值）。GCC / Clang 同样受影响，时序不同表现不同——不是 MSVC 独有。
+>
+> 原「用静态协程函数 + 参数显式传递」的修复方向仍然正确（协程参数按值拷贝进协程帧，与闭包无关）；补充一个等效且更贴近原写法的正确形式：**IIFE 立即调用 + 参数按值传递** `[](params) -> task {...}(std::move(cb), std::move(input))`（前提：IIFE 内不再捕获其他变量）。详见 [ID-022]。
 
 ### [ID-010] 协程内持有全局锁跨 co_await 阻塞 io 线程（并发请求死锁）
 
@@ -762,3 +769,56 @@ return stop_source->request_stop();
 - **方案**：`UvWorker::stop()` 的 `uv_stop(&loop_)` 只设置 `stop_flag`（libuv `uv-common.c`），**不会唤醒阻塞在 `uv__io_poll` 的 loop**；原代码在 `uv_stop` 之前的 `wake()`（用于排空 start 队列）之后，loop 可能进入 `epoll_wait(-1)`（无 timer 时无限超时）→ `stop_flag` 永不被观察 → `thread_.join()` 死锁。竞态窗口在桌面极小（这正是多次全量都过的原因），但在慢线程上放大：CI 的 Android 模拟器（`build-android`）首先命中，卡在 `libuv foreign runtime start and stop uv worker`。修复：`uv_stop` 之后**再 `wake()` 一次**，确保 loop 从 poll 醒来观察 `stop_flag` 退出（commit `d850437`）。
 - **验证**：CI `build-android` 修复后通过（此前卡住的平台）；同一 run 的 iOS 曾偶发卡死一次（>20 分钟无进展，模拟器环境偶发，与 wake#2 无关——紧接的重跑 5 平台全绿）。为兜底这类"native 挂死导致 Dart 测试进程不退出"的偶发，CI 各 job 增加 `timeout-minutes: 40`（commit `3124578`）：`flutter test` 自身的超时在 app 挂死时不生效。
 - **遗留**：`wake()` 依赖 `async_ready` 标志，`stop()` 中 `async_ready.store(false)` 在 join 之后（close 阶段前），顺序安全；若未来在 `uv_stop` 后、join 前有其他唤醒需求，注意 `uv_async_send` 的 pipe/eventfd 平台差异（macOS 用 pipe、Linux 用 eventfd）。
+
+### [ID-022] 惰性协程 lambda 按值捕获悬垂（闭包先销毁、协程后启动）——IIFE 立即调用传参为正确写法
+
+- **状态记录**（只追加，最新一行即当前状态）：
+  - 已解决（2026-08-08，实测确认正确写法；属写法规范，无代码改动）
+- **首次记录**：2026-08-08
+- **优先级**：高
+- **涉及模块**：所有惰性协程（async-simple `Lazy` / `exec::task` / `stdexec::task`）的业务代码与 codegen 生成器（`dcb_gen_tool/scripts/generate.py`）
+- **影响**：协程 lambda 按值捕获 `[cb, input]` 后返回惰性协程对象，闭包对象在协程真正启动前销毁 → 启动时读取闭包成员是悬垂访问（UB）：可能崩溃、可能读到垃圾值。**与编译器无关**（与 ID-009 同根因，ID-009 原记录归因 MSVC 19.51 不准确）；不同优化 / 时序下表现不同（可能"碰巧能跑"），比编译器 bug 更隐蔽。
+
+#### 问题描述
+
+三种写法的实测结果（vendored `stdexec::task`，惰性协程语义与 async-simple `Lazy` 一致）：
+
+```cpp
+// ✗ 崩溃（悬垂）：捕获变量是闭包对象成员，闭包先于协程启动销毁
+auto bad = [cb, input]() -> async_simple::coro::Lazy<> {
+  co_await cb(input);
+};
+
+// ✓ 正确：参数按值拷贝进协程帧（[dcl.fct.def.coroutine]），与闭包无关
+static async_simple::coro::Lazy<> good(
+    dcb::DartFn<std::string(std::string)> cb,
+    std::string input) {
+  co_await cb(input);
+}
+
+// ✓ 正确（等效 IIFE）：立即调用 + 参数按值传递
+auto task =
+    [](dcb::DartFn<std::string(std::string)> cb, std::string input)
+        -> async_simple::coro::Lazy<> {
+  co_await cb(input);
+}(std::move(cb), std::move(input));
+```
+
+机制：惰性协程的函数体在 `sync_wait` / `co_await` / `start`（首次 resume）时才执行；`[cb, input]` 是闭包对象成员（`this->cb`），闭包生命周期 = lambda 对象生命周期。lambda 作用域退出后、协程启动前 → 读 `this->cb` 悬垂。参数则不同：协程参数在协程帧创建时拷贝进帧内，帧存活到协程完成，与调用点对象无关——这就是静态函数与 IIFE 两种写法安全的原因。
+
+#### 实测验证（2026-08-08）
+
+- 复现（`.clice/lambda_capture_test.cpp`，MSVC cl 19.51，Release）：三种写法 + `clobber_stack()`（冲刷栈覆盖已销毁闭包，把悬垂读变成可观察）+ stderr 分段标记：
+  - 捕获写法：`sync_wait` 启动协程时 **Segmentation fault**（EXIT=139）；
+  - 静态函数：`hello static` 正常；
+  - IIFE 传参：`hello iife` + `done`，EXIT=0 正常。
+- 说明：无 `clobber_stack` 时捕获写法可能"碰巧能跑"（读到未覆盖的旧值）——UB 不保证崩溃，Debug / Release、优化级别不同表现不同。
+
+#### 修复记录（按时间追加）
+
+##### 第 1 次修复（2026-08-08）
+
+- **结果**：已确认正确写法（属写法规范，仓库无待修代码）
+- **方案**：协程 lambda 一律改为 **IIFE 立即调用 + 参数按值传递**（或静态协程函数 + 参数显式传递，与 ID-009 修复一致）；**IIFE 内不得再有其他捕获**（任何额外捕获的闭包成员仍会悬垂）。codegen 生成器产出的协程 lambda 需按此规范改造（承接 ID-009 遗留）。
+- **验证**：三种写法实测（见上）。
+- **遗留**：codegen 生成器迁移到 stdexec 时（AGENTS.md 规则 4）必须同步改为 IIFE / 静态函数形式；`docs/cpp26_executor_model_usage.md` 可在后续补充该写法规范。
