@@ -13,8 +13,8 @@
 
 #include "api/foreign_api.h"
 
-#include <stdexec/execution.hpp>
 #include <exec/start_detached.hpp>
+#include <stdexec/execution.hpp>
 
 #include <chrono>
 #include <cstdio>
@@ -39,9 +39,9 @@ namespace {
 // clear compile error at the call site while stdexec::task is accepted.
 using spawn_env_t = decltype(stdexec::env{
     stdexec::prop{stdexec::get_scheduler,
-                   std::declval<const dcb::IoContextScheduler&>()},
+                  std::declval<const dcb::IoContextScheduler &>()},
     stdexec::prop{stdexec::get_start_scheduler,
-                   std::declval<const dcb::IoContextScheduler&>()}});
+                  std::declval<const dcb::IoContextScheduler &>()}});
 
 // Launch a dispatch coroutine on the bridge io thread. The official
 // exec::start_detached terminates on set_error, so an upon_error log is
@@ -50,31 +50,33 @@ using spawn_env_t = decltype(stdexec::env{
 // at every call site and the chain below instantiates exactly once.
 template <class S>
   requires stdexec::sender_in<S, spawn_env_t>
-void spawn_on_io(S&& sndr) {
+void spawn_on_io(S &&sndr) {
   exec::start_detached(
       stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
                          std::forward<S>(sndr)) |
       stdexec::upon_error([](std::exception_ptr ep) noexcept {
-          try {
-            std::rethrow_exception(ep);
-          } catch (const std::exception& e) {
-            std::fprintf(stderr, "[wire] detached sender error: %s\n", e.what());
-          } catch (...) {
-            std::fprintf(stderr, "[wire] detached sender error: unknown\n");
-          }
-        }) |
+        try {
+          std::rethrow_exception(ep);
+        } catch (const std::exception &e) {
+          std::fprintf(stderr, "[wire] detached sender error: %s\n", e.what());
+        } catch (...) {
+          std::fprintf(stderr, "[wire] detached sender error: unknown\n");
+        }
+      }) |
       stdexec::upon_stopped([]() noexcept {
         std::fprintf(stderr, "[wire] detached sender stopped\n");
       }));
 }
 
-void post_ok(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
-             std::uint32_t method, const std::vector<std::uint8_t>& payload) {
+void post_ok(const std::shared_ptr<Session> &s, std::uint64_t gen,
+             std::uint64_t req, std::uint32_t method,
+             const std::vector<std::uint8_t> &payload) {
   s->try_post(gen, make_frame(MsgType::kResponseOk, req, method, payload));
 }
 
-void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_t req,
-              std::uint32_t method, const char* fn, const std::string& msg) {
+void post_err(const std::shared_ptr<Session> &s, std::uint64_t gen,
+              std::uint64_t req, std::uint32_t method, const char *fn,
+              const std::string &msg) {
   ByteWriter w;
   w.i32(1);
   w.str(dcb::error::format(fn, msg));
@@ -84,8 +86,7 @@ void post_err(const std::shared_ptr<Session>& s, std::uint64_t gen, std::uint64_
 // Receiver that turns a sender's completion into a Dart response frame:
 // set_value -> responseOk, set_error / set_stopped -> responseErr.
 // Same pattern as examples/base_demo/demo_api.cpp.
-template <typename T>
-struct DispatchReceiver {
+template <typename T> struct DispatchReceiver {
   using receiver_concept = stdexec::receiver_tag;
 
   std::shared_ptr<Session> session;
@@ -93,14 +94,14 @@ struct DispatchReceiver {
   std::uint64_t req{0};
   std::uint32_t method{0};
   std::string name;
-  std::function<void(ByteWriter&, const T&)> encode;
+  std::function<void(ByteWriter &, const T &)> encode;
 
   void set_value(T v) && noexcept {
     try {
       ByteWriter w;
       encode(w, v);
       post_ok(session, gen, req, method, w.raw());
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       post_err(session, gen, req, method, name.c_str(), e.what());
     } catch (...) {
       post_err(session, gen, req, method, name.c_str(), "unknown");
@@ -111,7 +112,7 @@ struct DispatchReceiver {
     std::string msg = "unknown";
     try {
       std::rethrow_exception(ep);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       msg = e.what();
     } catch (...) {
     }
@@ -128,37 +129,40 @@ struct DispatchReceiver {
 // into a response frame. Replaces the old asio::post(pool) + asio::post(io)
 // double hop; exceptions from the business call become responseErr frames.
 template <typename T, stdexec::sender S, typename Encode>
-void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen,
-               std::uint64_t req, std::uint32_t method, S&& sndr,
-               Encode&& encode, const char* name) {
+void run_async(const std::shared_ptr<Session> &session, std::uint64_t gen,
+               std::uint64_t req, std::uint32_t method, S &&sndr,
+               Encode &&encode, const char *name) {
   try {
     auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
                                     std::forward<S>(sndr));
-    auto rcvr = DispatchReceiver<T>{
-        session, gen, req, method, name,
-        std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))};
+    auto rcvr =
+        DispatchReceiver<T>{session,
+                            gen,
+                            req,
+                            method,
+                            name,
+                            std::function<void(ByteWriter &, const T &)>(
+                                std::forward<Encode>(encode))};
     dcb::start_with_receiver(std::move(chain), std::move(rcvr));
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     post_err(session, gen, req, method, name, e.what());
   } catch (...) {
     post_err(session, gen, req, method, name, "unknown");
   }
 }
 
-}  // namespace
+} // namespace
 
-
-
-
-
-void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id,
-                      const std::uint8_t* data, std::size_t len) {
+void dispatch_request(std::shared_ptr<Session> session,
+                      std::uint64_t session_id, const std::uint8_t *data,
+                      std::size_t len) {
   const auto gen = session->generation();
   FrameHeader frame;
   try {
     frame = parse_frame(data, len);
-  } catch (const std::exception& e) {
-    post_err(session, gen, 0, 0, "dispatch", std::string("bad frame: ") + e.what());
+  } catch (const std::exception &e) {
+    post_err(session, gen, 0, 0, "dispatch",
+             std::string("bad frame: ") + e.what());
     return;
   } catch (...) {
     post_err(session, gen, 0, 0, "dispatch", "bad frame");
@@ -171,273 +175,308 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   try {
     switch (method) {
 
-      case 18716410: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
+    case 18716410: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
 
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::start_uv_worker();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "start_uv_worker", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "start_uv_worker", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 201331851: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
-    [](ByteWriter& w, const std::string& a0) {
-        w.str(a0);
-    },
-    [](const std::uint8_t* d, std::size_t n) {
-      ByteReader r(d, n);
-        return r.str();
-    });
-        const auto input = r.str();
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method, dcb::DartFn<std::string (std::string)> callback, std::string input) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::call_dart_from_uv(callback, input);
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "call_dart_from_uv", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "call_dart_from_uv", "unknown");
-  }
-  co_return;
-}(session, gen, req, method, callback, std::move(input));
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 300843582: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto callback = dcb::DartFn<std::string(std::string)>(session, gen, r.u64(),
-    [](ByteWriter& w, const std::string& a0) {
-        w.str(a0);
-    },
-    [](const std::uint8_t* d, std::size_t n) {
-      ByteReader r(d, n);
-        return r.str();
-    });
-        const auto input = r.str();
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method, dcb::DartFn<std::string (std::string)> callback, std::string input) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_cbridge_invoke(callback, input);
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_cbridge_invoke", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_cbridge_invoke", "unknown");
-  }
-  co_return;
-}(session, gen, req, method, callback, std::move(input));
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 460040803: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto n = r.i32();
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method, std::int32_t n) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::uv_compute(n);
-    ByteWriter w;
-    w.i32(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "uv_compute", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "uv_compute", "unknown");
-  }
-  co_return;
-}(session, gen, req, method, n);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 595582421: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_channel_service_concurrent();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_channel_service_concurrent", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_channel_service_concurrent", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 828415216: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto count = r.i32();
-        const auto interval_ms = r.i32();
-        auto sink = dcb::StreamSink<std::string>(session, req, gen, method, [](std::string v) {
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::start_uv_worker();
           ByteWriter w;
-          w.str(v);
-          return w.raw();
-        });
-        ::foreign_demo::api::uv_stream(std::move(sink), count, interval_ms);
-        break;
-      }
-
-      case 1096234678: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_cbridge_async_fail();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_cbridge_async_fail", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_cbridge_async_fail", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 1620642776: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_channel_service();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_channel_service", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_channel_service", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 1657238865: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_cbridge_async();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_cbridge_async", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_cbridge_async", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 2040169010: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-        const auto message = r.str();
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method, std::string message) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::ask_uv(message);
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "ask_uv", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "ask_uv", "unknown");
-  }
-  co_return;
-}(session, gen, req, method, std::move(message));
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 2048427889: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::stop_uv_worker();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "stop_uv_worker", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "stop_uv_worker", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-
-      case 2117983701: {
-        ByteReader r(frame.payload.data(), frame.payload.size());
-
-        auto task = []( std::shared_ptr<Session> session, std::uint64_t gen, std::uint64_t req, std::uint32_t method) -> stdexec::task<void> {
-  try {
-    auto out = co_await ::foreign_demo::api::test_cbridge_async_cancel();
-    ByteWriter w;
-    w.str(out);
-    post_ok(session, gen, req, method, w.raw());
-  } catch (const std::exception& e) {
-    post_err(session, gen, req, method, "test_cbridge_async_cancel", e.what());
-  } catch (...) {
-    post_err(session, gen, req, method, "test_cbridge_async_cancel", "unknown");
-  }
-  co_return;
-}(session, gen, req, method);
-        spawn_on_io(std::move(task));
-        break;
-      }
-      default:
-        post_err(session, gen, req, method, "dispatch", "unknown method");
-        break;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "start_uv_worker", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "start_uv_worker", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
     }
-  } catch (const std::exception& e) {
+
+    case 201331851: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto callback = dcb::DartFn<std::string(std::string)>(
+          session, gen, r.u64(),
+          [](ByteWriter &w, const std::string &a0) { w.str(a0); },
+          [](const std::uint8_t *d, std::size_t n) {
+            ByteReader r(d, n);
+            return r.str();
+          });
+      const auto input = r.str();
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req, std::uint32_t method,
+                     dcb::DartFn<std::string(std::string)> callback,
+                     std::string input) -> stdexec::task<void> {
+        try {
+          auto out =
+              co_await ::foreign_demo::api::call_dart_from_uv(callback, input);
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "call_dart_from_uv", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "call_dart_from_uv", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method, callback, std::move(input));
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 300843582: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto callback = dcb::DartFn<std::string(std::string)>(
+          session, gen, r.u64(),
+          [](ByteWriter &w, const std::string &a0) { w.str(a0); },
+          [](const std::uint8_t *d, std::size_t n) {
+            ByteReader r(d, n);
+            return r.str();
+          });
+      const auto input = r.str();
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req, std::uint32_t method,
+                     dcb::DartFn<std::string(std::string)> callback,
+                     std::string input) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::test_cbridge_invoke(callback,
+                                                                       input);
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_cbridge_invoke", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_cbridge_invoke", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method, callback, std::move(input));
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 460040803: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto n = r.i32();
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req, std::uint32_t method,
+                     std::int32_t n) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::uv_compute(n);
+          ByteWriter w;
+          w.i32(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "uv_compute", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "uv_compute", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method, n);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 595582421: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out =
+              co_await ::foreign_demo::api::test_channel_service_concurrent();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_channel_service_concurrent",
+                   e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_channel_service_concurrent",
+                   "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 828415216: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto count = r.i32();
+      const auto interval_ms = r.i32();
+      auto sink = dcb::StreamSink<std::string>(session, req, gen, method,
+                                               [](std::string v) {
+                                                 ByteWriter w;
+                                                 w.str(v);
+                                                 return w.raw();
+                                               });
+      ::foreign_demo::api::uv_stream(std::move(sink), count, interval_ms);
+      break;
+    }
+
+    case 1096234678: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::test_cbridge_async_fail();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_cbridge_async_fail",
+                   e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_cbridge_async_fail",
+                   "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 1620642776: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::test_channel_service();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_channel_service", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_channel_service",
+                   "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 1657238865: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::test_cbridge_async();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_cbridge_async", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_cbridge_async", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 2040169010: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto message = r.str();
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req, std::uint32_t method,
+                     std::string message) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::ask_uv(message);
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "ask_uv", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "ask_uv", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method, std::move(message));
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 2048427889: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::stop_uv_worker();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "stop_uv_worker", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "stop_uv_worker", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
+    case 2117983701: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req,
+                     std::uint32_t method) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::foreign_demo::api::test_cbridge_async_cancel();
+          ByteWriter w;
+          w.str(out);
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "test_cbridge_async_cancel",
+                   e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "test_cbridge_async_cancel",
+                   "unknown");
+        }
+        co_return;
+      }(session, gen, req, method);
+      spawn_on_io(std::move(task));
+      break;
+    }
+    default:
+      post_err(session, gen, req, method, "dispatch", "unknown method");
+      break;
+    }
+  } catch (const std::exception &e) {
     post_err(session, gen, req, method, "dispatch", e.what());
   } catch (...) {
     post_err(session, gen, req, method, "dispatch", "unknown");
   }
 }
 
-std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len) {
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
+                                        const std::uint8_t *data,
+                                        std::size_t len) {
   auto frame = parse_frame(data, len);
 
   throw std::runtime_error("sync: method not sync-capable");
 }
 
-}  // namespace demo
-}  // namespace dcb
+} // namespace demo
+} // namespace dcb
 
 // Auto-register dispatch at DLL load time.
 namespace {
@@ -445,4 +484,4 @@ const bool _dcb_registered = [] {
   dcb::set_dispatch(&dcb::demo::dispatch_request, &dcb::demo::dispatch_sync);
   return true;
 }();
-}  // namespace
+} // namespace
