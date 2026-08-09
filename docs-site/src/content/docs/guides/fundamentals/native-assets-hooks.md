@@ -92,12 +92,16 @@ Each platform has a dedicated config class controlling generator, compiler, runt
 ```dart
 WindowsConfig(
   cmake: 'cmake',
-  dynamicCrt: true,      // true = /MD, false = /MT
+  dynamicCrt: true,      // true = /MD, false = /MT (MSVC/clang-cl only)
   bundleCrt: true,      // copy MSVCP140 / VCRUNTIME140 next to the DLL
   vsInstallPath: r'C:\Program Files\Microsoft Visual Studio\2022\Community',
   architecture: 'x64',    // 'x64' or 'arm64'
   generator: CmakeGenerator.ninja,
   generatorPath: null,
+  compiler: WindowsCompiler.msvc, // msvc | clangCl | msys2Clang | msys2Gcc
+  clangClPath: null,      // explicit clang-cl.exe path when compiler is clangCl
+  msys2Path: null,        // explicit MSYS2 root when compiler is msys2Clang/Gcc
+  staticRuntime: true,    // statically link MSYS2 C++ runtime (self-contained DLL)
   extraDefines: const [],
 )
 ```
@@ -107,12 +111,16 @@ Field reference:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `cmake` | `String` | `'cmake'` | CMake executable. Absolute path or command resolved via PATH. |
-| `dynamicCrt` | `bool` | `true` | Link the MSVC C runtime dynamically (`/MD`) when `true`, or statically (`/MT`) when `false`. |
-| `bundleCrt` | `bool` | `true` | Copy the matching CRT DLLs (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`) next to the output DLL. Only effective when `dynamicCrt` is `true`. |
+| `dynamicCrt` | `bool` | `true` | Link the MSVC C runtime dynamically (`/MD`) when `true`, or statically (`/MT`) when `false`. MSVC-style toolchains only (`msvc` / `clangCl`). |
+| `bundleCrt` | `bool` | `true` | Copy the matching runtime DLLs next to the output DLL: MSVC CRT DLLs (`MSVCP140.dll`, `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`) for `msvc`/`clangCl` when `dynamicCrt` is `true`; MSYS2 runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`) for `msys2Clang`/`msys2Gcc` when `staticRuntime` is `false`. |
 | `vsInstallPath` | `String?` | `null` | Visual Studio / Build Tools installation root. When `null`, the builder auto-detects via `vswhere.exe`, then falls back to well-known paths. |
 | `architecture` | `String` | `'x64'` | Target architecture passed to CMake `-A`. Supported: `'x64'`, `'arm64'`. |
-| `generator` | `CmakeGenerator?` | `null` | CMake generator. `null` lets CMake auto-select (typically Visual Studio / MSBuild on Windows). |
+| `generator` | `CmakeGenerator?` | `null` | CMake generator. `null` lets CMake auto-select (typically Visual Studio / MSBuild on Windows; Ninja when `compiler` is `clangCl` / `msys2Clang` / `msys2Gcc`). |
 | `generatorPath` | `String?` | `null` | Explicit path to the generator executable. For `ninja`: path to `ninja.exe`. For `msbuild`: path to `MSBuild.exe`. |
+| `compiler` | `WindowsCompiler` | `msvc` | `msvc` = MSVC `cl.exe` (default). `clangCl` = LLVM `clang-cl` (MSVC-compatible). `msys2Clang` / `msys2Gcc` = GNU/MinGW-style MSYS2 ucrt64 clang / gcc. |
+| `clangClPath` | `String?` | `null` | Explicit path to `clang-cl.exe` when `compiler` is `clangCl`. When `null`, the builder auto-detects after vcvars: VS-bundled clang-cl first, then PATH → `C:\Program Files\LLVM\bin\clang-cl.exe` → LLVM registry key. |
+| `msys2Path` | `String?` | `null` | Explicit MSYS2 root (e.g. `D:\msys2`) when `compiler` is `msys2Clang` / `msys2Gcc`. When `null`, resolved from `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2`. |
+| `staticRuntime` | `bool` | `true` | MSYS2 toolchains only: statically link libgcc / libstdc++ / winpthread into the DLL (self-contained, no runtime DLLs needed on PATH). When `false`, the MSYS2 runtime DLLs are bundled next to the output if `bundleCrt` is `true`. |
 | `extraDefines` | `List<String>` | `[]` | Extra `-D` definitions passed to the CMake configure step. |
 
 Key behaviors:
@@ -121,6 +129,8 @@ Key behaviors:
 - `dynamicCrt: false` links the CRT statically (`/MT`) for a self-contained DLL.
 - `vsInstallPath` is used both for selecting the CMake/MSBuild generator and for locating `vcvarsall.bat` when Ninja is requested.
 - `CmakeGenerator.ninja` requires the MSVC environment. The builder calls `vcvarsall.bat <arch>` from the resolved VS installation automatically, but only when the current process does not already have a VS developer environment (`VSCMD_VER`, `LIB`, or `PATH` containing MSVC paths).
+- `compiler: WindowsCompiler.clangCl` builds with LLVM `clang-cl`. With `CmakeGenerator.ninja` (the default for clang-cl when `generator` is `null`), the builder initializes the MSVC environment via `vcvarsall.bat` first, then locates clang-cl: an explicit `clangClPath` wins, then a VS-bundled clang-cl (visible on the vcvars PATH when the "C++ Clang tools for Windows" component is installed), then PATH / LLVM installs / the LLVM registry key. The resolved compiler is passed as `-DCMAKE_C(XX)_COMPILER=<clang-cl>` and its directory is added to `PATH` for the CMake process, so clang-cl does not need to be on PATH globally. With `CmakeGenerator.msbuild`, the builder passes `-T clangcl` to select the clang-cl toolset inside Visual Studio.
+- `compiler: WindowsCompiler.msys2Clang` / `msys2Gcc` build with the GNU/MinGW-style MSYS2 ucrt64 clang / gcc (`x86_64-w64-windows-gnu` target, `mingw-w64-ucrt-x86_64-clang` / `-gcc` packages). Only the Ninja generator is supported (the default when `generator` is `null`). The MSYS2 root is resolved from `msys2Path` → `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2`, and `-DCMAKE_C(XX)_COMPILER=<root>\ucrt64\bin\clang(++).exe` (or `gcc(++).exe`) is passed; no vcvars environment is needed. By default (`staticRuntime: true`) libgcc / libstdc++ / winpthread are statically linked into the DLL, so the output only depends on the system UCRT and needs no MSYS2 runtime DLLs on PATH at runtime. With `staticRuntime: false` the output depends on the MSYS2 runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll` from `<root>\ucrt64\bin`) — they are bundled next to the output when `bundleCrt` is `true`.
 
 ### Linux (`LinuxConfig`)
 

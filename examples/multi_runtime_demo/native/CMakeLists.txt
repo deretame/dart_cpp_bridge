@@ -52,5 +52,9 @@ target_link_libraries(dcb_multi_runtime_demo PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 
 if(WIN32)
-  target_compile_options(dcb_multi_runtime_demo PRIVATE /utf-8)
+  if(MSVC)
+    target_compile_options(dcb_multi_runtime_demo PRIVATE /utf-8)
+  else()
+    target_compile_options(dcb_multi_runtime_demo PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+  endif()
 endif()

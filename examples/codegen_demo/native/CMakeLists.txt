@@ -107,5 +107,9 @@ target_link_libraries(my_fancy_bridge PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> uv_a)
 
 if(WIN32)
-  target_compile_options(my_fancy_bridge PRIVATE /utf-8 /Zm2000)
+  if(MSVC)
+    target_compile_options(my_fancy_bridge PRIVATE /utf-8 /Zm2000)
+  else()
+    target_compile_options(my_fancy_bridge PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+  endif()
 endif()

@@ -46,6 +46,71 @@ enum CmakeGenerator {
   makefiles,
 }
 
+/// Windows C++ compiler selection.
+enum WindowsCompiler {
+  /// Microsoft Visual C++ (`cl.exe`), the default.
+  msvc,
+
+  /// LLVM `clang-cl` — the MSVC-compatible clang driver.
+  ///
+  /// Requires an LLVM installation (e.g. from https://llvm.org or the Visual
+  /// Studio "C++ Clang tools for Windows" component) and the Visual Studio
+  /// C++ workload (the Windows SDK headers/libs and the MSVC STL are still
+  /// consumed from the VS installation).
+  ///
+  /// Build-mode notes:
+  /// - With [CmakeGenerator.ninja] (the recommended mode, also the default
+  ///   when [WindowsConfig.generator] is `null`), the builder initializes the
+  ///   MSVC environment via `vcvarsall.bat` **first**, then locates
+  ///   clang-cl: an explicit [WindowsConfig.clangClPath] wins, then a
+  ///   VS-bundled clang-cl (visible on the vcvars PATH when the VS Clang
+  ///   component is installed), then `PATH` / LLVM installs / the LLVM
+  ///   registry key. The resolved compiler is passed via
+  ///   `-DCMAKE_C(XX)_COMPILER=<clang-cl>`, so clang-cl does not need to be
+  ///   on PATH beforehand.
+  /// - With [CmakeGenerator.msbuild], the builder passes `-T clangcl` to
+  ///   CMake, which selects the clang-cl toolset inside Visual Studio.
+  clangCl,
+
+  /// MSYS2 ucrt64 `clang` — the GNU/MinGW-style clang toolchain
+  /// (`x86_64-w64-windows-gnu` target), e.g. from the
+  /// `mingw-w64-ucrt-x86_64-clang` package.
+  ///
+  /// This is a completely different ABI from MSVC: no `vcvarsall.bat`
+  /// environment is needed (the toolchain carries its own headers and
+  /// libraries), and the produced DLL links against the MSYS2 runtime
+  /// (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll` from
+  /// `<msys2>\ucrt64\bin`) instead of the MSVC CRT. Make sure those DLLs are
+  /// on `PATH` (or bundled) at runtime.
+  ///
+  /// Build-mode notes:
+  /// - Only [CmakeGenerator.ninja] is supported (the default when
+  ///   [WindowsConfig.generator] is `null`). MSBuild / Makefiles are not
+  ///   usable with a GNU-style toolchain.
+  /// - The builder resolves the MSYS2 root via [WindowsConfig.msys2Path],
+  ///   then the `MSYS2_ROOT` environment variable, then well-known install
+  ///   locations, and passes `-DCMAKE_C(XX)_COMPILER=<msys2>\ucrt64\bin\
+  ///   clang(++).exe`. The `<msys2>\ucrt64\bin` directory is added to `PATH`
+  ///   for the CMake process.
+  /// - With [WindowsConfig.staticRuntime] (default `true`) the C++ runtime
+  ///   (libgcc / libstdc++ / winpthread) is statically linked into the DLL,
+  ///   producing a self-contained DLL with no MSYS2 runtime DLL dependency.
+  /// - `dynamicCrt` / `bundleCrt` do not apply to the MSVC CRT (no MSVC CRT
+  ///   dependency).
+  msys2Clang,
+
+  /// MSYS2 ucrt64 `gcc`/`g++` — the GNU/MinGW-style GCC toolchain
+  /// (`x86_64-w64-windows-gnu` target), e.g. from the
+  /// `mingw-w64-ucrt-x86_64-gcc` package.
+  ///
+  /// Same model as [msys2Clang] (GNU ABI, self-contained toolchain, Ninja
+  /// only, [WindowsConfig.msys2Path] / `MSYS2_ROOT` / well-known install
+  /// locations for resolution, `-DCMAKE_C(XX)_COMPILER=<msys2>\ucrt64\bin\
+  /// gcc(++).exe`), and statically links the C++ runtime by default via
+  /// [WindowsConfig.staticRuntime].
+  msys2Gcc,
+}
+
 // ---------------------------------------------------------------------------
 // Platform configuration hierarchy
 // ---------------------------------------------------------------------------
@@ -121,6 +186,52 @@ final class WindowsConfig extends DcbPlatformConfig {
   /// `['-DCMAKE_PREFIX_PATH=C:/vcpkg']`.
   final List<String> extraDefines;
 
+  /// C++ compiler selection.
+  ///
+  /// Defaults to [WindowsCompiler.msvc]. Set to [WindowsCompiler.clangCl] to
+  /// build with LLVM's MSVC-compatible `clang-cl` driver instead of `cl.exe`.
+  /// See [WindowsCompiler.clangCl] for the per-generator behavior.
+  final WindowsCompiler compiler;
+
+  /// Explicit path to `clang-cl.exe` (e.g. `r'C:\LLVM\bin\clang-cl.exe'`).
+  ///
+  /// Only used when [compiler] is [WindowsCompiler.clangCl]. When `null`
+  /// (default), the builder locates clang-cl automatically, after
+  /// initializing the MSVC environment: a VS-bundled clang-cl (from the
+  /// "C++ Clang tools for Windows" component, visible on the vcvars PATH)
+  /// first, then `PATH`, then `C:\Program Files\LLVM\bin\clang-cl.exe` /
+  /// `C:\Program Files (x86)\LLVM\bin\clang-cl.exe`, then the LLVM registry
+  /// key. With [CmakeGenerator.ninja] the resolved directory is added to
+  /// `PATH` for the CMake process, so clang-cl does not need to be on PATH
+  /// globally.
+  final String? clangClPath;
+
+  /// MSYS2 installation root (e.g. `r'D:\msys2'`), used only when
+  /// [compiler] is [WindowsCompiler.msys2Clang] or
+  /// [WindowsCompiler.msys2Gcc].
+  ///
+  /// When `null` (default), the builder resolves the root from the
+  /// `MSYS2_ROOT` environment variable, then probes well-known install
+  /// locations (`C:\msys64`, `C:\msys2`, `D:\msys2`). The toolchain is
+  /// expected at `<root>\ucrt64\bin\clang(++).exe` (msys2Clang) or
+  /// `<root>\ucrt64\bin\gcc(++).exe` (msys2Gcc).
+  final String? msys2Path;
+
+  /// Whether to statically link the GNU C++ runtime into the output library
+  /// for MSYS2 toolchains ([WindowsCompiler.msys2Clang] /
+  /// [WindowsCompiler.msys2Gcc]).
+  ///
+  /// Defaults to `true`: `-static-libgcc -static-libstdc++` plus static
+  /// winpthread are passed to the compiler/linker, producing a self-contained
+  /// DLL that only depends on the system UCRT — no MSYS2 runtime DLLs
+  /// (`libgcc_s_seh-1.dll` / `libstdc++-6.dll` / `libwinpthread-1.dll`) are
+  /// needed at runtime, so no `PATH` setup is required.
+  ///
+  /// Set to `false` to link the MSYS2 runtime dynamically; the DLL then needs
+  /// those runtime DLLs at load time (keep `<msys2>\ucrt64\bin` on `PATH` or
+  /// bundle them next to the output — see [bundleCrt]).
+  final bool staticRuntime;
+
   const WindowsConfig({
     this.cmake = 'cmake',
     this.dynamicCrt = true,
@@ -130,6 +241,10 @@ final class WindowsConfig extends DcbPlatformConfig {
     this.generator,
     this.generatorPath,
     this.extraDefines = const [],
+    this.compiler = WindowsCompiler.msvc,
+    this.clangClPath,
+    this.msys2Path,
+    this.staticRuntime = true,
   });
 }
 
@@ -676,9 +791,20 @@ final class DcbCMakeBuilder {
     final libFileName = targetOS.libraryFileName(libBaseName, linkMode);
     final libFile = _locateArtifact(buildDir, libFileName, buildType);
 
-    // 4. Bundle CRT DLLs if requested (Windows /MD, dynamic only).
+    // 4. Bundle runtime DLLs if requested (Windows /MD, dynamic only).
+    //    - MSVC / clang-cl: the MSVC CRT DLLs (MSVCP140.dll etc.).
+    //    - MSYS2 toolchains with staticRuntime=false: the MSYS2 runtime DLLs
+    //      (libgcc_s_seh-1.dll etc.). With staticRuntime=true (default) the
+    //      runtime is statically linked, so nothing needs bundling.
     if (config case WindowsConfig cfg) {
-      if (isDynamic && cfg.dynamicCrt && cfg.bundleCrt) {
+      final isMsys2 =
+          cfg.compiler == WindowsCompiler.msys2Clang ||
+          cfg.compiler == WindowsCompiler.msys2Gcc;
+      if (isMsys2) {
+        if (isDynamic && !cfg.staticRuntime && cfg.bundleCrt) {
+          _bundleMsys2Runtime(cfg, libFile);
+        }
+      } else if (isDynamic && cfg.dynamicCrt && cfg.bundleCrt) {
         _bundleWindowsCrt(cfg, libFile);
       }
     }
@@ -712,12 +838,19 @@ final class DcbCMakeBuilder {
 
   /// Whether the configured CMake generator is single-config.
   ///
-  /// On Windows, only [CmakeGenerator.ninja] is single-config; the Visual
-  /// Studio / MSBuild generator is multi-config. All other supported
+  /// On Windows, only [CmakeGenerator.ninja] is single-config (including the
+  /// implicit Ninja default used when [WindowsConfig.compiler] is
+  /// [WindowsCompiler.clangCl] / [WindowsCompiler.msys2Clang] /
+  /// [WindowsCompiler.msys2Gcc] and [WindowsConfig.generator] is `null`); the
+  /// Visual Studio / MSBuild generator is multi-config. All other supported
   /// platforms (Linux, macOS, iOS, Android) use single-config generators.
   bool _isSingleConfigGenerator(DcbPlatformConfig cfg) {
     if (cfg is WindowsConfig) {
-      return cfg.generator == CmakeGenerator.ninja;
+      return cfg.generator == CmakeGenerator.ninja ||
+          (cfg.generator == null &&
+              (cfg.compiler == WindowsCompiler.clangCl ||
+                  cfg.compiler == WindowsCompiler.msys2Clang ||
+                  cfg.compiler == WindowsCompiler.msys2Gcc));
     }
     return true;
   }
@@ -1172,26 +1305,137 @@ final class DcbCMakeBuilder {
     // Resolve CMake executable.
     final cmakePath = _resolveWindowsCmake(cfg.cmake, vsRoot);
 
+    final useClangCl = cfg.compiler == WindowsCompiler.clangCl;
+    final useMsys2 =
+        cfg.compiler == WindowsCompiler.msys2Clang ||
+        cfg.compiler == WindowsCompiler.msys2Gcc;
+
     final args = <String>[];
     Map<String, String>? env;
 
+    // Non-MSVC compilers need an explicit generator: default to Ninja (the
+    // Visual Studio generator defaults to the MSVC toolset unless
+    // `-T clangcl` is passed, so a bare auto-select would silently ignore
+    // the compiler).
+    final generator = cfg.generator ??
+        (useClangCl || useMsys2 ? CmakeGenerator.ninja : null);
+    if (cfg.generator == null && (useClangCl || useMsys2)) {
+      _log('${cfg.compiler.name} selected; defaulting to Ninja generator');
+    }
+
     // Generator.
-    switch (cfg.generator) {
+    switch (generator) {
       case CmakeGenerator.msbuild:
+        if (useMsys2) {
+          throw DcbCMakeException(
+            'CmakeGenerator.msbuild is not valid with ${cfg.compiler.name} '
+            '(GNU-style toolchains require the Ninja generator). Use '
+            'CmakeGenerator.ninja.',
+          );
+        }
         final vsVersion = _vsGeneratorName(vsRoot);
         args.addAll(['-G', vsVersion]);
         args.addAll(['-A', cfg.architecture]);
+        if (useClangCl) {
+          // Visual Studio generator + clang-cl toolset (requires the
+          // "C++ Clang tools for Windows" VS component or a standalone LLVM
+          // install; CMake locates clang-cl itself for this toolset).
+          args.addAll(['-T', 'clangcl']);
+        }
 
       case CmakeGenerator.ninja:
         args.addAll(['-G', 'Ninja']);
         args.add('-DCMAKE_BUILD_TYPE=$buildType');
-        // Ninja requires the MSVC environment (cl.exe on PATH).
-        final vcEnv = _initVcEnvironment(cfg, vsRoot);
-        env = Map<String, String>.from(vcEnv);
-        final ninjaDir = _findNinjaDir(cmakePath);
-        if (ninjaDir != null) {
-          env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
-          _log('added Ninja to PATH: $ninjaDir');
+        if (useMsys2) {
+          // GNU-style MSYS2 toolchains (clang / gcc): self-contained
+          // (headers + libraries shipped with MSYS2), no vcvars environment
+          // needed. Only x64 is supported: ucrt64 is an x86_64 environment.
+          if (cfg.architecture != 'x64') {
+            throw DcbCMakeException(
+              '${cfg.compiler.name} only supports architecture x64 '
+              '(MSYS2 ucrt64 is an x86_64 environment); got '
+              '"${cfg.architecture}".',
+            );
+          }
+          final isGcc = cfg.compiler == WindowsCompiler.msys2Gcc;
+          final msys2Root = _resolveMsys2Root(cfg.msys2Path, needGcc: isGcc);
+          final ucrt64Bin = '$msys2Root\\ucrt64\\bin';
+          final cCompiler = isGcc ? '$ucrt64Bin\\gcc.exe' : '$ucrt64Bin\\clang.exe';
+          final cxxCompiler =
+              isGcc ? '$ucrt64Bin\\g++.exe' : '$ucrt64Bin\\clang++.exe';
+          if (!File(cCompiler).existsSync() || !File(cxxCompiler).existsSync()) {
+            throw DcbCMakeException(
+              'MSYS2 ucrt64 ${isGcc ? 'gcc' : 'clang'} not found at: '
+              '$ucrt64Bin (expected ${isGcc ? 'gcc/g++' : 'clang/clang++'}.exe).',
+            );
+          }
+          args
+            ..add('-DCMAKE_C_COMPILER=$cCompiler')
+            ..add('-DCMAKE_CXX_COMPILER=$cxxCompiler');
+          // MSYS2's own ninja / runtime DLLs live in ucrt64\bin.
+          env = Map<String, String>.from(Platform.environment);
+          env['PATH'] = '$ucrt64Bin;${env['PATH'] ?? ''}';
+          _log('using MSYS2 ${isGcc ? 'gcc' : 'clang'}: $cxxCompiler');
+          if (cfg.staticRuntime) {
+            // Statically link libgcc / libstdc++ / winpthread so the output
+            // DLL only depends on the system UCRT and needs no MSYS2 runtime
+            // DLLs on PATH at runtime.
+            const staticFlags = [
+              '-static-libgcc',
+              '-static-libstdc++',
+              '-Wl,-Bstatic,--whole-archive',
+              '-lwinpthread',
+              '-Wl,--no-whole-archive,-Bdynamic',
+            ];
+            // Skip a variable when the caller already overrides it via
+            // extraDefines (user values win over these defaults).
+            void addIfNotOverridden(String define) {
+              final name = define.substring(0, define.indexOf('='));
+              if (cfg.extraDefines.any((d) => d.startsWith('$name='))) {
+                _log('skipping default $name (overridden via extraDefines)');
+                return;
+              }
+              args.add(define);
+            }
+
+            addIfNotOverridden('-DCMAKE_C_FLAGS=-static-libgcc');
+            addIfNotOverridden(
+              '-DCMAKE_CXX_FLAGS=-static-libgcc -static-libstdc++',
+            );
+            addIfNotOverridden(
+              '-DCMAKE_EXE_LINKER_FLAGS=${staticFlags.join(' ')}',
+            );
+            addIfNotOverridden(
+              '-DCMAKE_SHARED_LINKER_FLAGS=${staticFlags.join(' ')}',
+            );
+            _log('MSYS2 runtime statically linked (self-contained DLL)');
+          }
+        } else {
+          // MSVC-based toolchains (cl.exe / clang-cl) need the MSVC
+          // environment (cl.exe / link.exe on PATH, INCLUDE/LIB set).
+          final vcEnv = _initVcEnvironment(cfg, vsRoot);
+          env = Map<String, String>.from(vcEnv);
+          final ninjaDir = _findNinjaDir(cmakePath);
+          if (ninjaDir != null) {
+            env['PATH'] = '$ninjaDir;${env['PATH'] ?? ''}';
+            _log('added Ninja to PATH: $ninjaDir');
+          }
+          if (useClangCl) {
+            // Detect clang-cl inside the vcvars environment first (a
+            // VS-bundled clang-cl only becomes visible on PATH after
+            // vcvarsall.bat), then fall back to the host PATH / LLVM installs.
+            final clangCl = _resolveClangClPath(cfg.clangClPath, vcEnv: env);
+            args
+              ..add('-DCMAKE_C_COMPILER=$clangCl')
+              ..add('-DCMAKE_CXX_COMPILER=$clangCl');
+            // Make clang-cl resolvable by CMake even when it is not on PATH.
+            final clangDir = File(clangCl).parent.path;
+            if (env['PATH'] == null ||
+                !env['PATH']!.split(';').contains(clangDir)) {
+              env['PATH'] = '$clangDir;${env['PATH'] ?? ''}';
+            }
+            _log('using clang-cl: $clangCl');
+          }
         }
 
       case CmakeGenerator.makefiles:
@@ -1206,9 +1450,13 @@ final class DcbCMakeBuilder {
         args.addAll(['-A', cfg.architecture]);
     }
 
-    // CRT linkage.
-    final crtValue = _msvcRuntimeLibrary(cfg.dynamicCrt, buildType);
-    args.add('-DCMAKE_MSVC_RUNTIME_LIBRARY=$crtValue');
+    // CRT linkage: MSVC-style toolchains only. clang-cl accepts
+    // CMAKE_MSVC_RUNTIME_LIBRARY; GNU-style MSYS2 clang links its own
+    // runtime (libgcc / libstdc++ / winpthread) and would ignore it.
+    if (!useMsys2) {
+      final crtValue = _msvcRuntimeLibrary(cfg.dynamicCrt, buildType);
+      args.add('-DCMAKE_MSVC_RUNTIME_LIBRARY=$crtValue');
+    }
 
     // User-supplied extra defines.
     args.addAll(cfg.extraDefines);
@@ -1470,6 +1718,38 @@ final class DcbCMakeBuilder {
     _log('bundled $copied CRT DLL(s) from ${sourceDir.path}');
   }
 
+  /// Copies the MSYS2 runtime DLLs next to [outputDll].
+  ///
+  /// Used for [WindowsCompiler.msys2Clang] / [WindowsCompiler.msys2Gcc]
+  /// builds with [WindowsConfig.staticRuntime] = `false`: the DLL then
+  /// depends on `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and
+  /// `libwinpthread-1.dll` from `<msys2>\ucrt64\bin`. Only the DLLs that
+  /// actually exist in the toolchain are copied.
+  void _bundleMsys2Runtime(WindowsConfig cfg, File outputDll) {
+    final root = _resolveMsys2Root(
+      cfg.msys2Path,
+      needGcc: cfg.compiler == WindowsCompiler.msys2Gcc,
+    );
+    final sourceDir = '$root\\ucrt64\\bin';
+
+    const dllNames = [
+      'libgcc_s_seh-1.dll',
+      'libstdc++-6.dll',
+      'libwinpthread-1.dll',
+    ];
+
+    final outDir = outputDll.parent;
+    var copied = 0;
+    for (final name in dllNames) {
+      final src = File('$sourceDir\\$name');
+      if (src.existsSync()) {
+        src.copySync('${outDir.path}\\$name');
+        copied++;
+      }
+    }
+    _log('bundled $copied MSYS2 runtime DLL(s) from $sourceDir');
+  }
+
   // -------------------------------------------------------------------------
   // Process helpers
   // -------------------------------------------------------------------------
@@ -1525,10 +1805,16 @@ final class DcbCMakeBuilder {
 
   /// Locates the built [fileName] under [buildDir], searching the common
   /// multi-config (`Release/`, `Debug/`) and single-config (root) layouts.
+  ///
+  /// MinGW-style toolchains (e.g. MSYS2 clang) prefix shared libraries with
+  /// `lib`, so `lib<fileName>` is also probed.
   File _locateArtifact(Uri buildDir, String fileName, String buildType) {
     final candidates = <Uri>[
       buildDir.resolve('$buildType/').resolve(fileName),
       buildDir.resolve(fileName),
+      // MinGW-style shared libraries: lib<name>.dll instead of <name>.dll.
+      buildDir.resolve('$buildType/').resolve('lib$fileName'),
+      buildDir.resolve('lib$fileName'),
       // Fallback: check the other config in case of stale builds.
       buildDir
           .resolve(buildType == 'Debug' ? 'Release/' : 'Debug/')
@@ -1660,17 +1946,167 @@ final class DcbCMakeBuilder {
   }
 
   /// Whether [exeName] resolves against a directory listed in `PATH`.
-  bool _isOnPath(String exeName) {
-    final pathVar = Platform.environment['PATH'] ?? '';
+  bool _isOnPath(String exeName) => _whichOnPath(exeName) != null;
+
+  /// Returns the full path to [exeName] found on `PATH`, or `null` when
+  /// [exeName] does not resolve against any `PATH` directory.
+  ///
+  /// When [environment] is provided, its `PATH` is searched instead of the
+  /// current process environment — this is how clang-cl is looked up inside
+  /// the MSVC environment initialized by `vcvarsall.bat` (which puts the
+  /// VS-bundled clang-cl on PATH when the "C++ Clang tools for Windows"
+  /// component is installed).
+  String? _whichOnPath(String exeName, {Map<String, String>? environment}) {
+    final pathVar = (environment ?? Platform.environment)['PATH'] ?? '';
     for (final dir in pathVar.split(';')) {
       if (dir.isEmpty) {
         continue;
       }
-      if (File('$dir\\$exeName').existsSync()) {
-        return true;
+      final candidate = '$dir\\$exeName';
+      if (File(candidate).existsSync()) {
+        return candidate;
       }
     }
-    return false;
+    return null;
+  }
+
+  /// Resolves the `clang-cl.exe` executable for [WindowsCompiler.clangCl]
+  /// builds.
+  ///
+  /// Priority:
+  /// 1. explicit [configured] path (must exist — no fallback);
+  /// 2. the MSVC environment at [vcEnv] (the `vcvarsall.bat` output, which
+  ///    puts the VS-bundled clang-cl on `PATH` when the "C++ Clang tools for
+  ///    Windows" component is installed);
+  /// 3. the current process `PATH`;
+  /// 4. well-known LLVM install locations (`C:\Program Files\LLVM\bin\
+  ///    clang-cl.exe` and the x86 variant);
+  /// 5. the LLVM registry key (`HKLM\SOFTWARE\WOW6432Node\LLVM\LLVM` and
+  ///    `HKLM\SOFTWARE\LLVM\LLVM`, written by the LLVM installer).
+  ///
+  /// Throws [DcbCMakeException] with guidance when clang-cl cannot be found.
+  String _resolveClangClPath(String? configured, {Map<String, String>? vcEnv}) {
+    if (configured != null) {
+      final explicit = File(configured);
+      if (explicit.existsSync()) {
+        return explicit.path;
+      }
+      throw DcbCMakeException(
+        'WindowsConfig.clangClPath does not exist: $configured',
+      );
+    }
+
+    // VS-bundled clang-cl (only visible inside the vcvars environment).
+    final vsClangCl = _whichOnPath('clang-cl.exe', environment: vcEnv);
+    if (vsClangCl != null) {
+      _log('using VS-bundled clang-cl: $vsClangCl');
+      return vsClangCl;
+    }
+
+    final onPath = _whichOnPath('clang-cl.exe');
+    if (onPath != null) {
+      return onPath;
+    }
+
+    for (final candidate in const [
+      r'C:\Program Files\LLVM\bin\clang-cl.exe',
+      r'C:\Program Files (x86)\LLVM\bin\clang-cl.exe',
+    ]) {
+      if (File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+
+    // Fall back to the registry key written by the LLVM installer
+    // (checked in both the 32-bit and 64-bit registry views).
+    for (final key in const [
+      r'HKLM\SOFTWARE\WOW6432Node\LLVM\LLVM',
+      r'HKLM\SOFTWARE\LLVM\LLVM',
+    ]) {
+      try {
+        final result = Process.runSync('reg.exe', [
+          'query',
+          key,
+          '/v',
+          'LLVM',
+        ]);
+        if (result.exitCode == 0) {
+          // reg.exe writes UTF-16LE to pipes; Dart decodes it with the
+          // system code page, so ASCII chars arrive as "X\u0000". Strip the
+          // NUL bytes to recover readable text.
+          final raw = result.stdout as String;
+          final output = raw.contains('\u0000')
+              ? raw.replaceAll('\u0000', '')
+              : raw;
+          final match = RegExp(
+            r'LLVM\s+REG_SZ\s+(.+?)\s*$',
+            multiLine: true,
+          ).firstMatch(output);
+          if (match != null) {
+            final fromRegistry = '${match.group(1)!.trim()}\\bin\\clang-cl.exe';
+            if (File(fromRegistry).existsSync()) {
+              return fromRegistry;
+            }
+          }
+        }
+      } on ProcessException {
+        // Ignore — error out below with guidance.
+      }
+    }
+
+    throw DcbCMakeException(
+      'Could not locate clang-cl.exe for WindowsCompiler.clangCl. '
+      'Install LLVM (https://llvm.org) or pass an explicit path via '
+      'WindowsConfig(clangClPath: r"C:\\path\\to\\clang-cl.exe").',
+    );
+  }
+
+  /// Resolves the MSYS2 installation root for [WindowsCompiler.msys2Clang] /
+  /// [WindowsCompiler.msys2Gcc] builds.
+  ///
+  /// Priority: explicit [configured] path → `MSYS2_ROOT` environment
+  /// variable → well-known install locations (`C:\msys64`, `C:\msys2`,
+  /// `D:\msys2`). The candidate is accepted when the ucrt64 toolchain is
+  /// present at `<root>\ucrt64\bin\clang++.exe` (or `g++.exe` when
+  /// [needGcc] is `true`).
+  ///
+  /// An explicit [configured] path that does not contain the toolchain is an
+  /// error (no silent fallback, mirroring [WindowsConfig.clangClPath]);
+  /// otherwise throws [DcbCMakeException] with guidance when no MSYS2
+  /// toolchain is found.
+  String _resolveMsys2Root(String? configured, {required bool needGcc}) {
+    final cxxExe = needGcc ? 'g++.exe' : 'clang++.exe';
+    if (configured != null) {
+      if (File('$configured\\ucrt64\\bin\\$cxxExe').existsSync()) {
+        return configured;
+      }
+      throw DcbCMakeException(
+        'WindowsConfig.msys2Path does not contain an MSYS2 ucrt64 '
+        '${needGcc ? 'gcc' : 'clang'} toolchain: $configured '
+        '(expected <root>\\ucrt64\\bin\\$cxxExe)',
+      );
+    }
+
+    final envRoot = Platform.environment['MSYS2_ROOT'];
+    final candidates = <String>[
+      if (envRoot != null && envRoot.isNotEmpty) envRoot,
+      r'C:\msys64',
+      r'C:\msys2',
+      r'D:\msys2',
+    ];
+    for (final root in candidates) {
+      if (File('$root\\ucrt64\\bin\\$cxxExe').existsSync()) {
+        return root;
+      }
+    }
+    throw DcbCMakeException(
+      'Could not locate an MSYS2 ucrt64 ${needGcc ? 'gcc' : 'clang'} '
+      'toolchain for ${needGcc ? 'WindowsCompiler.msys2Gcc' : 'WindowsCompiler.msys2Clang'}. '
+      'Install MSYS2 (https://www.msys2.org) with the '
+      '${needGcc ? 'mingw-w64-ucrt-x86_64-gcc' : 'mingw-w64-ucrt-x86_64-clang'} '
+      'package, or pass an explicit root via '
+      'WindowsConfig(msys2Path: r"D:\\msys2").',
+    );
   }
 
   /// Candidate absolute paths to a Windows CMake executable, most-reliable

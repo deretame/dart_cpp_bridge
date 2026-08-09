@@ -1,3 +1,34 @@
+## Unreleased
+
+- `hook.dart`: `WindowsConfig` now supports two non-MSVC compilers via
+  `WindowsCompiler`:
+  - `clangCl` — LLVM `clang-cl`, the MSVC-compatible clang driver. With
+    `CmakeGenerator.ninja` (the default when `generator` is `null`), the
+    builder initializes the MSVC environment via `vcvarsall.bat` **first**,
+    then locates clang-cl: an explicit `WindowsConfig.clangClPath` wins, then
+    a VS-bundled clang-cl (visible on the vcvars PATH when the "C++ Clang
+    tools for Windows" component is installed), then `PATH` / LLVM installs /
+    the LLVM registry key. The resolved compiler is passed via
+    `-DCMAKE_C(XX)_COMPILER=<clang-cl>`. With `CmakeGenerator.msbuild`, the
+    builder passes `-T clangcl`.
+  - `msys2Clang` / `msys2Gcc` — GNU/MinGW-style MSYS2 ucrt64 clang / gcc
+    (`x86_64-w64-windows-gnu` target). The builder resolves the MSYS2 root
+    via `WindowsConfig.msys2Path` / `MSYS2_ROOT` / well-known install
+    locations and passes `-DCMAKE_C(XX)_COMPILER=<msys2>\ucrt64\bin\
+    clang(++).exe` (or `gcc(++).exe`) with the Ninja generator; no vcvars
+    environment is needed. By default the C++ runtime is statically linked
+    into the DLL (`WindowsConfig.staticRuntime`), producing a self-contained
+    DLL with no MSYS2 runtime DLL dependency — no `PATH` setup needed at
+    runtime. With `staticRuntime: false` the MSYS2 runtime DLLs
+    (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`) are
+    bundled next to the output when `bundleCrt` is `true`.
+- Native build: `dart/native/CMakeLists.txt` and the example CMakeLists now
+  use compiler-appropriate UTF-8 flags (`/utf-8` for MSVC/clang-cl,
+  `-finput-charset=UTF-8 -fexec-charset=UTF-8` for GNU-style compilers) and
+  link `ws2_32`/`mswsock` on non-MSVC Windows toolchains (asio requires
+  Winsock). `DcbCMakeBuilder` artifact lookup also probes the MinGW `lib`
+  prefix (`lib<name>.dll`).
+
 ## 1.3.0
 
 - New: `BRIDGE_SYNC` functions can now take `std::optional<dcb::StreamSink<T>>`

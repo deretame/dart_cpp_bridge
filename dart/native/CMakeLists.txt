@@ -123,6 +123,12 @@ else()
   endif()
 endif()
 
+# MinGW-style toolchains (e.g. MSYS2 clang/gcc) do not link the Winsock
+# libraries by default the way MSVC does; asio needs them on Windows.
+if(WIN32 AND NOT MSVC AND TARGET asio_iface)
+  target_link_libraries(asio_iface INTERFACE ws2_32 mswsock)
+endif()
+
 # --- rigtorp::MPMCQueue (header-only, lock-free bounded MPMC queue) ---
 # Strict-FIFO bounded queue (ring buffer, atomic ticket order) used as the
 # buffer of co::mpsc::bounded channels. Pinned to commit b9808ede (master,
@@ -257,7 +263,13 @@ target_link_libraries(dcb_runtime PUBLIC STDEXEC::stdexec STDEXEC::asioexec asio
 
 if(WIN32)
   target_compile_definitions(dcb_runtime PUBLIC _WIN32_WINNT=0x0A00)
-  target_compile_options(dcb_runtime PRIVATE /utf-8)
+  if(MSVC)
+    # MSVC / clang-cl style flag.
+    target_compile_options(dcb_runtime PRIVATE /utf-8)
+  else()
+    # GNU-style compilers (MSYS2 clang/gcc): UTF-8 source/exec charset.
+    target_compile_options(dcb_runtime PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+  endif()
 endif()
 
 # Alias for downstream users
@@ -290,12 +302,18 @@ if(DCB_BUILD_SHARED)
   target_link_libraries(dcb_shared PRIVATE asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)
     target_compile_definitions(dcb_shared PRIVATE _WIN32_WINNT=0x0A00)
-    target_compile_options(dcb_shared PRIVATE /utf-8)
-    # Use static CRT (/MT) to avoid depending on the system MSVCP140.dll.
-    # The system copy (14.00, VS 2015) is incompatible with MSVC 19.51 code
-    # when called via Dart @Native — std::mutex::lock() crashes in mtx_do_lock.
-    set_property(TARGET dcb_shared PROPERTY
-      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    if(MSVC)
+      # MSVC / clang-cl style flag.
+      target_compile_options(dcb_shared PRIVATE /utf-8)
+      # Use static CRT (/MT) to avoid depending on the system MSVCP140.dll.
+      # The system copy (14.00, VS 2015) is incompatible with MSVC 19.51 code
+      # when called via Dart @Native — std::mutex::lock() crashes in mtx_do_lock.
+      set_property(TARGET dcb_shared PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    else()
+      # GNU-style compilers (MSYS2 clang/gcc): UTF-8 source/exec charset.
+      target_compile_options(dcb_shared PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    endif()
   endif()
   set_target_properties(dcb_shared PROPERTIES OUTPUT_NAME dart_cpp_bridge)
 endif()
