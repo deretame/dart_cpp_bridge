@@ -288,4 +288,21 @@ stdexec::task<std::string> collect_any_demo();
 BRIDGE_ASYNC
 stdexec::task<std::string> collect_any_cancel_demo();
 
+// --- uint8_t* → Dart Pointer<UInt8> (U7) ---
+//
+// Raw byte pointers travel over the wire as their address (u64). The caller
+// owns the lifetime of the pointed-to memory; for sync calls the Dart side
+// keeps its allocation alive for the duration of the call.
+
+// sync → Dart: Pointer<UInt8> echoBytes(Pointer<UInt8> data, int len)
+// Copies `len` bytes from the input pointer into a thread-local buffer and
+// returns a pointer to it, so the caller can round-trip bytes back in Dart.
+BRIDGE_SYNC
+std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len);
+
+// async → Dart: Future<Pointer<UInt8>> asyncEchoBytes(Pointer<UInt8> data, int len)
+BRIDGE_ASYNC
+stdexec::task<std::uint8_t*> async_echo_bytes(const std::uint8_t* data,
+                                              std::int32_t len);
+
 }  // namespace demo::api

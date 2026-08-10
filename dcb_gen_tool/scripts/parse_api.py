@@ -900,6 +900,13 @@ def _type_ir(
     }
     if s in aliases:
         return {"kind": aliases[s]}
+
+    # Raw byte pointer: uint8_t* (input/output) → Dart Pointer<Uint8>.
+    # The address itself travels over the wire as a u64; the caller owns the
+    # lifetime of the pointed-to memory.
+    if re.fullmatch(r"(?:std::)?uint8_t\s*\*", s):
+        return {"kind": "u8_ptr"}
+
     # bare unqual
     if s.endswith("int32_t"):
         return {"kind": "i32"}
@@ -1251,26 +1258,10 @@ def parse_project(config_path: Path) -> dict[str, Any]:
     for d in cfg["defines"]:
         args.append(f"-D{d}")
 
-    # Auto-include fetched CMake dependency headers so libclang can fully resolve
-    # templates such as std::vector / std::unordered_map. Search upwards from the
-    # config directory for an existing <repo>/build/_deps.
+    # The vendored stdexec headers (third_party/stdexec/include) are included
+    # by dart_cpp_bridge/*.hpp, which libclang must resolve so templates such
+    # as std::vector / stdexec::task are not degraded to `int`.
     base = cfg["project_root"]
-    deps: Path | None = None
-    for ancestor in (base, *base.parents):
-        candidate = ancestor / "build" / "_deps"
-        if candidate.is_dir():
-            deps = candidate
-            break
-    if deps is not None:
-        # stdexec is vendored (third_party/stdexec); no async-simple fetch
-        # remains. Keep the asio include for headers that use asio types.
-        for inc in (
-            deps / "asio-src" / "asio" / "include",
-        ):
-            if inc.is_dir():
-                cfg["include_paths"].append(inc)
-
-    # The bridge runtime headers (dart_cpp_bridge/*.hpp) include the vendored
     # stdexec (third_party/stdexec/include), which libclang must resolve so
     # templates such as std::vector / stdexec::task are not degraded to `int`.
     for ancestor in (base, *base.parents):

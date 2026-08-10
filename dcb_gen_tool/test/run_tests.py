@@ -106,13 +106,20 @@ defines:
     return cfg_path
 
 
-def _run_codegen(cfg_path: Path) -> subprocess.CompletedProcess[str]:
-    """Run codegen and capture output."""
+def _run_codegen(cfg_path: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Run codegen and capture output.
+
+    env: optional extra environment variables for the subprocess. The Dart CLI
+    sets DCB_PACKAGE_ROOT so stubs take precedence over the real headers;
+    tests that need to reproduce that behaviour must pass it explicitly
+    (the tests run in parallel, so mutating os.environ here is unsafe).
+    """
     return subprocess.run(
         [sys.executable, str(RUN_CODEGEN), str(cfg_path)],
         capture_output=True,
         text=True,
         timeout=60,
+        env=env,
     )
 
 
@@ -1094,11 +1101,209 @@ std::string sync_opt(
         )
 
 
+# ---------------------------------------------------------------------------
+# U8: uint8_t* params/returns → Dart Pointer<Uint8>
+# ---------------------------------------------------------------------------
+def test_u8_ptr_input_and_output() -> None:
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+BRIDGE_SYNC
+std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len);
+
+BRIDGE_ASYNC
+stdexec::task<std::uint8_t*> load_bytes(const std::uint8_t* key);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "U8: uint8_t* input/output",
+                False,
+                f"codegen failed: exit={r.returncode}\n{combined[:800]}",
+            )
+            return
+
+        # IR carries kind=u8_ptr for both arg and return.
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        echo = fns.get("echo_bytes")
+        load = fns.get("load_bytes")
+        ir_ok = (
+            echo is not None
+            and echo["return"].get("kind") == "u8_ptr"
+            and echo["args"][0]["type"].get("kind") == "u8_ptr"
+            and load is not None
+            and load["return"].get("kind") == "u8_ptr"
+        )
+
+        # Generated Dart API uses Pointer<Uint8> for params and returns.
+        dart_api = (Path(td) / "lib" / "src" / "gen" / "api" / "api.dart").read_text(
+            encoding="utf-8"
+        )
+        dart_ok = (
+            "import 'dart:ffi';" in dart_api
+            and "Pointer<Uint8> echoBytes" in dart_api
+            and "Future<Pointer<Uint8>> loadBytes" in dart_api
+        )
+
+        # Generated Dart impl encodes the address and rebuilds the pointer.
+        dart_impl = (Path(td) / "lib" / "src" / "gen" / "dcb_generated.dart").read_text(
+            encoding="utf-8"
+        )
+        impl_ok = (
+            "import 'dart:ffi';" in dart_impl
+            and "Pointer<Uint8>.fromAddress" in dart_impl
+            and ".address" in dart_impl
+        )
+
+        # Generated C++ wire reads/writes the address as u64.
+        cpp_wire = (Path(td) / "native" / "generated" / "wire_dispatch.cpp").read_text(
+            encoding="utf-8"
+        )
+        cpp_ok = (
+            "reinterpret_cast<std::uint8_t*>(" in cpp_wire
+            and "reinterpret_cast<std::uint64_t>(" in cpp_wire
+        )
+
+        _record(
+            "U8: uint8_t* input/output",
+            ir_ok and dart_ok and impl_ok and cpp_ok,
+            f"ir_ok={ir_ok} dart_ok={dart_ok} impl_ok={impl_ok} cpp_ok={cpp_ok}\n"
+            f"exit={r.returncode}\n{combined[:400]}",
+        )
+
+
+def test_u8_ptr_still_rejects_other_pointers() -> None:
+    """int32_t* remains unsupported — only uint8_t* maps to Pointer<Uint8>."""
+    header = HEADER_PREAMBLE + """
+BRIDGE_SYNC
+std::int32_t* get_raw_ptr();
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and (
+            "unsupported" in combined.lower() or "not supported" in combined.lower()
+        )
+        _record(
+            "U8b: other raw pointers still rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# U9: API header including dart_cpp_bridge/runtime.hpp parses cleanly
+# ---------------------------------------------------------------------------
+def test_u9_runtime_header_stub() -> None:
+    """An API header that includes runtime.hpp must not degrade templates.
+
+    The Dart CLI sets DCB_PACKAGE_ROOT so the parse-only stubs (including the
+    runtime.hpp stub) take precedence over the real headers, whose dependency
+    chain (rigtorp/MPMCQueue.h etc.) does not parse under libclang. Without the
+    stub this silently degrades std::vector<T> to int.
+    """
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include "dart_cpp_bridge/runtime.hpp"
+
+BRIDGE_SYNC
+std::vector<std::string> probe_vec(const std::vector<std::int32_t>& v);
+"""
+    env = {**os.environ, "DCB_PACKAGE_ROOT": str(TOOL_DIR)}
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg, env=env)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "U9: runtime.hpp stub keeps templates",
+                False,
+                f"codegen failed: exit={r.returncode}\n{combined[:800]}",
+            )
+            return
+
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        # No file-not-found / parse diagnostics from the real header chain.
+        diags_ok = not any("MPMCQueue" in d or "file not found" in d for d in ir.get("diagnostics", []))
+        # std::vector<std::int32_t> and std::vector<std::string> must survive.
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        fn = fns.get("probe_vec")
+        type_ok = (
+            fn is not None
+            and fn["args"][0]["type"].get("kind") == "vector"
+            and fn["args"][0]["type"]["inner"].get("kind") == "i32"
+            and fn["return"].get("kind") == "vector"
+            and fn["return"]["inner"].get("kind") == "string"
+        )
+        _record(
+            "U9: runtime.hpp stub keeps templates",
+            diags_ok and type_ok,
+            f"diags={ir.get('diagnostics', [])} fn={fn}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# U10: boost::asio headers resolve via stubs/boost/asio
+# ---------------------------------------------------------------------------
+def test_u10_boost_asio_stubs() -> None:
+    """API headers that include <boost/asio/...> (DCB_USE_BOOST_ASIO mode)
+    must parse cleanly through stubs/boost/asio without degrading templates."""
+    import json as _json
+
+    header = HEADER_PREAMBLE + """
+#include <boost/asio/steady_timer.hpp>
+#include <boost/asio/io_context.hpp>
+
+BRIDGE_SYNC
+std::vector<std::string> probe_boost(const std::vector<std::int32_t>& v);
+"""
+    env = {**os.environ, "DCB_PACKAGE_ROOT": str(TOOL_DIR)}
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg, env=env)
+        combined = r.stdout + r.stderr
+        if r.returncode != 0:
+            _record(
+                "U10: boost/asio stubs keep templates",
+                False,
+                f"codegen failed: exit={r.returncode}\n{combined[:800]}",
+            )
+            return
+
+        ir_path = Path(td) / "native" / "generated" / "ir.json"
+        ir = _json.loads(ir_path.read_text(encoding="utf-8"))
+        diags_ok = not any(
+            "file not found" in d or "boost" in d.lower() and "asio" in d.lower()
+            for d in ir.get("diagnostics", [])
+        )
+        fns = {f["name"]: f for f in ir.get("functions", [])}
+        fn = fns.get("probe_boost")
+        type_ok = (
+            fn is not None
+            and fn["args"][0]["type"].get("kind") == "vector"
+            and fn["args"][0]["type"]["inner"].get("kind") == "i32"
+            and fn["return"].get("kind") == "vector"
+            and fn["return"]["inner"].get("kind") == "string"
+        )
+        _record(
+            "U10: boost/asio stubs keep templates",
+            diags_ok and type_ok,
+            f"diags={ir.get('diagnostics', [])} fn={fn}",
+        )
+
+
 def main() -> int:
     print("=" * 60)
     print("Codegen Parser Defensive Tests")
     print("=" * 60)
-
     tests = [
         # P0 priority
         test_p03_duplicate_function_name,
@@ -1138,6 +1343,13 @@ def main() -> int:
         test_st02_stream_marked_exported,
         test_st03_optional_sink_stays_async,
         test_st04_sync_optional_sink_stays_sync,
+        # uint8_t* → Pointer<Uint8>
+        test_u8_ptr_input_and_output,
+        test_u8_ptr_still_rejects_other_pointers,
+        # runtime.hpp stub keeps templates undegraded
+        test_u9_runtime_header_stub,
+        # boost::asio stubs keep templates undegraded
+        test_u10_boost_asio_stubs,
     ]
 
     workers = int(os.environ.get("DCB_TEST_WORKERS", "0")) or min(len(tests), os.cpu_count() or 4)

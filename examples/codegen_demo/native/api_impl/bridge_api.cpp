@@ -12,11 +12,13 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <variant>
+#include <vector>
 
 namespace demo::api {
 
@@ -584,6 +586,27 @@ stdexec::task<std::string> collect_any_cancel_demo() {
   const bool loser_cancelled = g_collect_cancel_observed.load() > 0;
   co_return "winner=fast,value=" + std::to_string(*fast_v) + "|" +
            (loser_cancelled ? "loser-cancelled" : "loser-still-running");
+}
+
+// uint8_t* → Dart Pointer<UInt8>: echo bytes through a thread-local buffer.
+namespace {
+constexpr std::int32_t kEchoMaxLen = 256;
+thread_local std::vector<std::uint8_t> g_echo_buf(kEchoMaxLen);
+}  // namespace
+
+std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len) {
+  if (len < 0 || len > kEchoMaxLen) {
+    throw std::runtime_error("echo_bytes: len out of range [0, 256]");
+  }
+  if (len > 0 && data != nullptr) {
+    std::memcpy(g_echo_buf.data(), data, static_cast<std::size_t>(len));
+  }
+  return g_echo_buf.data();
+}
+
+stdexec::task<std::uint8_t*> async_echo_bytes(const std::uint8_t* data,
+                                              std::int32_t len) {
+  co_return echo_bytes(data, len);
 }
 
 }  // namespace demo::api

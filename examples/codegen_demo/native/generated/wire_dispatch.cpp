@@ -1297,6 +1297,30 @@ void dispatch_request(std::shared_ptr<Session> session,
       break;
     }
 
+    case 1143946787: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto data = reinterpret_cast<std::uint8_t *>(r.u64());
+      const auto len = r.i32();
+      auto task = [](std::shared_ptr<Session> session, std::uint64_t gen,
+                     std::uint64_t req, std::uint32_t method,
+                     std::uint8_t *data,
+                     std::int32_t len) -> stdexec::task<void> {
+        try {
+          auto out = co_await ::demo::api::async_echo_bytes(data, len);
+          ByteWriter w;
+          w.u64(reinterpret_cast<std::uint64_t>(out));
+          post_ok(session, gen, req, method, w.raw());
+        } catch (const std::exception &e) {
+          post_err(session, gen, req, method, "async_echo_bytes", e.what());
+        } catch (...) {
+          post_err(session, gen, req, method, "async_echo_bytes", "unknown");
+        }
+        co_return;
+      }(session, gen, req, method, data, len);
+      spawn_on_io(std::move(task));
+      break;
+    }
+
     case 1187695424: {
       ByteReader r(frame.payload.data(), frame.payload.size());
       const auto value = static_cast<bool>(r.u8());
@@ -1338,6 +1362,19 @@ void dispatch_request(std::shared_ptr<Session> session,
       {
         auto out = ::demo::api::is_task_running(task_id);
         w.u8(out ? 1 : 0);
+      }
+      post_ok(session, gen, req, method, w.raw());
+      break;
+    }
+
+    case 1287481420: {
+      ByteReader r(frame.payload.data(), frame.payload.size());
+      const auto data = reinterpret_cast<std::uint8_t *>(r.u64());
+      const auto len = r.i32();
+      ByteWriter w;
+      {
+        auto out = ::demo::api::echo_bytes(data, len);
+        w.u64(reinterpret_cast<std::uint64_t>(out));
       }
       post_ok(session, gen, req, method, w.raw());
       break;
@@ -2579,6 +2616,33 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id,
       ByteWriter ew;
       ew.i32(1);
       ew.str(dcb::error::format("is_task_running", "unknown"));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    }
+  }
+
+  if (frame.method_id == 1287481420u) {
+    ByteReader r(frame.payload.data(), frame.payload.size());
+    const auto data = reinterpret_cast<std::uint8_t *>(r.u64());
+    const auto len = r.i32();
+    try {
+      ByteWriter w;
+      {
+        auto out = ::demo::api::echo_bytes(data, len);
+        w.u64(reinterpret_cast<std::uint64_t>(out));
+      }
+      return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id,
+                        w.raw());
+    } catch (const std::exception &e) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("echo_bytes", e.what()));
+      return make_frame(MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, ew.raw());
+    } catch (...) {
+      ByteWriter ew;
+      ew.i32(1);
+      ew.str(dcb::error::format("echo_bytes", "unknown"));
       return make_frame(MsgType::kResponseErr, frame.request_id,
                         frame.method_id, ew.raw());
     }

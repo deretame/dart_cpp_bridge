@@ -1686,6 +1686,35 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "async_echo_bytes",
+      "qualified": "demo::api::async_echo_bytes",
+      "kind": "async",
+      "method_id": 1143946787,
+      "args": [
+        {
+          "name": "data",
+          "type": {
+            "kind": "u8_ptr"
+          },
+          "default_value": null
+        },
+        {
+          "name": "len",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "u8_ptr"
+      },
+      "attrs": [
+        "bridge::async"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
       "name": "negate_bool",
       "qualified": "demo::api::negate_bool",
       "kind": "async",
@@ -1745,6 +1774,35 @@
       ],
       "return": {
         "kind": "bool"
+      },
+      "attrs": [
+        "bridge::sync"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
+    },
+    {
+      "name": "echo_bytes",
+      "qualified": "demo::api::echo_bytes",
+      "kind": "sync",
+      "method_id": 1287481420,
+      "args": [
+        {
+          "name": "data",
+          "type": {
+            "kind": "u8_ptr"
+          },
+          "default_value": null
+        },
+        {
+          "name": "len",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "u8_ptr"
       },
       "attrs": [
         "bridge::sync"

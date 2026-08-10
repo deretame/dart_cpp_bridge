@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:codegen_demo/codegen_demo.dart';
 import 'package:codegen_demo/main.dart' as app;
+import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -147,6 +150,33 @@ void main() {
     final big = BigInt.parse('340282366920938463463374607431768211455');
     expect(await echoU128(value: big), big);
     expect(await echoU128(value: BigInt.zero), BigInt.zero);
+  });
+
+  testWidgets('BRIDGE_SYNC uint8_t* echoBytes roundtrip', (tester) async {
+    final input = Uint8List.fromList([10, 20, 30, 40, 50, 60]);
+    final p = calloc<Uint8>(input.length);
+    try {
+      p.asTypedList(input.length).setAll(0, input);
+      final out = echoBytes(data: p, len: input.length);
+      expect(Uint8Pointer(out).asTypedList(input.length), input);
+      // The returned pointer addresses the thread-local C++ buffer.
+      expect(out.address, isNot(p.address));
+    } finally {
+      calloc.free(p);
+    }
+  });
+
+  testWidgets('BRIDGE_ASYNC uint8_t* asyncEchoBytes roundtrip',
+      (tester) async {
+    final input = Uint8List.fromList([1, 3, 5, 7, 9]);
+    final p = calloc<Uint8>(input.length);
+    try {
+      p.asTypedList(input.length).setAll(0, input);
+      final out = await asyncEchoBytes(data: p, len: input.length);
+      expect(Uint8Pointer(out).asTypedList(input.length), input);
+    } finally {
+      calloc.free(p);
+    }
   });
 
   testWidgets('BRIDGE_ASYNC DartFn greet_dart_fn', (tester) async {

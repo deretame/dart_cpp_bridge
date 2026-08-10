@@ -42,6 +42,7 @@ def _type_sig_fragment(t: dict[str, Any]) -> str:
         "i128": "Int128",
         "u128": "Uint128",
         "time_point": "DateTime",
+        "u8_ptr": "U8Ptr",
     }
     if k in mapping:
         return mapping[k]
@@ -197,6 +198,9 @@ def _dart_type(t: dict[str, Any]) -> str:
         return "int"
     if k == "time_point":
         return "DateTime"
+    if k == "u8_ptr":
+        # Dart FFI names the 8-bit unsigned type `Uint8` (not `UInt8`).
+        return "Pointer<Uint8>"
     return {
         "i32": "int",
         "u32": "int",
@@ -277,6 +281,8 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return "double"
     if k == "time_point":
         return "std::chrono::system_clock::time_point"
+    if k == "u8_ptr":
+        return "std::uint8_t*"
     if k == "data_class":
         q = t["qualified"]
         if not q.startswith("::"):
@@ -352,6 +358,9 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         return f"w.i128({expr});"
     if k == "u128":
         return f"w.u128({expr});"
+    if k == "u8_ptr":
+        # Raw byte pointer travels as its address (caller owns lifetime).
+        return f"w.u64(reinterpret_cast<std::uint64_t>({expr}));"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -423,6 +432,8 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         return f"{reader}.i128()"
     if k == "u128":
         return f"{reader}.u128()"
+    if k == "u8_ptr":
+        return f"reinterpret_cast<std::uint8_t*>({reader}.u64())"
     raise ValueError(f"unsupported C++ item type: {t}")
 
 
@@ -441,6 +452,44 @@ def _data_class_type_quals(t: dict[str, Any]) -> set[str]:
             result.update(_data_class_type_quals(e))
         return result
     return set()
+
+
+def _type_has_u8_ptr(t: dict[str, Any]) -> bool:
+    """Return True if `t` (recursively) references a uint8_t* (u8_ptr) type."""
+    k = t.get("kind")
+    if k == "u8_ptr":
+        return True
+    if k in ("vector", "array", "set", "optional", "lazy", "stream_sink"):
+        return _type_has_u8_ptr(t.get("inner", {}))
+    if k == "map":
+        return _type_has_u8_ptr(t.get("key", {})) or _type_has_u8_ptr(t.get("value", {}))
+    if k in ("pair", "tuple"):
+        return any(_type_has_u8_ptr(e) for e in t.get("elements", []))
+    if k == "dart_fn":
+        return any(_type_has_u8_ptr(a) for a in t.get("args", [])) or _type_has_u8_ptr(t.get("return", {}))
+    return False
+
+
+def _fn_or_method_uses_u8_ptr(fn: dict[str, Any]) -> bool:
+    """Return True if a function/method signature references u8_ptr."""
+    if _type_has_u8_ptr(fn.get("return", {})):
+        return True
+    return any(_type_has_u8_ptr(a["type"]) for a in fn.get("args", []))
+
+
+def _ir_uses_u8_ptr(ir: dict[str, Any]) -> bool:
+    """Return True if any exported function/field references a u8_ptr type."""
+    for fn in ir.get("functions", []):
+        if _fn_or_method_uses_u8_ptr(fn):
+            return True
+    for cls in ir.get("classes", []):
+        for m in cls.get("methods", []):
+            if _fn_or_method_uses_u8_ptr(m):
+                return True
+        for f in cls.get("fields", []):
+            if _type_has_u8_ptr(f["type"]):
+                return True
+    return False
 
 
 def _order_data_classes(classes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -865,7 +914,7 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
     t = a["type"]
     k = t.get("kind")
     name = a["name"]
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
         return f"const auto {name} = {_cpp_read_item(t)};"
     if k == "optional":
         inner = t["inner"]
@@ -971,7 +1020,7 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return ""
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point"):
+    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
         return _cpp_write_item(t, expr)
     if k == "optional":
         inner = t["inner"]
@@ -1058,6 +1107,8 @@ def _dart_write_item(
         return [f"{indent}{writer}.writeI128({expr});"]
     if k == "u128":
         return [f"{indent}{writer}.writeU128({expr});"]
+    if k == "u8_ptr":
+        return [f"{indent}{writer}.u64({expr}.address);"]
     if k == "optional":
         inner = t["inner"]
         # Dart flow analysis promotes simple variables in the else-branch,
@@ -1138,6 +1189,8 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{reader}.u64()"
     if k == "u128":
         return f"{reader}.readU128()"
+    if k == "u8_ptr":
+        return f"Pointer<Uint8>.fromAddress({reader}.u64())"
     if k == "optional":
         inner = t["inner"]
         read_value = _dart_read_item(inner, reader)
@@ -1229,6 +1282,8 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).readI128()"
     if k == "u128":
         return f"ByteReader({expr}).readU128()"
+    if k == "u8_ptr":
+        return f"Pointer<Uint8>.fromAddress(ByteReader({expr}).u64())"
     if k in ("pair", "tuple"):
         n = len(t["elements"])
         elem_reads = ", ".join(_dart_read_item(e, "_r") for e in t["elements"])
@@ -1259,6 +1314,8 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
             lines.append(f"_payload.u64(_{a['dart_name']}Id);")
         elif k == "opaque_class":
             lines.append(f"_payload.u64({n}.handle);")
+        elif k == "u8_ptr":
+            lines.append(f"_payload.u64({n}.address);")
         elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class", "time_point"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
@@ -2406,10 +2463,13 @@ enum {name} {{
     if api_imports_s:
         api_imports_s += "\n"
 
+    # uint8_t* params/returns surface as Pointer<Uint8>, which needs dart:ffi.
+    u8_ptr_import = "import 'dart:ffi';\n" if _ir_uses_u8_ptr(ir) else ""
+
     return f"""// GENERATED by dart_cpp_bridge codegen — do not edit.
 // ignore_for_file: unused_element, unused_import
 
-import 'dart:async';
+{u8_ptr_import}import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
@@ -2728,11 +2788,23 @@ def generate_dart_api_files(
             _is_optional_sink_arg(a)
             for fn in fns for a in fn["args"]
         )
+        has_u8_ptr = any(
+            _fn_or_method_uses_u8_ptr(fn) for fn in fns
+        ) or any(
+            _fn_or_method_uses_u8_ptr(m)
+            for cls in classes for m in cls.get("methods", [])
+        ) or any(
+            _type_has_u8_ptr(f["type"])
+            for cls in classes for f in cls.get("fields", [])
+        )
 
         lines: list[str] = []
         lines.append("// GENERATED by dart_cpp_bridge codegen — do not edit.")
         lines.append(f"// Source: {hp.name}")
         lines.append("")
+        if has_u8_ptr:
+            lines.append("import 'dart:ffi';")
+            lines.append("")
         if has_dart_fn or has_opt_sink:
             lines.append("import 'dart:async';")
             lines.append("")

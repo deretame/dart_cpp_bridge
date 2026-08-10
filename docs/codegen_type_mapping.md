@@ -25,6 +25,7 @@
 | `std::string` | `String` | UTF-8 字符串，wire 编码为长度 + 字节 |
 | `char*` / `const char*` | `String` | 仅作为输入参数；不用于返回值或字段（按 `std::string` 处理） |
 | `std::chrono::system_clock::time_point` | `DateTime` | wire 编码为 i64 Unix 微秒时间戳；UTC 无偏移（Dart 侧 `isUtc: true`）。仅支持 `system_clock`，其他时钟（如 `steady_clock`）不可桥接 |
+| `uint8_t*` / `const uint8_t*` / `std::uint8_t*` | `Pointer<Uint8>` | 裸字节指针，输入与输出参数均支持。wire 上传输指针地址（u64），**内存生命周期由调用方负责**：Dart 侧传入的分配必须在调用期间保持存活；C++ 侧返回的指针指向的缓冲区由业务代码保证有效（例如静态/线程局部缓冲或堆分配） |
 
 > 注：在 C++ 头文件里，可以写 `int8_t` / `int16_t` 等标准固定宽度类型，也可以用 `i8` / `i16` 等 FRB 风格别名（若用户定义了别名）。 codegen 解析时统一归一到标准类型处理。
 
