@@ -215,10 +215,17 @@ class ByteReader {
   }
 
   /// Read `u32` length + UTF-8 string.
+  ///
+  /// allowMalformed：C++ 侧错误消息可能混入非 UTF-8 字节（例如中文 Windows
+  /// 上 boost::system_error::what() 返回 GBK 本地化文本），严格解码会把
+  /// 一个普通业务错误变成 FormatException；容错解码替换为 U+FFFD。
   String str() {
     final n = u32();
     _need(n);
-    final s = utf8.decode(data.sublist(_pos, _pos + n));
+    final s = utf8.decode(
+      data.sublist(_pos, _pos + n),
+      allowMalformed: true,
+    );
     _pos += n;
     return s;
   }
