@@ -43,6 +43,7 @@ def _type_sig_fragment(t: dict[str, Any]) -> str:
         "u128": "Uint128",
         "time_point": "DateTime",
         "u8_ptr": "U8Ptr",
+        "u8": "Uint8T",
     }
     if k in mapping:
         return mapping[k]
@@ -176,6 +177,8 @@ def _dart_type(t: dict[str, Any]) -> str:
         return t["name"]
     if k == "optional":
         return f"{_dart_type(t['inner'])}?"
+    if k == "vector" and t["inner"].get("kind") == "u8":
+        return "Uint8List"
     if k == "vector" or k == "array":
         return f"List<{_dart_type(t['inner'])}>"
     if k == "set":
@@ -204,6 +207,7 @@ def _dart_type(t: dict[str, Any]) -> str:
     return {
         "i32": "int",
         "u32": "int",
+        "u8": "int",
         "i64": "int",
         "bool": "bool",
         "string": "String",
@@ -236,12 +240,18 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return "std::int32_t"
     if k == "u32":
         return "std::uint32_t"
+    if k == "u8":
+        return "std::uint8_t"
     if k == "i64":
         return "std::int64_t"
     if k == "bool":
         return "bool"
     if k == "string":
         return "std::string"
+    if k == "void":
+        # 仅用于 DartFn 的返回类型（如 dcb::DartFn<void(int64_t, int64_t)>），
+        # 函数本身的 void 返回在写回包处单独处理，不经此分支。
+        return "void"
     if k == "dart_fn":
         # e.g. signature "std::string (std::string)" →
         # dcb::DartFn<std::string (std::string)>
@@ -253,6 +263,8 @@ def _cpp_type(t: dict[str, Any]) -> str:
         return q
     if k == "optional":
         return f"std::optional<{_cpp_type(t['inner'])}>"
+    if k == "stream_sink":
+        return f"dcb::StreamSink<{_cpp_type(t['inner'])}>"
     if k == "vector":
         return f"std::vector<{_cpp_type(t['inner'])}>"
     if k == "array":
@@ -303,6 +315,8 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         return f"w.i32({expr});"
     if k == "u32":
         return f"w.u32({expr});"
+    if k == "u8":
+        return f"w.u8({expr});"
     if k == "i64":
         return f"w.i64({expr});"
     if k == "bool":
@@ -331,6 +345,8 @@ def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
         )
         return f"w.{helper}({expr}, {writes});"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"w.u8vec({expr});"
         inner = t["inner"]
         item = _cpp_write_item(inner, "v")
         return f"w.vec({expr}, [&](const auto& v) {{ {item} }});"
@@ -371,6 +387,8 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         return f"{reader}.i32()"
     if k == "u32":
         return f"{reader}.u32()"
+    if k == "u8":
+        return f"{reader}.u8()"
     if k == "i64":
         return f"{reader}.i64()"
     if k == "bool":
@@ -402,6 +420,8 @@ def _cpp_read_item(t: dict[str, Any], reader: str = "r") -> str:
         )
         return f"{reader}.{helper}<{elem_types}>({reads})"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"{reader}.u8vec()"
         inner_type = _cpp_type(t["inner"])
         item_read = _cpp_read_item(t["inner"], reader)
         return f"{reader}.vec<{inner_type}>([&]() {{ return {item_read}; }})"
@@ -475,6 +495,30 @@ def _fn_or_method_uses_u8_ptr(fn: dict[str, Any]) -> bool:
     if _type_has_u8_ptr(fn.get("return", {})):
         return True
     return any(_type_has_u8_ptr(a["type"]) for a in fn.get("args", []))
+
+
+def _type_has_u8vec(t: dict[str, Any]) -> bool:
+    """Return True if `t` (recursively) references a std::vector<uint8_t>
+    (bulk-bytes) type — those surface as Uint8List and need dart:typed_data."""
+    k = t.get("kind")
+    if k == "vector":
+        return t.get("inner", {}).get("kind") == "u8"
+    if k in ("array", "set", "optional", "lazy", "stream_sink"):
+        return _type_has_u8vec(t.get("inner", {}))
+    if k == "map":
+        return _type_has_u8vec(t.get("key", {})) or _type_has_u8vec(t.get("value", {}))
+    if k in ("pair", "tuple"):
+        return any(_type_has_u8vec(e) for e in t.get("elements", []))
+    if k == "dart_fn":
+        return any(_type_has_u8vec(a) for a in t.get("args", [])) or _type_has_u8vec(t.get("return", {}))
+    return False
+
+
+def _fn_or_method_uses_u8vec(fn: dict[str, Any]) -> bool:
+    """Return True if a function/method signature references vector<uint8_t>."""
+    if _type_has_u8vec(fn.get("return", {})):
+        return True
+    return any(_type_has_u8vec(a["type"]) for a in fn.get("args", []))
 
 
 def _ir_uses_u8_ptr(ir: dict[str, Any]) -> bool:
@@ -566,9 +610,17 @@ def _cpp_class_method_cases(
             is_static = m.get("is_static", False)
             is_constructor = kind == "constructor"
             non_sink_args = [
-                a for a in m["args"] if a["type"].get("kind") != "stream_sink"
+                a for a in m["args"]
+                if a["type"].get("kind") != "stream_sink"
+                and not _is_optional_sink_arg(a)
             ]
-            arg_names = [a["name"] for a in non_sink_args]
+            # Optional sink args surface as `std::move(sink)` at their original
+            # parameter position (the sink is constructed in the dispatch body).
+            arg_names = [
+                "std::move(sink)" if _is_optional_sink_arg(a) else a["name"]
+                for a in m["args"]
+                if a["type"].get("kind") != "stream_sink"
+            ]
             ret = m["return"]
             arg_reads = "\n        ".join(_cpp_read_arg(a) for a in non_sink_args)
             sync_arg_reads = "\n        ".join(_cpp_read_arg(a, sync=True) for a in non_sink_args)
@@ -711,6 +763,29 @@ def _cpp_class_method_cases(
                         if a["type"].get("kind") == "string"
                         else a["name"]
                     )
+                # Optional sink setup (read stream_id, create sink if non-zero).
+                # Mirrors the free-function async branch.
+                sink_setup = ""
+                opt_sink_arg = next(
+                    (a for a in m["args"] if _is_optional_sink_arg(a)), None
+                )
+                if opt_sink_arg:
+                    sink_inner = opt_sink_arg["type"]["inner"]["inner"]
+                    sink_encode = _cpp_write_item(sink_inner, "v")
+                    sink_setup = f"""
+        const auto _stream_id = r.u64();
+        std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink;
+        if (_stream_id != 0) {{
+          sink.emplace(session, _stream_id, gen, method, []({_cpp_type(sink_inner)} v) {{
+            ByteWriter w;
+            {sink_encode}
+            return w.raw();
+          }});
+        }}"""
+                    fn_params.append(
+                        f"std::optional<dcb::StreamSink<{_cpp_type(sink_inner)}>> sink"
+                    )
+                    fn_args.append("std::move(sink)")
                 call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
                 fn_label = f"{class_name}::{m['name']}"
                 iife = f"""[]( {', '.join(fn_params)}) -> stdexec::task<void> {{
@@ -729,7 +804,7 @@ def _cpp_class_method_cases(
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
-        {handle_block}
+        {handle_block}{sink_setup}
         auto task = {iife};
         spawn_on_io(std::move(task));
         break;
@@ -914,13 +989,15 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
     t = a["type"]
     k = t.get("kind")
     name = a["name"]
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
+    if k in ("i32", "u32", "i64", "u8", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
         return f"const auto {name} = {_cpp_read_item(t)};"
     if k == "optional":
         inner = t["inner"]
         inner_t = _cpp_type(inner)
         return f"const auto {name} = r.opt<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"const auto {name} = r.u8vec();"
         inner = t["inner"]
         inner_t = _cpp_type(inner)
         return f"const auto {name} = r.vec<{inner_t}>([&]() {{ return {_cpp_read_item(inner)}; }});"
@@ -1020,13 +1097,15 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
     k = t.get("kind")
     if k == "void":
         return ""
-    if k in ("i32", "u32", "i64", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
+    if k in ("i32", "u32", "i64", "u8", "bool", "string", "enum", "f32", "f64", "data_class", "time_point", "u8_ptr"):
         return _cpp_write_item(t, expr)
     if k == "optional":
         inner = t["inner"]
         item = _cpp_write_item(inner, "v")
         return f"w.opt({expr}, [&](const auto& v) {{ {item} }});"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"w.u8vec({expr});"
         inner = t["inner"]
         item = _cpp_write_item(inner, "v")
         return f"w.vec({expr}, [&](const auto& v) {{ {item} }});"
@@ -1085,6 +1164,8 @@ def _dart_write_item(
         return [f"{indent}{writer}.i32({expr});"]
     if k == "u32":
         return [f"{indent}{writer}.u32({expr});"]
+    if k == "u8":
+        return [f"{indent}{writer}.u8({expr});"]
     if k == "i64":
         return [f"{indent}{writer}.i64({expr});"]
     if k == "bool":
@@ -1120,6 +1201,8 @@ def _dart_write_item(
             f"{indent}}}",
         ]
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return [f"{indent}{writer}.u8vec({expr});"]
         inner = t["inner"]
         return [
             f"{indent}{writer}.u32({expr}.length);",
@@ -1169,6 +1252,8 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         return f"{reader}.i32()"
     if k == "u32":
         return f"{reader}.u32()"
+    if k == "u8":
+        return f"{reader}.u8()"
     if k == "i64":
         return f"{reader}.i64()"
     if k == "bool":
@@ -1196,6 +1281,8 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
         read_value = _dart_read_item(inner, reader)
         return f"(({reader}.u8() != 0) ? {read_value} : null)"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"{reader}.u8vec()"
         inner = t["inner"]
         item_type = _dart_type(inner)
         item_read = _dart_read_item(inner, reader)
@@ -1234,6 +1321,8 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         return f"ByteReader({expr}).i32()"
     if k == "u32":
         return f"ByteReader({expr}).u32()"
+    if k == "u8":
+        return f"ByteReader({expr}).u8()"
     if k == "i64":
         return f"ByteReader({expr}).i64()"
     if k == "string":
@@ -1257,6 +1346,8 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
         read_value = _dart_read_item(inner, "_r")
         return f"(() {{ final _r = ByteReader({expr}); final _has = _r.u8() != 0; return _has ? {read_value} : null; }})()"
     if k == "vector":
+        if t["inner"].get("kind") == "u8":
+            return f"(() {{ final _r = ByteReader({expr}); return _r.u8vec(); }})()"
         inner = t["inner"]
         item_type = _dart_type(inner)
         item_read = _dart_read_item(inner, "_r")
@@ -1316,7 +1407,7 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
             lines.append(f"_payload.u64({n}.handle);")
         elif k == "u8_ptr":
             lines.append(f"_payload.u64({n}.address);")
-        elif k in ("i32", "u32", "i64", "string", "bool", "enum", "f32", "f64", "data_class", "time_point"):
+        elif k in ("i32", "u32", "i64", "u8", "string", "bool", "enum", "f32", "f64", "data_class", "time_point"):
             lines.extend(_dart_write_item(t, n))
         elif k == "optional":
             inner = t["inner"]
@@ -1324,6 +1415,9 @@ def _dart_payload_lines(args: list[dict[str, Any]]) -> list[str]:
             lines.extend(_dart_write_item(inner, n, "  "))
             lines.append("}")
         elif k == "vector":
+            if t["inner"].get("kind") == "u8":
+                lines.append(f"_payload.u8vec({n});")
+                continue
             inner = t["inner"]
             lines.append(f"_payload.u32({n}.length);")
             lines.append(f"for (final _v in {n}) {{")
@@ -2151,10 +2245,11 @@ def _dart_fn_wrapper_lines(a: dict[str, Any]) -> list[str]:
         an = f"_a{i}"
         arg_names.append(an)
         lines.append(f"  final {an} = {_dart_read_item(arg, '_r')};")
-    lines.append(f"  final _res = await {name}({', '.join(arg_names)});")
     if ret.get("kind") == "void":
-        lines.add("  return Uint8List(0);")
+        lines.append(f"  await {name}({', '.join(arg_names)});")
+        lines.append("  return Uint8List(0);")
     else:
+        lines.append(f"  final _res = await {name}({', '.join(arg_names)});")
         lines.append("  final _w = ByteWriter();")
         for stmt in _dart_write_item(ret, "_res", indent="  ", writer="_w"):
             lines.append(stmt)
@@ -2298,6 +2393,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
             params = []
             call_args = []
             ensure_alive_lines_cls: list[str] = []
+            opt_sink_info_cls = None  # optional StreamSink arg (progress events)
             if is_instance:
                 params.append(f"{cls['name']} self")
                 call_args.append("self")
@@ -2307,6 +2403,17 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                 if t.get("kind") == "stream_sink":
                     continue
                 dart_name = a["dart_name"]
+                if _is_optional_sink_arg(a):
+                    # Optional sink → StreamController<T>? parameter; the sink
+                    # itself is constructed natively from the stream id.
+                    item_t = t["inner"]["inner"]
+                    params.append(f"StreamController<{_dart_type(item_t)}>? {dart_name}")
+                    opt_sink_info_cls = {
+                        "dart_name": dart_name,
+                        "dart_item_type": _dart_type(item_t),
+                        "decode_expr": _dart_read_item(item_t, "_r"),
+                    }
+                    continue
                 if t.get("kind") == "opaque_class":
                     params.append(f"{t['name']} {dart_name}")
                     ensure_alive_lines_cls.append(f"{dart_name}.ensureAlive();")
@@ -2331,6 +2438,8 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                 n = a["dart_name"]
                 k = t.get("kind")
                 if k == "stream_sink":
+                    continue
+                if _is_optional_sink_arg(a):
                     continue
                 if k == "dart_fn":
                     payload_lines.append(f"_payload.u64(_{a['dart_name']}Id);")
@@ -2389,6 +2498,30 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                     f"{indent}return bridge.openStream<{ret_t}>({impl_name}Id, _payload.takeBytes(), "
                     f"(final _r) => {stream_decode_expr});"
                 )
+            elif opt_sink_info_cls:
+                # Optional StreamSink on an async method (progress events +
+                # Future result), mirrors the free-function path.
+                if not is_async:
+                    raise ValueError(
+                        "optional StreamSink on sync class methods is not supported: "
+                        f"{cls['qualified']}::{method['name']}"
+                    )
+                for line in payload_lines:
+                    body_lines.append(f"{indent}{line}")
+                osi = opt_sink_info_cls
+                if ret_t == "void":
+                    body_lines.append(
+                        f"{indent}await bridge.invokeAsyncMethodWithStream<{osi['dart_item_type']}>("
+                        f"{impl_name}Id, _payload, {osi['dart_name']}, "
+                        f"(final _r) => {osi['decode_expr']});"
+                    )
+                else:
+                    body_lines.append(
+                        f"{indent}final _bytes = await bridge.invokeAsyncMethodWithStream<{osi['dart_item_type']}>("
+                        f"{impl_name}Id, _payload, {osi['dart_name']}, "
+                        f"(final _r) => {osi['decode_expr']});"
+                    )
+                    body_lines.append(f"{indent}return {read_ret};")
             else:
                 for line in payload_lines:
                     body_lines.append(f"{indent}{line}")
@@ -2787,6 +2920,9 @@ def generate_dart_api_files(
         has_opt_sink = any(
             _is_optional_sink_arg(a)
             for fn in fns for a in fn["args"]
+        ) or any(
+            _is_optional_sink_arg(a)
+            for cls in classes for m in cls.get("methods", []) for a in m["args"]
         )
         has_u8_ptr = any(
             _fn_or_method_uses_u8_ptr(fn) for fn in fns
@@ -2797,6 +2933,15 @@ def generate_dart_api_files(
             _type_has_u8_ptr(f["type"])
             for cls in classes for f in cls.get("fields", [])
         )
+        has_u8vec = any(
+            _fn_or_method_uses_u8vec(fn) for fn in fns
+        ) or any(
+            _fn_or_method_uses_u8vec(m)
+            for cls in classes for m in cls.get("methods", [])
+        ) or any(
+            _type_has_u8vec(f["type"])
+            for cls in classes for f in cls.get("fields", [])
+        )
 
         lines: list[str] = []
         lines.append("// GENERATED by dart_cpp_bridge codegen — do not edit.")
@@ -2804,6 +2949,9 @@ def generate_dart_api_files(
         lines.append("")
         if has_u8_ptr:
             lines.append("import 'dart:ffi';")
+            lines.append("")
+        if has_u8vec:
+            lines.append("import 'dart:typed_data';")
             lines.append("")
         if has_dart_fn or has_opt_sink:
             lines.append("import 'dart:async';")

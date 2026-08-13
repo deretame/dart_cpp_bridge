@@ -116,6 +116,12 @@ class ByteWriter {
   /// Append raw bytes (alias of [writeRaw]).
   void bytes(List<int> data) => _b.add(data);
 
+  /// Append `u32` length + raw bytes (matches C++ `ByteWriter::u8vec`).
+  void u8vec(List<int> v) {
+    u32(v.length);
+    _b.add(v);
+  }
+
   /// Take ownership of the built buffer.
   Uint8List takeBytes() => _b.takeBytes();
 }
@@ -215,6 +221,15 @@ class ByteReader {
     final s = utf8.decode(data.sublist(_pos, _pos + n));
     _pos += n;
     return s;
+  }
+
+  /// Read `u32` length + raw bytes (matches C++ `ByteReader::u8vec`).
+  Uint8List u8vec() {
+    final n = u32();
+    _need(n);
+    final v = data.sublist(_pos, _pos + n);
+    _pos += n;
+    return v;
   }
 
   /// Remaining unread bytes.

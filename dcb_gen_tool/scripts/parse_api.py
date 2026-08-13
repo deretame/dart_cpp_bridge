@@ -500,6 +500,8 @@ def _resolve_class_field_types(
             t["inner"] = resolve(t["inner"])
         elif k == "optional":
             t["inner"] = resolve(t["inner"])
+        elif k in ("stream_sink", "lazy"):
+            t["inner"] = resolve(t["inner"])
         elif k == "map":
             t["key"] = resolve(t["key"])
             t["value"] = resolve(t["value"])
@@ -885,6 +887,8 @@ def _type_ir(
         "int": "i32",
         "int32_t": "i32",
         "std::int32_t": "i32",
+        "uint8_t": "u8",
+        "std::uint8_t": "u8",
         "uint32_t": "u32",
         "std::uint32_t": "u32",
         "int64_t": "i64",
