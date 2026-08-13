@@ -702,6 +702,8 @@ def _cpp_class_method_cases(
                 call = f"static_cast<{class_q}*>(obj.get())->{m['name']}({', '.join(arg_names)})"
 
             write = _cpp_write_ret(ret, "out") if kind != "stream" else ""
+            # void 返回值不能赋给变量
+            sync_call_stmt = f"{call};" if ret.get("kind") == "void" else f"auto out = {call};"
 
             if kind == "sync":
                 body = f"""
@@ -710,7 +712,7 @@ def _cpp_class_method_cases(
         {handle_block}
         ByteWriter w;
         {{
-          auto out = {call};
+          {sync_call_stmt}
           {write}
         }}
         post_ok(session, gen, req, method, w.raw());
@@ -723,7 +725,7 @@ def _cpp_class_method_cases(
     try {{
       ByteWriter w;
       {{
-        auto out = {call};
+        {sync_call_stmt}
         {write}
       }}
       return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
@@ -1673,6 +1675,8 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         )
         call = _cpp_call_expr(fn)
         write = _cpp_write_ret(fn["return"], "out")
+        # void 返回值不能赋给变量
+        sync_call_stmt = f"{call};" if fn["return"].get("kind") == "void" else f"auto out = {call};"
 
         if kind == "sync":
             has_dart_fn_arg = any(
@@ -1712,7 +1716,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         {reads}{sink_setup}
         ByteWriter w;
         {{
-          auto out = {call};
+          {sync_call_stmt}
           {write}
         }}
         post_ok(session, gen, req, method, w.raw());
@@ -1732,7 +1736,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
     try {{
       ByteWriter w;
       {{
-        auto out = {call};
+        {sync_call_stmt}
         {write}
       }}
       return make_frame(MsgType::kResponseOk, frame.request_id, frame.method_id, w.raw());
