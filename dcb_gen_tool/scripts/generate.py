@@ -967,7 +967,7 @@ def _dart_data_class_helpers(classes: list[dict[str, Any]]) -> str:
     for cls in classes:
         name = cls["name"]
         fields = cls["fields"]
-        lines.append(f"void _writeDataClass_{name}(ByteWriter w, {name} v) {{")
+        lines.append(f"void _writeDataClass{name}(ByteWriter w, {name} v) {{")
         for f in fields:
             dart_name = _dart_param_name(f["name"])
             lines.extend(
@@ -975,7 +975,7 @@ def _dart_data_class_helpers(classes: list[dict[str, Any]]) -> str:
             )
         lines.append("}")
         lines.append("")
-        lines.append(f"{name} _readDataClass_{name}(ByteReader _r) {{")
+        lines.append(f"{name} _readDataClass{name}(ByteReader _r) {{")
         lines.append(f"  return {name}(")
         for f in fields:
             dart_name = _dart_param_name(f["name"])
@@ -1183,7 +1183,7 @@ def _dart_write_item(
     if k == "enum":
         return [f"{indent}{writer}.i32({expr}.index);"]
     if k == "data_class":
-        return [f"{indent}_writeDataClass_{t['name']}({writer}, {expr});"]
+        return [f"{indent}_writeDataClass{t['name']}({writer}, {expr});"]
     if k == "opaque_class":
         return [f"{indent}{writer}.u64({expr});"]
     if k == "i128":
@@ -1271,7 +1271,7 @@ def _dart_read_item(t: dict[str, Any], reader: str = "_r") -> str:
     if k == "enum":
         return f"{t['name']}.values[{reader}.i32()]"
     if k == "data_class":
-        return f"_readDataClass_{t['name']}({reader})"
+        return f"_readDataClass{t['name']}({reader})"
     if k == "opaque_class":
         return f"{reader}.u64()"
     if k == "u128":
@@ -1340,7 +1340,7 @@ def _dart_read_ret(t: dict[str, Any], expr: str) -> str:
     if k == "enum":
         return f"{t['name']}.values[ByteReader({expr}).i32()]"
     if k == "data_class":
-        return f"_readDataClass_{t['name']}(ByteReader({expr}))"
+        return f"_readDataClass{t['name']}(ByteReader({expr}))"
     if k == "opaque_class":
         return f"ByteReader({expr}).u64()"
     if k == "optional":

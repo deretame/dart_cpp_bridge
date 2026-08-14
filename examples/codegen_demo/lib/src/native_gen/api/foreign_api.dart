@@ -11,55 +11,36 @@ import '../dcb_generated.dart';
 
 Future<String> testForeignSleep() => BridgeApiImpl.instance.testForeignSleep();
 
-Future<String> callDartFromUv({
-  required Future<String> Function(String) callback,
-  required String input,
-}) => BridgeApiImpl.instance.callDartFromUv(callback, input);
+Future<String> callDartFromUv({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.callDartFromUv(callback, input);
 
 Future<String> stopUvWorker() => BridgeApiImpl.instance.stopUvWorker();
 
 Future<String> startUvWorker() => BridgeApiImpl.instance.startUvWorker();
 
-Future<String> testCbridgeInvoke({
-  required Future<String> Function(String) callback,
-  required String input,
-}) => BridgeApiImpl.instance.testCbridgeInvoke(callback, input);
+Future<String> testCbridgeInvoke({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.testCbridgeInvoke(callback, input);
 
 Future<String> testCbridgeAsync() => BridgeApiImpl.instance.testCbridgeAsync();
 
-Future<String> testForeignSleepLong() =>
-    BridgeApiImpl.instance.testForeignSleepLong();
+Future<String> testForeignSleepLong() => BridgeApiImpl.instance.testForeignSleepLong();
 
-Future<String> testChannelServiceConcurrent() =>
-    BridgeApiImpl.instance.testChannelServiceConcurrent();
+Future<String> testChannelServiceConcurrent() => BridgeApiImpl.instance.testChannelServiceConcurrent();
 
-Future<String> testCbridgeInvokePureC({
-  required Future<String> Function(String) callback,
-  required String input,
-}) => BridgeApiImpl.instance.testCbridgeInvokePureC(callback, input);
+Future<String> testCbridgeInvokePureC({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.testCbridgeInvokePureC(callback, input);
 
-Future<String> testCbridgeAsyncFail() =>
-    BridgeApiImpl.instance.testCbridgeAsyncFail();
+Future<String> testCbridgeAsyncFail() => BridgeApiImpl.instance.testCbridgeAsyncFail();
 
 Future<int> uvCompute({required int n}) => BridgeApiImpl.instance.uvCompute(n);
 
-Future<String> testForeignSleepCancel() =>
-    BridgeApiImpl.instance.testForeignSleepCancel();
+Future<String> testForeignSleepCancel() => BridgeApiImpl.instance.testForeignSleepCancel();
 
-Future<int> uvIntervalDemo({required int count, required int intervalMs}) =>
-    BridgeApiImpl.instance.uvIntervalDemo(count, intervalMs);
+Future<int> uvIntervalDemo({required int count, required int intervalMs}) => BridgeApiImpl.instance.uvIntervalDemo(count, intervalMs);
 
-Future<String> askUv({required String message}) =>
-    BridgeApiImpl.instance.askUv(message);
+Future<String> askUv({required String message}) => BridgeApiImpl.instance.askUv(message);
 
-Future<String> testCbridgeAsyncCancel() =>
-    BridgeApiImpl.instance.testCbridgeAsyncCancel();
+Future<String> testCbridgeAsyncCancel() => BridgeApiImpl.instance.testCbridgeAsyncCancel();
 
-Future<String> testCbridgePureCCancel() =>
-    BridgeApiImpl.instance.testCbridgePureCCancel();
+Future<String> testCbridgePureCCancel() => BridgeApiImpl.instance.testCbridgePureCCancel();
 
-Stream<String> uvStream({int count = 5, int intervalMs = 50}) =>
-    BridgeApiImpl.instance.uvStream(count, intervalMs);
+Stream<String> uvStream({int count = 5, int intervalMs = 50}) => BridgeApiImpl.instance.uvStream(count, intervalMs);
 
-Future<String> testChannelService() =>
-    BridgeApiImpl.instance.testChannelService();
+Future<String> testChannelService() => BridgeApiImpl.instance.testChannelService();

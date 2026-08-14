@@ -11,11 +11,9 @@ import '../dcb_generated.dart';
 // Functions
 // ═════════════════════════════════════════════
 
-Counter cloneWithOffset({required Counter source, required int offset}) =>
-    BridgeApiImpl.instance.cloneWithOffset(source, offset);
+Counter cloneWithOffset({required Counter source, required int offset}) => BridgeApiImpl.instance.cloneWithOffset(source, offset);
 
-Future<int> addCounters({required Counter a, required Counter b}) =>
-    BridgeApiImpl.instance.addCounters(a, b);
+Future<int> addCounters({required Counter a, required Counter b}) => BridgeApiImpl.instance.addCounters(a, b);
 
 // ═════════════════════════════════════════════
 // Counter
@@ -30,7 +28,8 @@ final class Counter extends CppOpaqueInterface {
   factory Counter.int32T({required int initialValue}) =>
       BridgeApiImpl.instance.counterNewWithInitialValue(initialValue);
 
-  factory Counter() => BridgeApiImpl.instance.counterNew();
+  factory Counter() =>
+      BridgeApiImpl.instance.counterNew();
 
   // ── Instance Methods ──
 
@@ -38,38 +37,29 @@ final class Counter extends CppOpaqueInterface {
 
   int valueSync() => BridgeApiImpl.instance.counterValueSync(this);
 
-  Future<void> increment({int delta = 1}) =>
-      BridgeApiImpl.instance.counterIncrement(this, delta);
+  Future<void> increment({int delta = 1}) => BridgeApiImpl.instance.counterIncrement(this, delta);
 
-  Future<int> sleepAndGet({required int sleepMs}) =>
-      BridgeApiImpl.instance.counterSleepAndGet(this, sleepMs);
+  Future<int> sleepAndGet({required int sleepMs}) => BridgeApiImpl.instance.counterSleepAndGet(this, sleepMs);
 
-  Future<int> addList({required List<int> values}) =>
-      BridgeApiImpl.instance.counterAddList(this, values);
+  Future<int> addList({required List<int> values}) => BridgeApiImpl.instance.counterAddList(this, values);
 
-  Future<void> setValue({int? value}) =>
-      BridgeApiImpl.instance.counterSetValue(this, value);
+  Future<void> setValue({int? value}) => BridgeApiImpl.instance.counterSetValue(this, value);
 
   Future<Counter> duplicate() => BridgeApiImpl.instance.counterDuplicate(this);
 
-  Future<int> addTo({required Counter other}) =>
-      BridgeApiImpl.instance.counterAddTo(this, other);
+  Future<int> addTo({required Counter other}) => BridgeApiImpl.instance.counterAddTo(this, other);
 
-  Future<String> greetDartFn({
-    required Future<String> Function(String) callback,
-    required String name,
-  }) => BridgeApiImpl.instance.counterGreetDartFn(this, callback, name);
+  Future<String> greetDartFn({required Future<String> Function(String) callback, required String name}) => BridgeApiImpl.instance.counterGreetDartFn(this, callback, name);
 
-  Stream<int> tickStream({int count = 5, int intervalMs = 10}) =>
-      BridgeApiImpl.instance.counterTickStream(this, count, intervalMs);
+  Stream<int> tickStream({int count = 5, int intervalMs = 10}) => BridgeApiImpl.instance.counterTickStream(this, count, intervalMs);
 
   @override
   String toString() => BridgeApiImpl.instance.counterToString(this);
 
   // ── Static Methods ──
 
-  static int sum({required int a, required int b}) =>
-      BridgeApiImpl.instance.counterSum(a, b);
+  static int sum({required int a, required int b}) => BridgeApiImpl.instance.counterSum(a, b);
 
   static int aliveCount() => BridgeApiImpl.instance.counterAliveCount();
+
 }

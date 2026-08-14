@@ -15,7 +15,11 @@ export '../dcb_generated.dart' show OrderStatus;
 
 /// Generated data class for `demo::api::Point`.
 final class Point {
-  const Point({required this.x, required this.y, this.label});
+  const Point({
+    required this.x,
+    required this.y,
+    this.label,
+  });
 
   final double x;
   final double y;
@@ -24,7 +28,10 @@ final class Point {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is Point && x == other.x && y == other.y && label == other.label);
+      (other is Point &&
+        x == other.x &&
+        y == other.y &&
+        label == other.label);
 
   @override
   int get hashCode => Object.hash(x, y, label);
@@ -35,7 +42,10 @@ final class Point {
 
 /// Generated data class for `demo::api::Rect`.
 final class Rect {
-  const Rect({required this.topLeft, required this.bottomRight});
+  const Rect({
+    required this.topLeft,
+    required this.bottomRight,
+  });
 
   final Point topLeft;
   final Point bottomRight;
@@ -44,8 +54,8 @@ final class Rect {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Rect &&
-          topLeft == other.topLeft &&
-          bottomRight == other.bottomRight);
+        topLeft == other.topLeft &&
+        bottomRight == other.bottomRight);
 
   @override
   int get hashCode => Object.hash(topLeft, bottomRight);
@@ -58,168 +68,106 @@ final class Rect {
 // Functions
 // ═════════════════════════════════════════════
 
-Future<int> sumSetOrdered({required Set<int> values}) =>
-    BridgeApiImpl.instance.sumSetOrdered(values);
+Future<int> sumSetOrdered({required Set<int> values}) => BridgeApiImpl.instance.sumSetOrdered(values);
 
 Future<String> collectAllDemo() => BridgeApiImpl.instance.collectAllDemo();
 
-Future<int> sumScores({required Map<String, int> scores}) =>
-    BridgeApiImpl.instance.sumScores(scores);
+Future<int> sumScores({required Map<String, int> scores}) => BridgeApiImpl.instance.sumScores(scores);
 
-Future<double> distance({required Point a, required Point b}) =>
-    BridgeApiImpl.instance.distance(a, b);
+Future<double> distance({required Point a, required Point b}) => BridgeApiImpl.instance.distance(a, b);
 
-Future<int> failNormal({required String msg}) =>
-    BridgeApiImpl.instance.failNormal(msg);
+Future<int> failNormal({required String msg}) => BridgeApiImpl.instance.failNormal(msg);
 
-String syncDownloadWithProgress({
-  required String url,
-  StreamController<int>? progress,
-}) => BridgeApiImpl.instance.syncDownloadWithProgress(url, progress);
+String syncDownloadWithProgress({required String url, StreamController<int>? progress}) => BridgeApiImpl.instance.syncDownloadWithProgress(url, progress);
 
-Future<(int, String)> pairEcho({required (int, String) value}) =>
-    BridgeApiImpl.instance.pairEcho(value);
+Future<(int, String)> pairEcho({required (int, String) value}) => BridgeApiImpl.instance.pairEcho(value);
 
-Future<(int, String, bool)> tupleEcho({required (int, String, bool) value}) =>
-    BridgeApiImpl.instance.tupleEcho(value);
+Future<(int, String, bool)> tupleEcho({required (int, String, bool) value}) => BridgeApiImpl.instance.tupleEcho(value);
 
-Future<int> failAsync({required String msg}) =>
-    BridgeApiImpl.instance.failAsync(msg);
+Future<int> failAsync({required String msg}) => BridgeApiImpl.instance.failAsync(msg);
 
-Stream<int> failStream({required String msg}) =>
-    BridgeApiImpl.instance.failStream(msg);
+Stream<int> failStream({required String msg}) => BridgeApiImpl.instance.failStream(msg);
 
-Future<String> downloadWithProgress({
-  required String url,
-  StreamController<int>? progress,
-}) => BridgeApiImpl.instance.downloadWithProgress(url, progress);
+Future<String> downloadWithProgress({required String url, StreamController<int>? progress}) => BridgeApiImpl.instance.downloadWithProgress(url, progress);
 
-Future<int?> maybeDouble({int? value}) =>
-    BridgeApiImpl.instance.maybeDouble(value);
+Future<int?> maybeDouble({int? value}) => BridgeApiImpl.instance.maybeDouble(value);
 
-Future<int> add({required int a, required int b}) =>
-    BridgeApiImpl.instance.add(a, b);
+Future<int> add({required int a, required int b}) => BridgeApiImpl.instance.add(a, b);
 
 int bridgeVersion() => BridgeApiImpl.instance.bridgeVersion();
 
-Future<int> sumArray({required List<int> values}) =>
-    BridgeApiImpl.instance.sumArray(values);
+Future<int> sumArray({required List<int> values}) => BridgeApiImpl.instance.sumArray(values);
 
-Future<String> invokeRegistered({required String input}) =>
-    BridgeApiImpl.instance.invokeRegistered(input);
+Future<String> invokeRegistered({required String input}) => BridgeApiImpl.instance.invokeRegistered(input);
 
-Future<int> sumScoresOrdered({required Map<String, int> scores}) =>
-    BridgeApiImpl.instance.sumScoresOrdered(scores);
+Future<int> sumScoresOrdered({required Map<String, int> scores}) => BridgeApiImpl.instance.sumScoresOrdered(scores);
 
-Future<List<bool>> echoBoolList({required List<bool> values}) =>
-    BridgeApiImpl.instance.echoBoolList(values);
+Future<List<bool>> echoBoolList({required List<bool> values}) => BridgeApiImpl.instance.echoBoolList(values);
 
-Future<String> collectAnyCancelDemo() =>
-    BridgeApiImpl.instance.collectAnyCancelDemo();
+Future<String> collectAnyCancelDemo() => BridgeApiImpl.instance.collectAnyCancelDemo();
 
-bool cancelTask({required String taskId}) =>
-    BridgeApiImpl.instance.cancelTask(taskId);
+bool cancelTask({required String taskId}) => BridgeApiImpl.instance.cancelTask(taskId);
 
-Future<int> incrementI64({required int value}) =>
-    BridgeApiImpl.instance.incrementI64(value);
+Future<int> incrementI64({required int value}) => BridgeApiImpl.instance.incrementI64(value);
 
-Future<DateTime> echoTime({required DateTime value}) =>
-    BridgeApiImpl.instance.echoTime(value);
+Future<DateTime> echoTime({required DateTime value}) => BridgeApiImpl.instance.echoTime(value);
 
 Future<int> collectAllParaDemo() => BridgeApiImpl.instance.collectAllParaDemo();
 
-Future<String> cancellableTask({
-  required String taskId,
-  int steps = 100,
-  int intervalMs = 20,
-}) => BridgeApiImpl.instance.cancellableTask(taskId, steps, intervalMs);
+Future<String> cancellableTask({required String taskId, int steps = 100, int intervalMs = 20}) => BridgeApiImpl.instance.cancellableTask(taskId, steps, intervalMs);
 
-Future<OrderStatus?> optionalStatus({OrderStatus? value}) =>
-    BridgeApiImpl.instance.optionalStatus(value);
+Future<OrderStatus?> optionalStatus({OrderStatus? value}) => BridgeApiImpl.instance.optionalStatus(value);
 
-Future<List<int>> echoList({required List<int> values}) =>
-    BridgeApiImpl.instance.echoList(values);
+Future<List<int>> echoList({required List<int> values}) => BridgeApiImpl.instance.echoList(values);
 
-Future<String> collectAllErrorDemo() =>
-    BridgeApiImpl.instance.collectAllErrorDemo();
+Future<String> collectAllErrorDemo() => BridgeApiImpl.instance.collectAllErrorDemo();
 
-Future<String> invokeRegisteredAsync({required String input}) =>
-    BridgeApiImpl.instance.invokeRegisteredAsync(input);
+Future<String> invokeRegisteredAsync({required String input}) => BridgeApiImpl.instance.invokeRegisteredAsync(input);
 
-Future<String> concatDartFn({
-  required Future<String> Function(String, String) callback,
-  required String a,
-  required String b,
-}) => BridgeApiImpl.instance.concatDartFn(callback, a, b);
+Future<String> concatDartFn({required Future<String> Function(String, String) callback, required String a, required String b}) => BridgeApiImpl.instance.concatDartFn(callback, a, b);
 
-Future<Point> scale({required Point p, required double factor}) =>
-    BridgeApiImpl.instance.scale(p, factor);
+Future<Point> scale({required Point p, required double factor}) => BridgeApiImpl.instance.scale(p, factor);
 
-Future<Pointer<Uint8>> asyncEchoBytes({
-  required Pointer<Uint8> data,
-  required int len,
-}) => BridgeApiImpl.instance.asyncEchoBytes(data, len);
+Future<Pointer<Uint8>> asyncEchoBytes({required Pointer<Uint8> data, required int len}) => BridgeApiImpl.instance.asyncEchoBytes(data, len);
 
-Future<bool> negateBool({required bool value}) =>
-    BridgeApiImpl.instance.negateBool(value);
+Future<bool> negateBool({required bool value}) => BridgeApiImpl.instance.negateBool(value);
 
 int failSync({required String msg}) => BridgeApiImpl.instance.failSync(msg);
 
-bool isTaskRunning({required String taskId}) =>
-    BridgeApiImpl.instance.isTaskRunning(taskId);
+bool isTaskRunning({required String taskId}) => BridgeApiImpl.instance.isTaskRunning(taskId);
 
-Pointer<Uint8> echoBytes({required Pointer<Uint8> data, required int len}) =>
-    BridgeApiImpl.instance.echoBytes(data, len);
+Pointer<Uint8> echoBytes({required Pointer<Uint8> data, required int len}) => BridgeApiImpl.instance.echoBytes(data, len);
 
-Future<String> sleepGreeting({required String name}) =>
-    BridgeApiImpl.instance.sleepGreeting(name);
+Future<String> sleepGreeting({required String name}) => BridgeApiImpl.instance.sleepGreeting(name);
 
-Future<BigInt> echoU128({required BigInt value}) =>
-    BridgeApiImpl.instance.echoU128(value);
+Future<BigInt> echoU128({required BigInt value}) => BridgeApiImpl.instance.echoU128(value);
 
-DateTime echoTimeSync({required DateTime value}) =>
-    BridgeApiImpl.instance.echoTimeSync(value);
+DateTime echoTimeSync({required DateTime value}) => BridgeApiImpl.instance.echoTimeSync(value);
 
 Future<int> failNonStd() => BridgeApiImpl.instance.failNonStd();
 
-Future<int> incrementU32({required int value}) =>
-    BridgeApiImpl.instance.incrementU32(value);
+Future<int> incrementU32({required int value}) => BridgeApiImpl.instance.incrementU32(value);
 
-Future<String> collectAllCancelDemo() =>
-    BridgeApiImpl.instance.collectAllCancelDemo();
+Future<String> collectAllCancelDemo() => BridgeApiImpl.instance.collectAllCancelDemo();
 
-Stream<int> tickStream({int count = 5, int intervalMs = 10}) =>
-    BridgeApiImpl.instance.tickStream(count, intervalMs);
+Stream<int> tickStream({int count = 5, int intervalMs = 10}) => BridgeApiImpl.instance.tickStream(count, intervalMs);
 
-bool registerDartFn({required Future<String> Function(String) callback}) =>
-    BridgeApiImpl.instance.registerDartFn(callback);
+bool registerDartFn({required Future<String> Function(String) callback}) => BridgeApiImpl.instance.registerDartFn(callback);
 
 Future<String> collectAnyDemo() => BridgeApiImpl.instance.collectAnyDemo();
 
-Future<String> greetDartFn({
-  required Future<String> Function(String) callback,
-  required String name,
-}) => BridgeApiImpl.instance.greetDartFn(callback, name);
+Future<String> greetDartFn({required Future<String> Function(String) callback, required String name}) => BridgeApiImpl.instance.greetDartFn(callback, name);
 
-List<List<List<int>>> nestedCube({required int n}) =>
-    BridgeApiImpl.instance.nestedCube(n);
+List<List<List<int>>> nestedCube({required int n}) => BridgeApiImpl.instance.nestedCube(n);
 
-Future<int> sumSet({required Set<int> values}) =>
-    BridgeApiImpl.instance.sumSet(values);
+Future<int> sumSet({required Set<int> values}) => BridgeApiImpl.instance.sumSet(values);
 
-Future<Rect> boundingBox({required List<Point> points}) =>
-    BridgeApiImpl.instance.boundingBox(points);
+Future<Rect> boundingBox({required List<Point> points}) => BridgeApiImpl.instance.boundingBox(points);
 
-int syncDartFnBlockingUs({
-  required Future<String> Function(String) callback,
-  required String input,
-}) => BridgeApiImpl.instance.syncDartFnBlockingUs(callback, input);
+int syncDartFnBlockingUs({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.syncDartFnBlockingUs(callback, input);
 
-Future<BigInt> echoI128({required BigInt value}) =>
-    BridgeApiImpl.instance.echoI128(value);
+Future<BigInt> echoI128({required BigInt value}) => BridgeApiImpl.instance.echoI128(value);
 
-Future<String?> optionalString({String? value}) =>
-    BridgeApiImpl.instance.optionalString(value);
+Future<String?> optionalString({String? value}) => BridgeApiImpl.instance.optionalString(value);
 
-Future<OrderStatus> nextStatus({required OrderStatus current}) =>
-    BridgeApiImpl.instance.nextStatus(current);
+Future<OrderStatus> nextStatus({required OrderStatus current}) => BridgeApiImpl.instance.nextStatus(current);
