@@ -50,6 +50,13 @@ void main() {
     expect(await sleepGreeting(name: 'Ada'), 'hello, Ada');
   });
 
+  testWidgets('BRIDGE_NORMAL preserves empty and Unicode strings', (
+    tester,
+  ) async {
+    expect(await sleepGreeting(name: ''), 'hello, ');
+    expect(await sleepGreeting(name: '你好 🌉'), 'hello, 你好 🌉');
+  });
+
   testWidgets('BRIDGE_ASYNC enum next_status', (tester) async {
     expect(await nextStatus(current: OrderStatus.created), OrderStatus.paid);
     expect(await nextStatus(current: OrderStatus.paid), OrderStatus.shipped);
@@ -65,6 +72,8 @@ void main() {
   testWidgets('BRIDGE_ASYNC u32 increment_u32', (tester) async {
     expect(await incrementU32(value: 0), 1);
     expect(await incrementU32(value: 4294967290), 4294967291);
+    // The native uint32_t wraps at its maximum value.
+    expect(await incrementU32(value: 4294967295), 0);
   });
 
   testWidgets('BRIDGE_ASYNC i64 increment_i64', (tester) async {
@@ -84,6 +93,13 @@ void main() {
   testWidgets('BRIDGE_ASYNC optional string', (tester) async {
     expect(await optionalString(), isNull);
     expect(await optionalString(value: 'hello'), 'hello!');
+    expect(await optionalString(value: ''), '!');
+  });
+
+  testWidgets('BRIDGE_ASYNC optional zero is not treated as absent', (
+    tester,
+  ) async {
+    expect(await maybeDouble(value: 0), 0);
   });
 
   testWidgets('BRIDGE_ASYNC optional enum', (tester) async {
@@ -103,13 +119,36 @@ void main() {
 
   testWidgets('BRIDGE_ASYNC vector<bool> echo_bool_list', (tester) async {
     expect(await echoBoolList(values: []), <bool>[]);
-    expect(await echoBoolList(values: [true, false, true]), [true, false, true]);
+    expect(await echoBoolList(values: [true, false, true]), [
+      true,
+      false,
+      true,
+    ]);
     expect(await echoBoolList(values: [false]), [false]);
   });
 
   testWidgets('BRIDGE_ASYNC array<int, 4> sum_array', (tester) async {
     expect(await sumArray(values: [1, 2, 3, 4]), 10);
     expect(await sumArray(values: [-1, 1, -1, 1]), 0);
+  });
+
+  testWidgets('array length mismatch is rejected before native dispatch', (
+    tester,
+  ) async {
+    await expectLater(
+      sumArray(values: [1, 2, 3]),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('array length mismatch'),
+        ),
+      ),
+    );
+    await expectLater(
+      sumArray(values: [1, 2, 3, 4, 5]),
+      throwsA(isA<StateError>()),
+    );
   });
 
   testWidgets('BRIDGE_ASYNC map<string, int> sum_scores', (tester) async {
@@ -122,16 +161,23 @@ void main() {
     expect(await sumSet(values: {1, 2, 3}), 6);
   });
 
-  testWidgets('BRIDGE_ASYNC ordered map<std::string, int> sum_scores_ordered',
-      (tester) async {
+  testWidgets('BRIDGE_ASYNC ordered map<std::string, int> sum_scores_ordered', (
+    tester,
+  ) async {
     expect(await sumScoresOrdered(scores: {}), 0);
     expect(await sumScoresOrdered(scores: {'a': 1, 'b': 2, 'c': 3}), 6);
   });
 
-  testWidgets('BRIDGE_ASYNC ordered set<int> sum_set_ordered',
-      (tester) async {
+  testWidgets('BRIDGE_ASYNC ordered set<int> sum_set_ordered', (tester) async {
     expect(await sumSetOrdered(values: <int>{}), 0);
     expect(await sumSetOrdered(values: {1, 2, 3}), 6);
+  });
+
+  testWidgets('ordered containers preserve signed and Unicode values', (
+    tester,
+  ) async {
+    expect(await sumScoresOrdered(scores: {'中文': -7, '': 2, '🌉': 5}), 0);
+    expect(await sumSetOrdered(values: {-2, 0, 2}), 0);
   });
 
   testWidgets('BRIDGE_ASYNC Int128 echo_i128', (tester) async {
@@ -166,14 +212,70 @@ void main() {
     }
   });
 
-  testWidgets('BRIDGE_ASYNC uint8_t* asyncEchoBytes roundtrip',
-      (tester) async {
+  testWidgets('BRIDGE_ASYNC uint8_t* asyncEchoBytes roundtrip', (tester) async {
     final input = Uint8List.fromList([1, 3, 5, 7, 9]);
     final p = calloc<Uint8>(input.length);
     try {
       p.asTypedList(input.length).setAll(0, input);
       final out = await asyncEchoBytes(data: p, len: input.length);
       expect(Uint8Pointer(out).asTypedList(input.length), input);
+    } finally {
+      calloc.free(p);
+    }
+  });
+
+  testWidgets('uint8_t* supports zero-length and maximum buffers', (
+    tester,
+  ) async {
+    final p = calloc<Uint8>(256);
+    try {
+      final input = Uint8List.fromList(List.generate(256, (i) => i));
+      p.asTypedList(input.length).setAll(0, input);
+
+      final emptyOut = echoBytes(data: p, len: 0);
+      expect(emptyOut.address, greaterThan(0));
+
+      final out = echoBytes(data: p, len: input.length);
+      expect(Uint8Pointer(out).asTypedList(input.length), input);
+    } finally {
+      calloc.free(p);
+    }
+  });
+
+  testWidgets('uint8_t* rejects invalid lengths and null input', (
+    tester,
+  ) async {
+    final p = calloc<Uint8>(1);
+    final nullPointer = Pointer<Uint8>.fromAddress(0);
+    try {
+      for (final len in [-1, 257]) {
+        expect(
+          () => echoBytes(data: p, len: len),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('echo_bytes'),
+            ),
+          ),
+        );
+      }
+
+      expect(
+        () => echoBytes(data: nullPointer, len: 1),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('null'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        asyncEchoBytes(data: p, len: 257),
+        throwsA(isA<StateError>()),
+      );
     } finally {
       calloc.free(p);
     }
@@ -193,6 +295,24 @@ void main() {
         name: 'moon',
       ),
       'hello, async moon',
+    );
+  });
+
+  testWidgets('DartFn callback errors propagate through an async API', (
+    tester,
+  ) async {
+    await expectLater(
+      greetDartFn(
+        callback: (_) async => throw StateError('callback-failed'),
+        name: 'error',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('callback-failed'),
+        ),
+      ),
     );
   });
 
@@ -287,32 +407,34 @@ void main() {
     expect(result, 'downloaded: test.txt');
   });
 
-  testWidgets('sync + optional StreamSink syncDownloadWithProgress with progress', (
-    tester,
-  ) async {
-    final progressValues = <int>[];
-    final controller = StreamController<int>();
-    controller.stream.listen(progressValues.add);
+  testWidgets(
+    'sync + optional StreamSink syncDownloadWithProgress with progress',
+    (tester) async {
+      final progressValues = <int>[];
+      final controller = StreamController<int>();
+      controller.stream.listen(progressValues.add);
 
-    final result = syncDownloadWithProgress(
-      url: 'https://example.com/file.zip',
-      progress: controller,
-    );
+      final result = syncDownloadWithProgress(
+        url: 'https://example.com/file.zip',
+        progress: controller,
+      );
 
-    expect(result, 'downloaded: https://example.com/file.zip');
-    // Events posted by C++ during the blocking FFI call are delivered on the
-    // reply port right after the call returns.
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(progressValues, [20, 40, 60, 80, 100]);
-    await controller.close();
-  });
+      expect(result, 'downloaded: https://example.com/file.zip');
+      // Events posted by C++ during the blocking FFI call are delivered on the
+      // reply port right after the call returns.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(progressValues, [20, 40, 60, 80, 100]);
+      await controller.close();
+    },
+  );
 
-  testWidgets('sync + optional StreamSink syncDownloadWithProgress without progress', (
-    tester,
-  ) async {
-    final result = syncDownloadWithProgress(url: 'test.txt');
-    expect(result, 'downloaded: test.txt');
-  });
+  testWidgets(
+    'sync + optional StreamSink syncDownloadWithProgress without progress',
+    (tester) async {
+      final result = syncDownloadWithProgress(url: 'test.txt');
+      expect(result, 'downloaded: test.txt');
+    },
+  );
 
   testWidgets('data class distance', (tester) async {
     final a = const Point(x: 0.0, y: 0.0);
@@ -352,6 +474,20 @@ void main() {
     expect(scaled.label, 'hello');
   });
 
+  testWidgets('data class equality includes optional fields', (tester) async {
+    const a = Point(x: 1.0, y: 2.0);
+    const b = Point(x: 1.0, y: 2.0);
+    const c = Point(x: 1.0, y: 2.0, label: 'tag');
+
+    expect(a, b);
+    expect(a.hashCode, b.hashCode);
+    expect(a, isNot(c));
+    expect(
+      const Rect(topLeft: a, bottomRight: c),
+      isNot(const Rect(topLeft: a, bottomRight: b)),
+    );
+  });
+
   testWidgets('data class bounding_box', (tester) async {
     final points = [
       const Point(x: 1.0, y: 2.0),
@@ -370,6 +506,12 @@ void main() {
         bottomRight: Point(x: 1.0, y: 4.0),
       ),
     );
+  });
+
+  testWidgets('data class bounding_box handles an empty list', (tester) async {
+    final box = await boundingBox(points: []);
+    expect(box.topLeft, const Point(x: 0.0, y: 0.0));
+    expect(box.bottomRight, const Point(x: 0.0, y: 0.0));
   });
 
   testWidgets('opaque class Counter create and value', (tester) async {
@@ -414,6 +556,9 @@ void main() {
     expect(await counter.value(), 42);
     await counter.setValue();
     expect(await counter.value(), 42);
+    await counter.setValue(value: null);
+    expect(await counter.value(), 42);
+    counter.dispose();
   });
 
   testWidgets('opaque class Counter duplicate', (tester) async {
@@ -423,7 +568,36 @@ void main() {
     await counter.increment();
     expect(await counter.value(), 8);
     expect(await copy.value(), 7);
+    counter.dispose();
+    copy.dispose();
   });
+
+  testWidgets('opaque class Counter addTo mutates only the receiver', (
+    tester,
+  ) async {
+    final receiver = Counter.int32T(initialValue: 10);
+    final other = Counter.int32T(initialValue: -3);
+
+    expect(await receiver.addTo(other: other), 7);
+    expect(await receiver.value(), 7);
+    expect(await other.value(), -3);
+
+    receiver.dispose();
+    other.dispose();
+  });
+
+  testWidgets(
+    'opaque class Counter tickStream covers defaults and empty runs',
+    (tester) async {
+      final counter = Counter.int32T(initialValue: 8);
+      expect(await counter.tickStream().toList(), [8, 8, 8, 8, 8]);
+      expect(
+        await counter.tickStream(count: 0, intervalMs: 0).toList(),
+        isEmpty,
+      );
+      counter.dispose();
+    },
+  );
 
   testWidgets('opaque class Counter static sum', (tester) async {
     expect(Counter.sum(a: 3, b: 4), 7);
@@ -667,6 +841,41 @@ void main() {
     expect(bridgeVersion(), 42);
   });
 
+  testWidgets('empty error messages use stable native fallback names', (
+    tester,
+  ) async {
+    await expectLater(
+      failAsync(msg: ''),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('fail_async'),
+        ),
+      ),
+    );
+    expect(
+      () => failSync(msg: ''),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('fail_sync'),
+        ),
+      ),
+    );
+    await expectLater(
+      failNormal(msg: ''),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('fail_normal'),
+        ),
+      ),
+    );
+  });
+
   // --- Deep nesting test (G03) ---
 
   testWidgets('G03: 3-level nested vector roundtrip', (tester) async {
@@ -738,6 +947,20 @@ void main() {
     expect(output.toIso8601String(), '2020-01-01T00:00:00.000Z');
   });
 
+  testWidgets('time_point preserves timestamps before the Unix epoch', (
+    tester,
+  ) async {
+    const micros = -1;
+    final input = DateTime.fromMicrosecondsSinceEpoch(micros, isUtc: true);
+    final asyncOutput = await echoTime(value: input);
+    final syncOutput = echoTimeSync(value: input);
+
+    expect(asyncOutput.microsecondsSinceEpoch, micros);
+    expect(syncOutput.microsecondsSinceEpoch, micros);
+    expect(asyncOutput.isUtc, isTrue);
+    expect(syncOutput.isUtc, isTrue);
+  });
+
   // ─── async-simple Signal/Slot cancellation (C01-C06) ──────────────────────
   //
   // Dart cannot forcibly cancel a Future that maps to a running Lazy
@@ -763,14 +986,21 @@ void main() {
     expect(cancelTask(taskId: 'c01'), isFalse);
   });
 
+  testWidgets('cancellable task with zero steps completes immediately', (
+    tester,
+  ) async {
+    expect(
+      await cancellableTask(taskId: 'c00', steps: 0, intervalMs: 1000),
+      'done:c00',
+    );
+    expect(isTaskRunning(taskId: 'c00'), isFalse);
+    expect(cancelTask(taskId: 'c00'), isFalse);
+  });
+
   testWidgets('C02: cancel by id makes the Dart Future fail with StateError', (
     tester,
   ) async {
-    final future = cancellableTask(
-      taskId: 'c02',
-      steps: 10000,
-      intervalMs: 20,
-    );
+    final future = cancellableTask(taskId: 'c02', steps: 10000, intervalMs: 20);
     await _waitUntil(() => isTaskRunning(taskId: 'c02'));
     expect(isTaskRunning(taskId: 'c02'), isTrue);
 
@@ -795,11 +1025,7 @@ void main() {
   ) async {
     // Nominal runtime would be 10000 * 50ms = 500s; cancellation must not
     // wait for the current sleep to finish.
-    final future = cancellableTask(
-      taskId: 'c03',
-      steps: 10000,
-      intervalMs: 50,
-    );
+    final future = cancellableTask(taskId: 'c03', steps: 10000, intervalMs: 50);
     await _waitUntil(() => isTaskRunning(taskId: 'c03'));
     // Give the coroutine a moment to enter the timer wait.
     await Future<void>.delayed(const Duration(milliseconds: 30));
@@ -848,11 +1074,7 @@ void main() {
   });
 
   testWidgets('C06: bridge recovers after a cancelled task', (tester) async {
-    final future = cancellableTask(
-      taskId: 'c06',
-      steps: 10000,
-      intervalMs: 20,
-    );
+    final future = cancellableTask(taskId: 'c06', steps: 10000, intervalMs: 20);
     await _waitUntil(() => isTaskRunning(taskId: 'c06'));
     expect(cancelTask(taskId: 'c06'), isTrue);
     await expectLater(future, throwsA(isA<StateError>()));
@@ -901,7 +1123,10 @@ void main() {
   testWidgets('D06: collectAny<Terminate> cancels the losing task', (
     tester,
   ) async {
-    expect(await collectAnyCancelDemo(), 'winner=fast,value=42|loser-cancelled');
+    expect(
+      await collectAnyCancelDemo(),
+      'winner=fast,value=42|loser-cancelled',
+    );
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -950,8 +1175,9 @@ void main() {
       await stopUvWorker();
     });
 
-    testWidgets('uv_interval_demo: interval_on ticks on uv timed scheduler',
-        (tester) async {
+    testWidgets('uv_interval_demo: interval_on ticks on uv timed scheduler', (
+      tester,
+    ) async {
       await startUvWorker();
 
       // Ticks run on the uv worker's own scheduler (custom timed scheduler),
@@ -1334,9 +1560,7 @@ void main() {
       expect(items[4], 'item_4');
     });
 
-    testWidgets('stream with zero items completes immediately', (
-      tester,
-    ) async {
+    testWidgets('stream with zero items completes immediately', (tester) async {
       final items = await workerStream(count: 0, intervalMs: 0).toList();
       expect(items, isEmpty);
     });
@@ -1395,14 +1619,8 @@ void main() {
 
     testWidgets('concurrent DartFn calls from both workers', (tester) async {
       final (a, b) = await (
-        callDartFromWorkerA(
-          callback: (s) async => 'fromA:$s',
-          input: 'x',
-        ),
-        callDartFromWorkerB(
-          callback: (s) async => 'fromB:$s',
-          input: 'y',
-        ),
+        callDartFromWorkerA(callback: (s) async => 'fromA:$s', input: 'x'),
+        callDartFromWorkerB(callback: (s) async => 'fromB:$s', input: 'y'),
       ).wait;
       expect(a, 'fromA:x');
       expect(b, 'fromB:y');
@@ -1433,10 +1651,7 @@ void main() {
 
   group('stress: concurrent async calls', () {
     testWidgets('100 concurrent add() calls', (tester) async {
-      final futures = List.generate(
-        100,
-        (i) => add(a: i, b: i * 2),
-      );
+      final futures = List.generate(100, (i) => add(a: i, b: i * 2));
       final results = await Future.wait(futures);
       for (var i = 0; i < 100; i++) {
         expect(results[i], i + i * 2);
@@ -1462,10 +1677,7 @@ void main() {
     testWidgets('50 concurrent pipeline (A→B)', (tester) async {
       await startWorkers();
       try {
-        final futures = List.generate(
-          50,
-          (i) => pipeline(message: 'p$i'),
-        );
+        final futures = List.generate(50, (i) => pipeline(message: 'p$i'));
         final results = await Future.wait(futures);
         for (var i = 0; i < 50; i++) {
           expect(results[i], 'B[A{p$i}]');
@@ -1625,47 +1837,26 @@ void main() {
     testWidgets('processMessage throws when workers not running', (
       tester,
     ) async {
-      expect(
-        () => processMessage(message: 'hello'),
-        throwsA(anything),
-      );
+      expect(() => processMessage(message: 'hello'), throwsA(anything));
     });
 
-    testWidgets('pingWorker throws when workers not running', (
-      tester,
-    ) async {
-      expect(
-        () => pingWorker(payload: 'ping'),
-        throwsA(anything),
-      );
+    testWidgets('pingWorker throws when workers not running', (tester) async {
+      expect(() => pingWorker(payload: 'ping'), throwsA(anything));
     });
 
-    testWidgets('pipeline throws when workers not running', (
-      tester,
-    ) async {
-      expect(
-        () => pipeline(message: 'data'),
-        throwsA(anything),
-      );
+    testWidgets('pipeline throws when workers not running', (tester) async {
+      expect(() => pipeline(message: 'data'), throwsA(anything));
     });
 
-    testWidgets('fanOut throws when workers not running', (
-      tester,
-    ) async {
-      expect(
-        () => fanOut(message: 'hello'),
-        throwsA(anything),
-      );
+    testWidgets('fanOut throws when workers not running', (tester) async {
+      expect(() => fanOut(message: 'hello'), throwsA(anything));
     });
 
     testWidgets('callDartFromWorkerA throws when workers not running', (
       tester,
     ) async {
       expect(
-        () => callDartFromWorkerA(
-          callback: (s) async => s,
-          input: 'x',
-        ),
+        () => callDartFromWorkerA(callback: (s) async => s, input: 'x'),
         throwsA(anything),
       );
     });
@@ -1674,10 +1865,7 @@ void main() {
       tester,
     ) async {
       expect(
-        () => callDartFromWorkerB(
-          callback: (s) async => s,
-          input: 'x',
-        ),
+        () => callDartFromWorkerB(callback: (s) async => s, input: 'x'),
         throwsA(anything),
       );
     });
@@ -1694,10 +1882,9 @@ void main() {
     testWidgets('all 50 concurrent calls fail gracefully', (tester) async {
       final futures = List.generate(
         50,
-        (i) => processMessage(message: 'm$i').then(
-          (_) => 'ok',
-          onError: (_) => 'error',
-        ),
+        (i) => processMessage(
+          message: 'm$i',
+        ).then((_) => 'ok', onError: (_) => 'error'),
       );
       final results = await Future.wait(futures);
       // All should be errors
@@ -1708,9 +1895,7 @@ void main() {
   // ─── Stress: rapid init/dispose cycles ────────────────────────────────────
 
   group('stress: rapid init/dispose cycles', () {
-    testWidgets('20 rapid init/dispose cycles with sync call', (
-      tester,
-    ) async {
+    testWidgets('20 rapid init/dispose cycles with sync call', (tester) async {
       // Release the global bridge
       DcbLib.dispose();
 

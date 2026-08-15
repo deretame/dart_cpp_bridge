@@ -598,6 +598,9 @@ std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len) {
   if (len < 0 || len > kEchoMaxLen) {
     throw std::runtime_error("echo_bytes: len out of range [0, 256]");
   }
+  if (len > 0 && data == nullptr) {
+    throw std::runtime_error("echo_bytes: data is null");
+  }
   if (len > 0 && data != nullptr) {
     std::memcpy(g_echo_buf.data(), data, static_cast<std::size_t>(len));
   }
