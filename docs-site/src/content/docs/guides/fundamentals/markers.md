@@ -1,103 +1,66 @@
 ---
-title: Choosing a Marker
-description: How to choose BRIDGE_SYNC / BRIDGE_ASYNC / BRIDGE_NORMAL / stream / DartFn
+title: Choosing a Marker (v2)
+description: How to choose BRIDGE_SYNC, BRIDGE_ASYNC, BRIDGE_NORMAL, streams, and DartFn in v2
 ---
 
-The bridge uses `BRIDGE_*` markers to decide how C++ functions are exposed to Dart. Choosing the wrong one can cause blocking, deadlocks, or performance issues. This page is a cheat sheet plus decision flowchart.
+The bridge uses `BRIDGE_*` markers to select dispatch behavior. The marker
+names and Dart-facing return types are stable across v1 and v2; only the C++
+async return type changes.
 
-## Overview
+| Marker | Execution context | C++ signature in v2 | Dart return | Blocking |
+| --- | --- | --- | --- | --- |
+| `BRIDGE_SYNC` | bridge io thread | `T` | `T` | No |
+| `BRIDGE_ASYNC` | io scheduler, suspending task | `stdexec::task<T>` | `Future<T>` | No |
+| `BRIDGE_NORMAL` | blocking thread pool | `T` | `Future<T>` | Yes |
+| Stream | selected by marker + `StreamSink<T>` | usually `void` or `stdexec::task<void>` | `Stream<T>` | Depends |
 
-| Marker | Execution Thread | C++ Return Type | Dart Return Type | Can Block | Can Call DartFn |
-|---|---|---|---|---|---|
-| `BRIDGE_SYNC` | io_context | `T` | `T` | ❌ | ❌ (deadlock) |
-| `BRIDGE_ASYNC` | io_context coroutine | `async_simple::coro::Lazy<T>` | `Future<T>` | ❌ | ✅ (co_await) |
-| `BRIDGE_NORMAL` | thread_pool | `T` | `Future<T>` | ✅ | ✅ (syncAwait) |
-| Stream | io_context | `void` + `StreamSink<T>` | `Stream<T>` | ❌ | Depends on implementation |
+## `BRIDGE_SYNC`
 
-Core principles:
-
-- **Never block the io_context thread**
-- **DartFn cannot be used with `BRIDGE_SYNC`**
-
-## 1. BRIDGE_SYNC — Synchronous Calls
-
-The C++ function executes synchronously on the bridge's io thread, and the result is returned to Dart immediately.
+Use it for short, non-blocking work:
 
 ```cpp
 BRIDGE_SYNC
 std::int32_t bridge_version() { return 42; }
 ```
 
-Suitable for:
+Do not perform file or network I/O, sleep, acquire a potentially blocking lock,
+or call DartFn from a sync function. The io thread must return promptly.
 
-- Pure computation, getters, constant reads
-- Microsecond-level operations (usually < 1 μs)
-- No file access, network, locks, or sleep
+## `BRIDGE_ASYNC`
 
-Not suitable for:
-
-- Blocking calls
-- Calling DartFn (permanent deadlock, because the Dart reply requires the io thread)
-
-## 2. BRIDGE_ASYNC — Asynchronous Coroutines
-
-The C++ function returns `async_simple::coro::Lazy<T>` and runs as a coroutine on the io thread; when it hits `co_await`, it suspends without occupying the thread.
+Use it for asynchronous I/O, timers, channels, and DartFn calls that can suspend:
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b) {
-  co_return a + b;
-}
-
-BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> fetch_url(std::string url) {
-  // You can co_await channels, sleep, DartFn, or spawn_blocking.
-  auto result = co_await co::oneshot::recv();
-  co_return result;
+stdexec::task<std::string> fetch_name(std::string id) {
+  auto value = co_await dcb::fetch_from_channel(id);
+  co_return value;
 }
 ```
 
-Suitable for:
+A task may suspend without holding an io thread. Move genuinely blocking work
+to `dcb::spawn_blocking` or use `BRIDGE_NORMAL`.
 
-- Asynchronous IO
-- Waiting for other coroutines / channels / Dart callbacks
-- Composing multiple asynchronous operations
+## `BRIDGE_NORMAL`
 
-Not suitable for:
-
-- Blocking operations (use `BRIDGE_NORMAL` or `spawn_blocking`)
-
-## 3. BRIDGE_NORMAL — Normal Functions
-
-The C++ function is an ordinary function (it does not return `Lazy`); the bridge automatically dispatches it to the `thread_pool`. On the Dart side it is still `Future<T>`.
+Use it for ordinary functions that may block:
 
 ```cpp
 BRIDGE_NORMAL
-std::string sleep_greeting(std::string name) {
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  return "Hello, " + name;
+std::string read_file(std::string path) {
+  return read_file_synchronously(path);
 }
 ```
 
-Suitable for:
+The generated dispatch runs the function on the blocking pool and completes a
+Dart `Future<String>`.
 
-- File IO, synchronous network IO libraries
-- CPU-intensive computation
-- Any operation that blocks or takes more than microseconds
+## Streams
 
-Notes:
-
-- The function can block internally because it runs on the thread pool, not the io thread
-- You can still call DartFn via `async_simple::coro::syncAwait(dcb::spawn(...))`
-
-## 4. Stream — Streams
-
-A function is exported as a Dart `Stream<T>` when it carries an export marker
-(`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`) and takes a required `dcb::StreamSink<T>`
-parameter. The export marker is the gate: a `StreamSink` parameter alone does not export the
-function (the generator warns and skips it). For plain `void` stream functions use
-`BRIDGE_NORMAL`; the sink parameter makes it a stream regardless of the marker's usual
-scheduling, and the generated Dart API returns `Stream<T>`.
+A function is generated as a Dart stream when it has an export marker and a
+required `dcb::StreamSink<T>` parameter. An optional
+`std::optional<dcb::StreamSink<T>>` can be used on sync, async, or normal
+functions when the stream is optional.
 
 ```cpp
 BRIDGE_NORMAL
@@ -109,90 +72,33 @@ void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count) {
 }
 ```
 
-Notes:
+Stream unsubscription stops Dart delivery; the C++ operation may continue and
+late sink calls are silently dropped.
 
-- The function may return immediately; keep the sink and call `add()` later from any thread
-- `sink.error(msg)` sends an error event; `sink.end()` closes the stream normally
-- Cancelling the subscription only stops Dart-side reception; the C++ side continues running
-  and later `add()` calls are silently dropped
-- `std::optional<dcb::StreamSink<T>>` makes the stream optional: the generated Dart signature
-  takes a `StreamController<T>?` input parameter instead of returning a `Stream<T>`; use it
-  on `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` functions (there is no separate stream
-  marker; sync events are delivered after the FFI call returns)
+## DartFn
 
-See [Streams](/dart_cpp_bridge/guides/fundamentals/streams/) for complete examples
-(required and optional streams, cancellation, threading, errors).
-
-## 5. DartFn — Reverse Dart Closure Calls
-
-`dcb::DartFn<Ret(Args...)>` represents a Dart closure. It is not a function marker itself, but a parameter type, and must be paired with `BRIDGE_ASYNC` or `BRIDGE_NORMAL`.
-
-### Asynchronous Calls (Recommended)
-
-Call it with `co_await` inside a `BRIDGE_ASYNC` coroutine; the io thread actually suspends.
+DartFn is asynchronous in v2 because it returns a sender:
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> greet(
-    dcb::DartFn<std::string(std::string)> callback, std::string name) {
-  auto reply = co_await callback(name);
-  co_return "Dart said: " + reply;
+stdexec::task<std::string> greet_dart(
+    dcb::DartFn<std::string(std::string)> callback) {
+  co_return co_await callback("from C++");
 }
 ```
 
-### Persistent Callbacks
+Do not call a potentially suspending DartFn from `BRIDGE_SYNC`. If a blocking
+caller needs the result, use `dcb::sync_wait` off the io thread.
 
-Use the `BRIDGE_PERSIST` marker so the closure is not automatically unregistered after the call returns; it can be stored and invoked repeatedly.
+## Decision guide
 
-```cpp
-BRIDGE_SYNC
-BRIDGE_PERSIST
-bool register_callback(dcb::DartFn<std::string(std::string)> callback);
+1. Can the function finish quickly without blocking? Use `BRIDGE_SYNC`.
+2. Does it need to suspend on a timer, channel, DartFn, or async I/O? Use
+   `BRIDGE_ASYNC` and return `stdexec::task<T>`.
+3. Does it perform blocking work? Use `BRIDGE_NORMAL`, or offload the blocking
+   part with `dcb::spawn_blocking`.
+4. Does it push values over time? Add the required `StreamSink<T>` and an export
+   marker.
 
-BRIDGE_NORMAL
-std::string invoke_callback(std::string name);
-```
-
-### Prohibited
-
-```cpp
-// ❌ Deadlock
-BRIDGE_SYNC
-std::string bad(dcb::DartFn<std::string(std::string)> callback);
-```
-
-## Decision Flow
-
-```text
-Need to return a Stream?
-  → Yes: export marker (typically BRIDGE_NORMAL) + dcb::StreamSink<T> parameter
-  → Optional: std::optional<dcb::StreamSink<T>> parameter on a sync/async/normal function
-
-Need to call a Dart closure?
-  → Yes: BRIDGE_ASYNC + DartFn (co_await)
-  → Or: BRIDGE_NORMAL + syncAwait(dcb::spawn(fn(args)))
-
-Will the function block / take time / do file IO?
-  → Yes: BRIDGE_NORMAL
-
-Is the function asynchronous, needing co_await / channel / sleep?
-  → Yes: BRIDGE_ASYNC
-
-Is it just pure computation / getter / microsecond-level operation?
-  → Yes: BRIDGE_SYNC
-```
-
-## Common Mistakes
-
-| Mistake | Consequence |
-|---|---|
-| Blocking inside `BRIDGE_SYNC` | io thread stalls, the entire bridge becomes unresponsive |
-| `BRIDGE_SYNC` + DartFn | Permanent deadlock |
-| Blocking inside `BRIDGE_ASYNC` | Same as blocking inside `BRIDGE_SYNC` |
-| Writing `co_await` inside `BRIDGE_NORMAL` | Compile error, because it is not a coroutine |
-
-## Further Reading
-
-- [async-simple Coroutine Primer](/dart_cpp_bridge/guides/fundamentals/async-simple/)
-- [Basic Runtime](/dart_cpp_bridge/guides/fundamentals/runtime/)
-- [Exceptions and Error Handling](/dart_cpp_bridge/guides/fundamentals/errors/)
+See [v2 stdexec Async C++](/dart_cpp_bridge/guides/fundamentals/stdexec/) and
+[Exceptions and Error Handling](/dart_cpp_bridge/guides/fundamentals/errors/).

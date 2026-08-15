@@ -1,102 +1,63 @@
 ---
-title: 标记选择指南
-description: 如何选择 BRIDGE_SYNC / BRIDGE_ASYNC / BRIDGE_NORMAL / stream / DartFn
+title: 标记选择（v2）
+description: v2 中如何选择 BRIDGE_SYNC、BRIDGE_ASYNC、BRIDGE_NORMAL、Stream 和 DartFn
 ---
 
-bridge 用 `BRIDGE_*` 标记决定 C++ 函数以什么方式暴露给 Dart。选错会导致阻塞、死锁或性能问题。这页是一张速查表 + 决策流程。
+bridge 使用 `BRIDGE_*` 标记选择 dispatch 行为。标记名称和 Dart 侧返回
+类型在 v1/v2 中保持稳定，变化的是 C++ 异步返回类型。
 
-## 总览
+| 标记 | 执行上下文 | v2 C++ 签名 | Dart 返回 | 是否可阻塞 |
+| --- | --- | --- | --- | --- |
+| `BRIDGE_SYNC` | bridge io 线程 | `T` | `T` | 否 |
+| `BRIDGE_ASYNC` | io scheduler，可挂起 task | `stdexec::task<T>` | `Future<T>` | 否 |
+| `BRIDGE_NORMAL` | blocking thread pool | `T` | `Future<T>` | 是 |
+| Stream | 由标记 + `StreamSink<T>` 决定 | 通常为 `void` 或 `stdexec::task<void>` | `Stream<T>` | 视实现而定 |
 
-| 标记 | 执行线程 | C++ 返回类型 | Dart 返回类型 | 能否阻塞 | 能否调 DartFn |
-|---|---|---|---|---|---|
-| `BRIDGE_SYNC` | io_context | `T` | `T` | ❌ | ❌（死锁） |
-| `BRIDGE_ASYNC` | io_context 协程 | `async_simple::coro::Lazy<T>` | `Future<T>` | ❌ | ✅（co_await） |
-| `BRIDGE_NORMAL` | thread_pool | `T` | `Future<T>` | ✅ | ✅（syncAwait） |
-| Stream | io_context | `void` + `StreamSink<T>` | `Stream<T>` | ❌ | 取决于内部实现 |
+## `BRIDGE_SYNC`
 
-核心原则：
-
-- **永远不要阻塞 io_context 线程**
-- **DartFn 不能和 `BRIDGE_SYNC` 一起用**
-
-## 1. BRIDGE_SYNC — 同步调用
-
-C++ 函数在 bridge 的 io 线程上同步执行，结果立即返回 Dart。
+适合短时间、非阻塞工作：
 
 ```cpp
 BRIDGE_SYNC
 std::int32_t bridge_version() { return 42; }
 ```
 
-适合：
+不要在 sync 函数中执行文件/网络 I/O、sleep、可能阻塞的锁，也不要调用
+DartFn。io 线程必须快速返回。
 
-- 纯计算、getter、常量读取
-- 微秒级操作（通常 < 1 μs）
-- 不访问文件、网络、锁、sleep
+## `BRIDGE_ASYNC`
 
-不适合：
-
-- 阻塞调用
-- 调用 DartFn（会永久死锁，因为 Dart 回复需要 io 线程）
-
-## 2. BRIDGE_ASYNC — 异步协程
-
-C++ 函数返回 `async_simple::coro::Lazy<T>`，在 io 线程上以协程方式执行，遇到 `co_await` 会挂起，不占用线程。
+适合异步 I/O、定时器、通道和会挂起的 DartFn 调用：
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b) {
-  co_return a + b;
-}
-
-BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> fetch_url(std::string url) {
-  // 可以 co_await channel、sleep、DartFn、spawn_blocking
-  auto result = co_await co::oneshot::recv();
-  co_return result;
+stdexec::task<std::string> fetch_name(std::string id) {
+  auto value = co_await dcb::fetch_from_channel(id);
+  co_return value;
 }
 ```
 
-适合：
+task 挂起时不会占用 io 线程。真正阻塞的工作放到
+`dcb::spawn_blocking`，或直接使用 `BRIDGE_NORMAL`。
 
-- 异步 IO
-- 需要等待其他协程 / channel / Dart 回调
-- 需要组合多个异步操作
+## `BRIDGE_NORMAL`
 
-不适合：
-
-- 阻塞操作（用 `BRIDGE_NORMAL` 或 `spawn_blocking`）
-
-## 3. BRIDGE_NORMAL — 普通函数
-
-C++ 函数是普通函数（不返回 `Lazy`），bridge 自动把它投递到 `thread_pool` 执行。Dart 侧仍然是 `Future<T>`。
+适合可能阻塞的普通函数：
 
 ```cpp
 BRIDGE_NORMAL
-std::string sleep_greeting(std::string name) {
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  return "Hello, " + name;
+std::string read_file(std::string path) {
+  return read_file_synchronously(path);
 }
 ```
 
-适合：
+生成的 dispatch 会在线程池执行函数，Dart 侧得到 `Future<String>`。
 
-- 文件 IO、网络 IO 同步库
-- CPU 密集型计算
-- 任何会阻塞或耗时 > 微秒级的操作
+## Stream
 
-注意：
-
-- 函数内部可以阻塞，因为它跑在线程池，不是 io 线程
-- 仍然可以通过 `async_simple::coro::syncAwait(dcb::spawn(...))` 调用 DartFn
-
-## 4. Stream — 流
-
-带导出标记（`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`）且带必需
-`dcb::StreamSink<T>` 参数的函数会导出为 Dart `Stream<T>`。导出标记是门槛：
-只有 `StreamSink` 参数而没有导出标记的函数不会生成（生成器会告警并跳过）。
-普通 `void` stream 函数通常用 `BRIDGE_NORMAL`；sink 参数会把它变成 stream，
-与标记本身的调度语义无关，生成的 Dart API 返回 `Stream<T>`。
+当函数同时具有导出标记和必需的 `dcb::StreamSink<T>` 参数时，会生成 Dart
+Stream。sync、async、normal 函数还可以使用可选的
+`std::optional<dcb::StreamSink<T>>`。
 
 ```cpp
 BRIDGE_NORMAL
@@ -108,89 +69,32 @@ void ticks(dcb::StreamSink<std::int32_t> sink, std::int32_t count) {
 }
 ```
 
-注意：
+取消订阅只会停止 Dart 侧接收；C++ 操作可能继续运行，之后的 sink 调用会
+被静默丢弃。
 
-- 函数可以立刻返回；sink 可长期持有，之后在任意线程 `add()`
-- `sink.error(msg)` 发送错误事件；`sink.end()` 正常关闭流
-- 取消订阅只停止 Dart 侧接收，C++ 侧继续运行，之后的 `add()` 静默丢弃
-- `std::optional<dcb::StreamSink<T>>` 表示可选 stream：生成的 Dart 签名变为
-  传入 `StreamController<T>?` 输入参数，而不是返回 `Stream<T>`；请用在
-  `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` 函数上（没有单独的 stream 标记；
-  sync 的事件在 FFI 调用返回后送达）
+## DartFn
 
-完整示例（必需/可选 stream、取消、线程、错误）见
-[Stream 流](/dart_cpp_bridge/zh-cn/guides/fundamentals/streams/)。
-
-## 5. DartFn — 反向调用 Dart 闭包
-
-`dcb::DartFn<Ret(Args...)>` 表示一个 Dart 闭包。它本身不是函数标记，而是参数类型，需要和 `BRIDGE_ASYNC` 或 `BRIDGE_NORMAL` 搭配。
-
-### 异步调用（推荐）
-
-在 `BRIDGE_ASYNC` 协程里 `co_await` 调用，io 线程真挂起。
+v2 中 DartFn 是异步的，因为它返回 sender：
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> greet(
-    dcb::DartFn<std::string(std::string)> callback, std::string name) {
-  auto reply = co_await callback(name);
-  co_return "Dart said: " + reply;
+stdexec::task<std::string> greet_dart(
+    dcb::DartFn<std::string(std::string)> callback) {
+  co_return co_await callback("from C++");
 }
 ```
 
-### 持久化回调
+不要从 `BRIDGE_SYNC` 调用可能挂起的 DartFn。阻塞调用方需要结果时，应在
+io 线程之外使用 `dcb::sync_wait`。
 
-用 `BRIDGE_PERSIST` 标记，闭包不会被调用结束后自动注销，可存储起来反复调用。
+## 选择步骤
 
-```cpp
-BRIDGE_SYNC
-BRIDGE_PERSIST
-bool register_callback(dcb::DartFn<std::string(std::string)> callback);
+1. 能否快速完成且完全不阻塞？使用 `BRIDGE_SYNC`；
+2. 是否需要等待 timer、channel、DartFn 或异步 I/O？使用 `BRIDGE_ASYNC`，
+   返回 `stdexec::task<T>`；
+3. 是否执行阻塞工作？使用 `BRIDGE_NORMAL`，或用
+   `dcb::spawn_blocking` 卸载阻塞部分；
+4. 是否要持续推送数据？增加必需的 `StreamSink<T>` 和导出标记。
 
-BRIDGE_NORMAL
-std::string invoke_callback(std::string name);
-```
-
-### 禁止
-
-```cpp
-// ❌ 死锁
-BRIDGE_SYNC
-std::string bad(dcb::DartFn<std::string(std::string)> callback);
-```
-
-## 决策流程
-
-```text
-需要返回 Stream 吗？
-  → 是：导出标记（通常 BRIDGE_NORMAL）+ dcb::StreamSink<T> 参数
-  → 可选：sync/async/normal 函数带 std::optional<dcb::StreamSink<T>> 参数
-
-需要调用 Dart 闭包吗？
-  → 是：BRIDGE_ASYNC + DartFn（co_await）
-  → 或 BRIDGE_NORMAL + syncAwait(dcb::spawn(fn(args)))
-
-函数会阻塞 / 耗时 / 文件 IO 吗？
-  → 是：BRIDGE_NORMAL
-
-函数是异步的，需要 co_await / channel / sleep？
-  → 是：BRIDGE_ASYNC
-
-只是纯计算 / getter / 微秒级操作？
-  → 是：BRIDGE_SYNC
-```
-
-## 常见错误
-
-| 错误 | 后果 |
-|---|---|
-| `BRIDGE_SYNC` 里阻塞 | io 线程卡住，整个 bridge 无响应 |
-| `BRIDGE_SYNC` + DartFn | 永久死锁 |
-| `BRIDGE_ASYNC` 里阻塞 | 同 `BRIDGE_SYNC` 阻塞 |
-| 在 `BRIDGE_NORMAL` 里写 `co_await` | 编译错误，因为它不是协程 |
-
-## 延伸阅读
-
-- [async-simple 协程入门](/dart_cpp_bridge/guides/fundamentals/async-simple/)
-- [基础运行时](/dart_cpp_bridge/guides/fundamentals/runtime/)
-- [异常与错误处理](/dart_cpp_bridge/guides/fundamentals/errors/)
+另见 [v2 stdexec 异步 C++](/dart_cpp_bridge/zh-cn/guides/fundamentals/stdexec/)
+和[异常与错误处理](/dart_cpp_bridge/zh-cn/guides/fundamentals/errors/)。

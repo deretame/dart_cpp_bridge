@@ -65,7 +65,7 @@ include_paths:               # libclang 解析时的 -I 路径
   - native
   - native/api
   - ../../include            # dart_cpp_bridge 公共头
-  - ../../dcb_gen_tool/stubs      # async_simple stub
+  - ../../dcb_gen_tool/stubs      # stdexec stub headers
 
 dart_output: lib/src/native_gen/   # Dart 生成物
 cpp_wire_output: native/generated/ # C++ wire 生成物
@@ -87,7 +87,7 @@ defines:
 ```cpp
 #pragma once
 #include "dart_cpp_bridge/annotate.h"
-#include <async_simple/coro/Lazy.h>
+#include <stdexec/execution.hpp>
 #include <cstdint>
 #include <string>
 
@@ -99,7 +99,7 @@ std::int32_t bridge_version();
 
 // async → Dart: Future<int> add(int a, int b)
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
+stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 
 // normal（线程池）→ Dart: Future<String> sleepGreeting(String name)
 BRIDGE_NORMAL
@@ -138,7 +138,7 @@ dart run bin/codegen.dart scripts/run_codegen.py ../examples/codegen_demo/dart_c
 
 ## 4. 编译原生库
 
-**先**在仓库根编过主工程（或已有 `build/_deps`），demo CMake 会复用 asio / async-simple，避免二次 git clone。
+**先**在仓库根编过主工程（或已有 `build/_deps`），demo CMake 会复用 asio / stdexec，避免二次 git clone。
 
 ```powershell
 # 仓库根（若尚无 _deps）
@@ -168,7 +168,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dart_cpp_bridge)
 
-# dart_cpp_bridge 目标已 PUBLIC 暴露 asio + async-simple
+# dart_cpp_bridge 目标已 PUBLIC 暴露 asio + stdexec
 target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
 ```
 
@@ -258,7 +258,7 @@ BridgeApi.instance.bridgeVersion();
 ```cpp
 // native/api/bridge_api.h
 BRIDGE_SYNC   std::int32_t bridge_version();
-BRIDGE_ASYNC  async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
+BRIDGE_ASYNC  stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 BRIDGE_NORMAL std::string sleep_greeting(std::string name);
 ```
 

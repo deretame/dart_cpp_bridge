@@ -1,0 +1,226 @@
+---
+title: Getting Started
+description: Environment setup, install tools, and build your first dart_cpp_bridge project
+slug: v1/getting-started
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+:::tip[Haven't installed Dart/Flutter yet?]
+If you haven't set up Dart or Flutter yet, please refer to the official docs first:
+
+* [Dart installation guide](https://dart.dev/get-dart)
+* [Flutter installation guide](https://docs.flutter.dev/get-started/install)
+
+This guide assumes you already have a working Dart or Flutter project.
+:::
+
+## Environment requirements
+
+Before starting, make sure your development environment meets the following requirements:
+
+* **CMake >= 3.24**
+* **C++ compiler** that supports C++20 (MSVC 2019+, GCC 10+, Clang 12+)
+* **Dart SDK >= 3.10.0**
+* **Git** (for pulling C++ dependencies such as Asio and async-simple)
+
+## Add dependencies
+
+This guide assumes a standard `pubspec.yaml` already exists at your project root. Add `dart_cpp_bridge` and its companion packages:
+
+<Tabs>
+  <TabItem label="Dart">
+    ```bash
+    dart pub add code_assets ffi hooks dart_cpp_bridge
+    ```
+  </TabItem>
+
+  <TabItem label="Flutter">
+    ```bash
+    flutter pub add code_assets ffi hooks dart_cpp_bridge
+    ```
+  </TabItem>
+</Tabs>
+
+:::caution[Meta version conflict]
+`hooks: ^2.1.0` depends on `meta: ^1.19.0`, but some Flutter versions still ship with an older `meta`.
+Before running `flutter pub add ...`, add this override to `pubspec.yaml`:
+
+```yaml
+dependency_overrides:
+  meta: ^1.19.0
+```
+:::
+
+## Install `dcb_gen_tool`
+
+`dcb_gen_tool` is the dart\_cpp\_bridge code generator. It generates FFI bindings and the Dart API from C++ headers.
+
+### Recommended installation (AOT binary)
+
+Starting with Dart 3.10, the official recommendation is to install executable tools with `dart install`, which produces a standalone AOT binary with faster startup and Native Assets build hook support:
+
+```bash
+dart install dcb_gen_tool
+```
+
+After installation, the executable is located in `install/bin/` under the Dart data directory. On Windows, for example, this might be:
+
+```text
+C:/Users/<your username>/AppData/Local/Dart/install/bin/dcb_gen_tool
+```
+
+You can invoke it directly:
+
+```bash
+C:/Users/<your username>/AppData/Local/Dart/install/bin/dcb_gen_tool --help
+```
+
+For convenience, add `$DART_DATA_HOME/install/bin/` (on Windows typically `%LOCALAPPDATA%/Dart/install/bin`) to your `PATH`. Then you can use:
+
+```bash
+dcb_gen_tool --help
+```
+
+### Legacy installation (compatibility)
+
+If you are on an older Dart version or prefer the traditional approach, you can also use:
+
+```bash
+dart pub global activate dcb_gen_tool
+```
+
+> **Note:** `dart pub global` is now marked as legacy. `dart install` is the recommended approach and supports Native Assets build hooks. Also, because `dart install` produces a native executable, you can no longer pass Dart VM options at runtime.
+
+## Initialize project
+
+Run in the project root (where `pubspec.yaml` lives):
+
+```bash
+dcb_gen_tool init
+```
+
+This command will:
+
+1. Read the package name from `pubspec.yaml`;
+2. Generate the basic file structure required by dart\_cpp\_bridge, including `hook/build.dart`;
+3. Automatically run code generation once.
+
+The first time code generation is invoked, the tool downloads libclang parsing dependencies from the network, so it may be slow — please be patient.
+
+### Customizing the native library name
+
+By default, the native library / CMake target name is the same as your Dart package name. If you want a different name, pass `--name`:
+
+```bash
+dcb_gen_tool init --name my_bridge
+```
+
+This sets:
+
+* `project(my_bridge)` and `add_library(my_bridge ...)` in `native/CMakeLists.txt`;
+* `libName: 'my_bridge'` in `hook/build.dart`;
+* `dart_package` in `dart_cpp_bridge.yaml` still uses your pubspec package name (required by Native Assets).
+
+Make sure these three names stay consistent after you edit them:
+
+| File | Field | Should match |
+|---|---|---|
+| `pubspec.yaml` | `name` | Your Dart/Flutter package name |
+| `dart_cpp_bridge.yaml` | `dart_package` | `pubspec.yaml` `name` |
+| `native/CMakeLists.txt` | `add_library(...)` | `hook/build.dart` `libName` |
+
+## Configure the Native Assets build hook
+
+`dcb_gen_tool init` already creates a minimal `hook/build.dart` for Windows, Linux, and macOS. If you need to support Android / iOS or adjust build options, edit the generated file instead of creating one from scratch.
+
+Here is a more complete minimal example:
+
+```dart
+import 'package:code_assets/code_assets.dart';
+import 'package:dart_cpp_bridge/hook.dart';
+import 'package:hooks/hooks.dart';
+
+void main(List<String> args) async {
+  await build(args, (input, output) async {
+    final config = switch (input.config.code.targetOS) {
+      OS.windows => WindowsConfig(),
+      OS.linux => LinuxConfig(),
+      OS.macOS => MacosConfig(),
+      OS.iOS => IosConfig(),
+      OS.android => AndroidConfig(ndkPath: ""),
+      final os => throw UnsupportedError('Unsupported target platform: $os'),
+    };
+    await DcbCMakeBuilder(
+      config: config,
+      sourceDir: 'native',
+      assetName: 'src/native_gen/dcb_bindings.dart',
+      libName: 'my_project', // must match add_library() in native/CMakeLists.txt
+    ).run(input: input, output: output);
+  });
+}
+```
+
+> **Android tip:** `AndroidConfig(ndkPath: "")` needs the local Android NDK path filled in, e.g. `C:/Users/<your username>/AppData/Local/Android/Sdk/ndk/<version>`.
+
+## Project directory conventions
+
+After initialization and hook configuration, your project directory will follow these conventions:
+
+```text
+.
+├── hook/
+│   └── build.dart          # Native Assets build entry
+├── native/
+│   ├── api/                # C++ business headers (hand-written)
+│   ├── api_impl/           # C++ business implementation (hand-written)
+│   └── CMakeLists.txt     # CMake build config
+├── lib/
+│   └── src/
+│       ├── native_gen/
+│       │   ├── dcb_bindings.dart   # Generated FFI bindings
+│       │   └── api/
+│       │       ├── api_fn.dart     # Top-level function entry
+│       │       ├── api.dart        # BridgeApi singleton
+│       │       └── api.g.dart      # Implementation layer
+│       └── ...
+└── pubspec.yaml
+```
+
+* `native/`: holds C++ source and `CMakeLists.txt`, used as the CMake `sourceDir`.
+* `lib/src/native_gen/`: generated Dart binding code.
+* `lib/src/native_gen/api/`: generated Dart business API.
+
+Once these steps are complete, running the project will automatically trigger the build hook to compile and bundle the native library.
+
+## Initialize the bridge
+
+Before calling any generated C++ functions, you must initialize the bridge. The code generator exposes an initialization entry point, for example in `examples/codegen_demo` it is `DcbLib.init()`:
+
+```dart
+import 'package:my_project/src/native_gen/api/init.dart';
+import 'package:my_project/src/native_gen/api/bridge_api.dart';
+
+Future<void> main() async {
+  await DcbLib.init();
+
+  // Now you can call generated functions
+  final greeting = await fetchGreeting(name: "dcb");
+  print(greeting);
+}
+```
+
+Key points:
+
+* **Call once per isolate**: usually from the main isolate; if other isolates also need to call C++ functions, they must each call `init()` too.
+* **`dispose()` is optional**: `DcbLib.dispose()` immediately closes the current isolate's session; in normal use, `NativeFinalizer` will automatically close it when the isolate exits or the object becomes unreachable.
+* **`shutdown()` only on process exit**: it is a process-level operation that stops the Runtime and closes all sessions. Do not call it from worker isolates.
+
+## Next steps
+
+After environment setup, you can start writing C++ API headers and run code generation. For more details, see:
+
+* [Native Assets Build Hooks](/dart_cpp_bridge/v1/guides/fundamentals/native-assets-hooks/) — how `hook/build.dart` compiles and bundles the C++ library
+* [Configuration](/dart_cpp_bridge/v1/codegen/configuration/)
+* [Annotations reference](/dart_cpp_bridge/v1/codegen/annotations/)
+* [Generated output reference](/dart_cpp_bridge/v1/codegen/output/)

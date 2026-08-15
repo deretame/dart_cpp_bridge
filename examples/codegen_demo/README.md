@@ -65,7 +65,7 @@ include_paths:               # -I paths for libclang parsing
   - native
   - native/api
   - ../../include            # dart_cpp_bridge public headers
-  - ../../dcb_gen_tool/stubs      # async_simple stub
+  - ../../dcb_gen_tool/stubs      # stdexec stub headers
 
 dart_output: lib/src/native_gen/   # Dart output
 cpp_wire_output: native/generated/ # C++ wire output
@@ -87,7 +87,7 @@ Create `.h` files in `native/api/` with `BRIDGE_*` markers:
 ```cpp
 #pragma once
 #include "dart_cpp_bridge/annotate.h"
-#include <async_simple/coro/Lazy.h>
+#include <stdexec/execution.hpp>
 #include <cstdint>
 #include <string>
 
@@ -99,7 +99,7 @@ std::int32_t bridge_version();
 
 // async → Dart: Future<int> add(int a, int b)
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
+stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 
 // normal (thread pool) → Dart: Future<String> sleepGreeting(String name)
 BRIDGE_NORMAL
@@ -138,7 +138,7 @@ Generated files:
 
 ## 4. Build Native Library
 
-**First** build the main project at repo root (or have `build/_deps` available). The demo CMake reuses asio / async-simple to avoid re-cloning.
+**First** build the main project at repo root (or have `build/_deps` available). The demo CMake reuses asio / stdexec to avoid re-cloning.
 
 ```powershell
 # Repo root (if _deps not yet available)
@@ -168,7 +168,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dart_cpp_bridge)
 
-# dart_cpp_bridge target PUBLIC exposes asio + async-simple
+# dart_cpp_bridge target PUBLIC exposes asio + stdexec
 target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
 ```
 
@@ -258,7 +258,7 @@ After copying this template, typically modify:
 ```cpp
 // native/api/bridge_api.h
 BRIDGE_SYNC   std::int32_t bridge_version();
-BRIDGE_ASYNC  async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
+BRIDGE_ASYNC  stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 BRIDGE_NORMAL std::string sleep_greeting(std::string name);
 ```
 

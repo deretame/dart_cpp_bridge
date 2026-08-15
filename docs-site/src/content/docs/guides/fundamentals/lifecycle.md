@@ -3,6 +3,11 @@ title: Lifecycle Management
 description: Lifecycle of Runtime, Session, Opaque objects, and NativeFinalizer
 ---
 
+:::caution[v2 development line]
+The runtime scheduler in this page is `IoContextScheduler`; `AsioExecutor` is a
+v1 name. Session, Dart, and finalizer lifecycle rules are shared by both versions.
+:::
+
 The bridge lifecycle has three layers: process-level Runtime, Isolate-level Session, and object-level Opaque handle. Understanding who creates, who releases, and who must not be touched is key to avoiding deadlocks and memory leaks.
 
 ## Runtime: Process-Level Singleton
@@ -10,7 +15,7 @@ The bridge lifecycle has three layers: process-level Runtime, Isolate-level Sess
 `dcb::Runtime` is a process-level singleton that internally manages:
 
 - `asio::io_context` event loop
-- `AsioExecutor`
+- `IoContextScheduler` (stdexec scheduler)
 - `thread_pool`
 - Session registry
 

@@ -1,4 +1,8 @@
-# Multi-Runtime Communication Demo (multi_runtime_demo)
+# v1 Archive: Multi-Runtime Communication Demo (multi_runtime_demo)
+
+> This README documents the v1 AsioExecutor / async-simple sample. The v2
+> direction uses independent plain stdexec schedulers; see
+> `examples/foreign_runtime_demo` and `docs/versioning.md`.
 
 Demonstrates how the `dart_cpp_bridge` main dispatcher and multiple independent C++ runtimes communicate via coroutine channels with **fully non-blocking** message passing.
 

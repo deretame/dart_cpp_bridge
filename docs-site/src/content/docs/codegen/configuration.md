@@ -5,6 +5,12 @@ sidebar:
   order: 1
 ---
 
+:::caution[v2 development line]
+The async return type parsed by the current generator is `stdexec::task<T>`.
+The published v1 generator used async-simple; keep the generator and runtime
+revision matched.
+:::
+
 ## Configuration File
 
 Every project that needs code generation requires a `dart_cpp_bridge.yaml` in the project root:
@@ -87,8 +93,8 @@ bindings that only fail later at C++/Dart compile time.
 
 - C++ standard library headers (for signature types);
 - `dart_cpp_bridge/*` runtime headers;
-- `async_simple/coro/Lazy.h` for `BRIDGE_ASYNC` return types (backed by
-  `dcb_gen_tool` stubs when the real dependency has not been fetched yet).
+- `stdexec/execution.hpp` for `BRIDGE_ASYNC` return types (mirrored by
+  `dcb_gen_tool` stubs when the vendored dependency is not available yet).
 
 Do **not** include other third-party or dependency headers in scanned headers —
 including headers that only exist in your build environment (`build/_deps`,
@@ -101,7 +107,7 @@ vendored SDKs, ...). Move heavy includes and implementations into
 - **Data classes** and **opaque classes** must be defined directly in the header; codegen only parses scanned headers and will not see classes defined elsewhere.
 - Free functions, static methods, constructors, and other implementations should go in the corresponding `.cpp` files.
 - **Do not write type aliases** (`using Foo = ...` or `typedef ...`); codegen currently cannot parse aliases, so expand them to the actual type.
-- **Do not write `using namespace`**; always use fully qualified names for types and function calls (e.g. `std::int32_t`, `async_simple::coro::Lazy`).
+- **Do not write `using namespace`**; always use fully qualified names for types and function calls (e.g. `std::int32_t`, `stdexec::task`).
 - Function/method parameter and return types should use fully qualified names so codegen can identify them correctly.
 
 ## Custom Data Class `toString()` {#dart_code}

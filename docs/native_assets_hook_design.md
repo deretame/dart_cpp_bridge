@@ -1,5 +1,9 @@
 # Native Assets Hook 方案设计
 
+> 本文包含 v1 依赖模型的历史描述（其中部分示例仍写作 async-simple）。
+> 当前 v2 依赖和异步模型以 `dart/native/CMakeLists.txt`、
+> `docs/versioning.md` 及 `docs/progress-v2.md` 为准。
+
 > 对应阶段：**Phase 3**（见 [progress.md](./progress.md)）
 > 状态：**已实现**（随 `dart_cpp_bridge` 1.1.0+ 发布，`hook/build.dart` + `hook/link.dart`；1.2.0 已验证）
 > 关联决策：hook 直接驱动 CMake、CMakeLists 为构建单点真相、平台配置用密封类（非 YAML `user_defines`）、Android 用系统 CMake(≥3.24) + NDK toolchain、`cc_builder`/`CBuilder` 不适用

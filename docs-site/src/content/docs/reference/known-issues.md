@@ -3,6 +3,11 @@ title: Known Issues
 description: Known limitations and common pitfalls in the current version
 ---
 
+:::caution[v2 development line]
+This list follows the current stdexec implementation. Historical async-simple
+issues are kept in the v1 archive and are not current API guidance.
+:::
+
 ## Known Limitations
 
 ### No General Cancellation Mechanism
@@ -34,4 +39,5 @@ Never block the `io_context` thread.
 - The Runtime is single-threaded by design
 - Generated code must be regenerated manually by running `dcb_gen_tool generate`
 - Headers should contain only declarations; data classes and opaque classes must be defined inside the scanned headers
-- `DartFn::operator()` is async only; for blocking calls use `syncAwait(dcb::spawn(...))`, and never do so on the io thread
+- `DartFn::operator()` is async only; for blocking calls use `dcb::sync_wait(...)`
+  from a worker or external thread, and never do so on the io thread

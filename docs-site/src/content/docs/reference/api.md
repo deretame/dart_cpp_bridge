@@ -1,13 +1,20 @@
 ---
-title: API Reference
-description: Overview of public Dart and C++ APIs
+title: API Reference (v2)
+description: Overview of the stable Dart API and current v2 C++ runtime APIs
 ---
+
+:::caution[v2 C++ surface]
+The Dart API, C ABI, and wire protocol remain stable across v1 and v2. This page
+uses the v2 stdexec C++ names. See [Versioned Documentation](/dart_cpp_bridge/versions/)
+when maintaining a published 1.x application.
+:::
 
 ## Dart API
 
 ### DartCppBridge
 
-One instance per Isolate. Creates a Session and starts the process-wide Runtime on the first `init` call.
+One instance per Isolate. The first `init` creates a Session and starts the
+process-wide Runtime.
 
 ```dart
 class DartCppBridge implements Finalizable {
@@ -22,27 +29,26 @@ class DartCppBridge implements Finalizable {
   void shutdown();
   void setVerboseErrors(bool enabled);
 
-  // Low-level calls (used by codegen)
   Uint8List invokeSyncMethod(int methodId, [Uint8List? payload]);
   Future<Uint8List> invokeAsyncMethod(int methodId, [Uint8List? payload]);
-  Future<Uint8List> invokeRawAsync(Uint8List rawBytes, {int? responseId});
-  Stream<T> openStream<T>(int methodId, Uint8List payload, T Function(ByteReader) decodeItem);
-  Future<Uint8List> invokeAsyncMethodWithStream<T>(
+  Stream<T> openStream<T>(
     int methodId,
-    ByteWriter payload,
-    StreamController<T>? controller,
+    Uint8List payload,
     T Function(ByteReader) decodeItem,
   );
 
-  // DartFn registration (used by codegen)
   int registerDartFn(Future<Uint8List> Function(Uint8List) fn);
   void unregisterDartFn(int id);
 }
 ```
 
+`shutdown()` is process-wide and must only be called by the main isolate
+during process exit. `dispose()` closes the current isolate's session; the
+native finalizer also performs this cleanup.
+
 ### CppOpaqueInterface
 
-Dart base class for opaque C++ objects, providing `dispose()` and `NativeFinalizer` lifecycle management:
+Generated opaque wrappers use a handle and `NativeFinalizer`:
 
 ```dart
 abstract base class CppOpaqueInterface implements Finalizable {
@@ -53,19 +59,7 @@ abstract base class CppOpaqueInterface implements Finalizable {
 }
 ```
 
-### Lifecycle
-
-| Method | Description |
-|---|---|
-| `init()` | Initialize the current Isolate's Session and start the Runtime on demand |
-| `dispose()` | Actively close the current Isolate's Session (optional; GC / Isolate exit will clean up automatically) |
-| `shutdown()` | Close all Sessions and stop the Runtime; **only call from the main Isolate on process exit** |
-
-:::caution
-Do not call `shutdown()` in a worker isolate.
-:::
-
-## C++ API
+## v2 C++ API
 
 ### Runtime
 
@@ -79,13 +73,11 @@ class Runtime {
   void start();
   void stop();
   bool running() const;
-
-  // Must be called before start(); default is 4
   void set_pool_threads(std::uint32_t n);
 
-  asio::io_context& io();
-  asio::thread_pool& pool();
-  AsioExecutor* executor();
+  DCB_ASIO_NS::io_context& io();
+  IoContextScheduler* io_scheduler();
+  auto blocking_scheduler();
 
   void set_dart_post(DartPostFn fn, void* userdata);
   void post_to_dart(std::int64_t port, const std::uint8_t* data, std::size_t len);
@@ -94,27 +86,24 @@ class Runtime {
 }  // namespace dcb
 ```
 
-:::caution
-`set_pool_threads()` must be called before `start()`. The Runtime thread pool size cannot be changed after it starts.
-:::
+`io_scheduler()` is the single-threaded Asio scheduler. The blocking
+scheduler is used by `BRIDGE_NORMAL` dispatch and `spawn_blocking`.
 
-| Function | Purpose | Description |
-|---|---|---|
-| `spawn(Lazy<T>)` | Returns `RescheduleLazy<T>` bound to the io executor | Not started; must call `start()` or `syncAwait()` |
-| `spawn_detached(Lazy<T>)` | Fire-and-forget on the io thread | Results and exceptions are ignored |
-| `spawn_blocking(F&&)` | Execute blocking / CPU tasks on the thread pool | Returns `Lazy<T>`; can be `co_await`ed in an io coroutine |
-| `spawn_on_asio(LazyFactory)` | Schedule coroutines on the io_context thread | Used for low-level startup and cross-thread wake-up |
-
-`syncAwait` usage example:
+### Sender and task helpers
 
 ```cpp
-// Safe: block and wait in the thread pool (BRIDGE_NORMAL) or an ordinary thread
-auto r = async_simple::coro::syncAwait(dcb::spawn(compute_value()));
+BRIDGE_ASYNC
+stdexec::task<int> compute(int n);
+
+auto sender = stdexec::starts_on(
+    *dcb::Runtime::instance().io_scheduler(),
+    stdexec::just(42));
+
+auto result = dcb::sync_wait(std::move(sender));
 ```
 
-:::danger
-Never call `syncAwait` on the `io_context` thread; it will cause a self-deadlock.
-:::
+Use `dcb::sync_wait` only off the io thread. For fire-and-forget work, use a
+scope-owned stdexec spawn operation and drain the scope before destroying it.
 
 ### StreamSink
 
@@ -132,25 +121,19 @@ class StreamSink {
 }  // namespace dcb
 ```
 
-Required streams: give a `void` function an export marker (typically `BRIDGE_NORMAL`) and a
-`StreamSink<T>` parameter — the generated Dart API returns `Stream<T>`. Optional streams:
-receive `std::optional<StreamSink<T>>` in `BRIDGE_SYNC`, `BRIDGE_NORMAL`, or `BRIDGE_ASYNC`
-functions — the generated Dart API takes a `StreamController<T>?` input parameter instead
-(for `BRIDGE_SYNC`, events are delivered after the blocking FFI call returns). In both cases,
-send stream data via `add()`, end the stream via `end()`, and report errors via `error()`.
+A required `StreamSink<T>` parameter plus an export marker generates a Dart
+`Stream<T>`. `std::optional<StreamSink<T>>` is supported for sync, async,
+and normal functions when the stream is optional.
 
 ### DartFn
 
 ```cpp
 namespace dcb {
 
-// Dart closures with arbitrary signatures
-// DartFn<Ret(Args...)>
-// Usage: co_await fn(args...) -> returns Lazy<Ret>
 template <typename Ret, typename... Args>
 class DartFn<Ret(Args...)> {
  public:
-  async_simple::coro::Lazy<Ret> operator()(const Args&... args) const;
+  stdexec::sender auto operator()(const Args&... args) const;
   explicit operator bool() const;
   std::uint64_t fn_id() const;
 };
@@ -158,27 +141,14 @@ class DartFn<Ret(Args...)> {
 }  // namespace dcb
 ```
 
-Blocking context call:
+`DartFn::operator()` returns a sender. In a `stdexec::task`, use
+`co_await callback(args...)`. A blocking caller must use `dcb::sync_wait`
+from a worker or external thread.
 
-```cpp
-auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(arg)));
-```
+### Dispatch registration
 
-### Dispatch Registration
+Generated `wire_dispatch.cpp~ registers the dispatch functions through the
+runtime's internal registration hook. Application code normally does not call
+this manually.
 
-Hand-written or generated wire dispatch must be registered with the runtime before the first use:
-
-```cpp
-namespace dcb {
-
-using DispatchRequestFn = void (*)(std::shared_ptr<Session>, std::uint64_t,
-                                   const std::uint8_t*, std::size_t);
-using DispatchSyncFn = std::vector<std::uint8_t> (*)(std::uint64_t,
-                                                     const std::uint8_t*, std::size_t);
-
-void set_dispatch(DispatchRequestFn async_fn, DispatchSyncFn sync_fn);
-
-}  // namespace dcb
-```
-
-Usually done by file-scope static initialization in generated `wire_dispatch.cpp`; no manual call is needed.
+For the complete C ABI and wire frame layout, see [Wire Protocol](/dart_cpp_bridge/reference/wire-protocol/).

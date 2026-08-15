@@ -13,8 +13,17 @@ Dart/Flutter ↔ C++20 绑定生成器，灵感来自 [flutter_rust_bridge](http
 
 - 写**普通 C++20** 函数和类，无需手写 FFI 胶水
 - 代码生成器从带注解的头文件生成 Dart API + C++ wire dispatch
-- 内置基于 Asio + async-simple 协程的运行时
+- 内置基于 Asio + stdexec sender / 协程的运行时
 - 支持 Android、iOS、Windows、Linux、macOS
+
+## 文档版本
+
+- **v1** — 已发布的 1.x，当前发布版本为 1.3.0，基于 async-simple；维护
+  现有 v1 项目时请使用这套文档。
+- **v2** — `feat/stdexec-migration` 当前开发线，基于 stdexec，尚未发布为
+  `^2.0.0`。
+
+复制 C++ 异步示例前，请先阅读[版本说明](docs/versioning.zh-CN.md)。
 
 ## 快速开始
 
@@ -29,11 +38,13 @@ Dart/Flutter ↔ C++20 绑定生成器，灵感来自 [flutter_rust_bridge](http
 
 ```cpp
 #include <dart_cpp_bridge/annotate.h>
+#include <stdexec/execution.hpp>
+#include <string>
 
 BRIDGE_SYNC int32_t add(int32_t a, int32_t b) { return a + b; }
 
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> greet(std::string name) {
+stdexec::task<std::string> greet(std::string name) {
   co_return "Hello, " + name;
 }
 ```
@@ -61,7 +72,7 @@ void main() async {
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考
 - [Asio](https://think-async.com/Asio/) — 事件循环与异步 I/O
-- [async-simple](https://github.com/alibaba/async_simple) — C++20 协程运行时
+- [stdexec](https://github.com/NVIDIA/stdexec) — v2 的 sender/receiver 与 scheduler 基础设施
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue) — 无锁并发队列
 - Dart / Flutter 团队 — FFI、Isolate、NativeFinalizer 等 Dart 原生能力
 

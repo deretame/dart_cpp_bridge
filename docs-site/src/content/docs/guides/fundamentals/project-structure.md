@@ -65,7 +65,7 @@ dart run bin/dcb_gen_tool.dart generate ../path/to/dart_cpp_bridge.yaml
 
 - `native/api/*.h` and everything they include transitively are parsed by
   codegen. Keep scanned headers to the include whitelist (C++ standard headers,
-  `dart_cpp_bridge/*`, `async_simple/coro/Lazy.h`) and put implementations plus
+  `dart_cpp_bridge/*`, `stdexec/execution.hpp`) and put implementations plus
   third-party includes in `native/api_impl/*.cpp`. See
   [Header Organization](/dart_cpp_bridge/codegen/configuration/#header-organization-recommendations).
 - Do not manually edit files in `native/generated/` and `lib/src/native_gen/`; they will be overwritten on re-generation.

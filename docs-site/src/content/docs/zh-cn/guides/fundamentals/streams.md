@@ -3,6 +3,11 @@ title: Stream 流
 description: 用 StreamSink 向 Dart 暴露 C++ 数据流，包括可选 stream
 ---
 
+:::caution[v2 开发线]
+异步 stream 示例使用 `stdexec::task` 和 `dcb::sleep`。stream wire 契约与 v1
+共用，变化仅在 C++ 异步签名。
+:::
+
 ## 概述
 
 带导出标记（`BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL`）**且**带必需
@@ -15,7 +20,7 @@ description: 用 StreamSink 向 Dart 暴露 C++ 数据流，包括可选 stream
 |---|---|
 | `void f(dcb::StreamSink<T> sink, ...)` | `Stream<T> f(...)` |
 | `R f(args..., std::optional<dcb::StreamSink<T>> progress)`（`BRIDGE_SYNC`） | `R f(..., {StreamController<T>? progress})` |
-| `Lazy<R> f(args..., std::optional<dcb::StreamSink<T>> progress)` | `Future<R> f(..., {StreamController<T>? progress})` |
+| `stdexec::task<R> f(args..., std::optional<dcb::StreamSink<T>> progress)` | `Future<R> f(..., {StreamController<T>? progress})` |
 
 函数可以立刻返回：sink 可以被长期持有，之后在任意线程继续使用。
 本页示例以 [codegen_demo](https://github.com/deretame/dart_cpp_bridge/tree/main/examples/codegen_demo) fixture 为准。
@@ -81,7 +86,7 @@ reply port，调用返回后立即送达 controller。
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
 ```
 
@@ -91,13 +96,13 @@ async_simple::coro::Lazy<std::string> download_with_progress(
 绝不能在 io 线程上阻塞。
 
 ```cpp
-async_simple::coro::Lazy<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20); // 20, 40, 60, 80, 100
       // 真实场景中事件来自异步工作；这里用可取消 sleep 模拟一个异步间隔。
-      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
+      co_await dcb::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;
@@ -150,7 +155,7 @@ std::string sync_download_with_progress(
 ```cpp
 namespace {
 // 自由协程函数：参数会拷贝进协程帧，避免协程 lambda 的 capture 悬空问题。
-async_simple::coro::Lazy<> emit_progress(dcb::StreamSink<std::int32_t> sink) {
+stdexec::task<void> emit_progress(dcb::StreamSink<std::int32_t> sink) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     sink.add(i * 20);  // 20, 40, 60, 80, 100
   }
@@ -159,17 +164,18 @@ async_simple::coro::Lazy<> emit_progress(dcb::StreamSink<std::int32_t> sink) {
 }  // namespace
 
 std::string sync_download_with_progress(
-    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
+  std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   if (progress) {
-    dcb::spawn_detached(emit_progress(std::move(*progress)));
+    // 应用层辅助函数：封装 stdexec::spawn 和由应用持有的 scope。
+    start_progress_task(std::move(*progress));
   }
   return std::string("downloaded: ") + url;
 }
 ```
 
-事件会在 FFI 调用期间排队到 reply port，调用返回后立即送达 controller。
-`dcb::spawn_detached` 是 fire-and-forget 启动器（等价于 `dcb::spawn(lazy).start([](auto&&) {})`）；
-这里不要用协程 lambda，临时 lambda 对象销毁后其 capture 会悬空。
+事件会在 FFI 调用期间排队到 reply port，调用返回后立即送达 controller。请通过
+scope-owned 的 stdexec spawn 启动 task，并在 Runtime 关闭时排空 scope；不要用协程 lambda，
+因为临时 lambda 对象销毁后其 capture 会悬空。
 
 ```dart
 final controller = StreamController<int>();

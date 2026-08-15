@@ -5,6 +5,12 @@ description: Environment setup, install tools, and build your first dart_cpp_bri
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
+:::caution[v2 development line]
+This guide follows the current stdexec-based repository. Published 1.x projects
+should use the [version guide](/dart_cpp_bridge/versions/) and keep their v1
+async-simple headers and generated output together.
+:::
+
 :::tip[Haven't installed Dart/Flutter yet?]
 If you haven't set up Dart or Flutter yet, please refer to the official docs first:
 
@@ -21,7 +27,7 @@ Before starting, make sure your development environment meets the following requ
 - **CMake >= 3.24**
 - **C++ compiler** that supports C++20 (MSVC 2019+, GCC 10+, Clang 12+)
 - **Dart SDK >= 3.10.0**
-- **Git** (for pulling C++ dependencies such as Asio and async-simple)
+- **Git** (for pulling C++ dependencies such as Asio and stdexec)
 
 ## Add dependencies
 

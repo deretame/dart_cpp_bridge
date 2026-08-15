@@ -3,6 +3,11 @@ title: Exceptions and Error Handling
 description: How C++ exceptions propagate to Dart and how Dart closure exceptions return to C++
 ---
 
+:::caution[v2 development line]
+Async examples use `stdexec::task`. Wire error frames and Dart `StateError`
+behavior are shared with v1.
+:::
+
 The bridge's wire layer catches all C++ exceptions and encodes them as error frames before handing them to Dart; exceptions thrown by Dart closures also return to C++ via the wire. This page explains the propagation rules for each path.
 
 ## Core Principles
@@ -49,7 +54,7 @@ Exceptions thrown in coroutines (including those thrown by `co_await`) are caugh
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> fail() {
+stdexec::task<std::string> fail() {
   throw std::runtime_error("async failed");
   co_return "";
 }
@@ -67,7 +72,8 @@ try {
 
 ### BRIDGE_NORMAL
 
-Exceptions in the thread pool are first caught by async-simple's awaiter, then re-thrown at the `co_await` on the io thread, where the wire dispatch catches them.
+Exceptions from the blocking pool are propagated through the sender completion
+channel and caught by the wire dispatch before reaching Dart.
 
 ```cpp
 BRIDGE_NORMAL
@@ -81,7 +87,7 @@ Dart side also receives `StateError`.
 ### spawn_blocking
 
 ```cpp
-async_simple::coro::Lazy<int> compute() {
+stdexec::task<int> compute() {
   auto result = co_await dcb::spawn_blocking([] {
     throw std::runtime_error("blocking failed");
     return 0;
@@ -109,7 +115,7 @@ Future<String> greet(String name) async {
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> call_greet(
+stdexec::task<std::string> call_greet(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
   try {
     auto reply = co_await callback(name);
@@ -126,7 +132,7 @@ async_simple::coro::Lazy<std::string> call_greet(
 Payload of the `responseErr` frame:
 
 ```text
-code      i32   error code (currently always 0)
+code      i32   error code (generated dispatch currently uses 1)
 message   string error message
 ```
 

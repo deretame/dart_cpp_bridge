@@ -1,4 +1,6 @@
-# base_demo — 手写 Wire Dispatch 示例
+# base_demo — 手写 Wire Dispatch 示例（v2）
+
+本 demo 按当前 stdexec v2 开发线编写，Dart wire-facing API 与已发布的 v1 包兼容。
 
 最基础的示例，展示如何使用 `dart_cpp_bridge` 的**手写** wire dispatch 和 Dart 绑定。不涉及 codegen。
 
@@ -9,7 +11,7 @@
 | 功能 | C++ | Dart |
 |------|-----|------|
 | 同步调用 | `bridge_version()` | `bridge.bridgeVersion()` |
-| 异步（协程） | `add(a, b)` → `Lazy<int32_t>` | `await bridge.add(1, 2)` |
+| 异步（协程） | `add(a, b)` → `stdexec::task<int32_t>` | `await bridge.add(1, 2)` |
 | Normal（线程池） | `sleep_test()` | `await bridge.sleepTest()` |
 | Stream | `ticks(sink, count, interval)` | `bridge.ticks(count: 5)` |
 | DartFn 反向调用 | `callDartHello`（async/sync） | `bridge.callDartHello(cb)` |
@@ -49,7 +51,7 @@ base_demo/
 ## 构建与测试
 
 ```bash
-# 1. 先构建基础库（获取 asio / async-simple 依赖）
+# 1. 先构建基础库（获取 asio / stdexec 依赖）
 cmake -S ../../dart/native -B ../../dart/native/build
 cmake --build ../../dart/native/build --config Release
 

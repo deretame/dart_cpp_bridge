@@ -224,7 +224,8 @@ Key behaviors:
 - Cross-compiles with `-DCMAKE_SYSTEM_NAME=iOS`.
 - The hooks system tells the builder whether the target is device (`iphoneos`) or simulator (`iphonesimulator`), and the target architecture.
 - iOS requires static linking; the builder honors the hooks `linkModePreference`.
-- The minimum deployment target is floored at `14.0` because `async_simple` uses `std::atomic::wait/notify`.
+- The minimum deployment target is floored at `14.0` because the C++20 runtime
+  uses `std::atomic::wait/notify`.
 
 ### Android (`AndroidConfig`)
 

@@ -214,7 +214,7 @@ IosConfig(
 - 通过 `-DCMAKE_SYSTEM_NAME=iOS` 交叉编译。
 - hooks 系统会告诉 builder 当前目标是真机（`iphoneos`）还是模拟器（`iphonesimulator`），以及目标架构。
 - iOS 要求静态链接；builder 会遵循 hooks 的 `linkModePreference`。
-- 由于 `async_simple` 使用 `std::atomic::wait/notify`，最低部署目标被限制在 `14.0`。
+- 由于 C++20 Runtime 使用 `std::atomic::wait/notify`，最低部署目标被限制在 `14.0`。
 
 ### Android（`AndroidConfig`）
 

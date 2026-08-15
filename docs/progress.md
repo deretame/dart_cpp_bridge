@@ -1,4 +1,8 @@
-# dart_cpp_bridge 实现进度
+# v1 归档：dart_cpp_bridge 实现进度
+
+> 本文保留 v1 Phase 1/2 的实现快照，不能代表当前分支状态。当前代码已经
+> 完成 async-simple → stdexec 迁移；请查看 [v2 当前进度](./progress-v2.md)
+> 和 [版本说明](./versioning.zh-CN.md)。
 
 > 对照设计文档：[frb_and_cpp_bridge_design.md](./frb_and_cpp_bridge_design.md)  
 > **已知问题 / 技术债**：[known_issues.md](./known_issues.md)  

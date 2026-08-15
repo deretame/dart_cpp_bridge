@@ -3,6 +3,10 @@ title: 异常与错误处理
 description: C++ 异常如何透传到 Dart，以及 Dart 闭包异常如何回到 C++
 ---
 
+:::caution[v2 开发线]
+异步示例使用 `stdexec::task`。wire 错误帧和 Dart `StateError` 行为与 v1 共用。
+:::
+
 bridge 的 wire 层会把所有 C++ 异常捕获并编码为错误帧，再交给 Dart；Dart 闭包抛出的异常也会通过 wire 回到 C++。这页说明每种路径的传递规则。
 
 ## 核心原则
@@ -49,7 +53,7 @@ try {
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> fail() {
+stdexec::task<std::string> fail() {
   throw std::runtime_error("async failed");
   co_return "";
 }
@@ -67,7 +71,8 @@ try {
 
 ### BRIDGE_NORMAL
 
-线程池中的异常会先被 async-simple 的 awaiter 捕获，然后重新抛到 io 线程的 `co_await` 处，再被 wire dispatch 捕获。
+blocking pool 中的异常会通过 sender completion channel 传播，并在到达 Dart 前
+由 wire dispatch 捕获。
 
 ```cpp
 BRIDGE_NORMAL
@@ -81,7 +86,7 @@ Dart 侧同样收到 `StateError`。
 ### spawn_blocking
 
 ```cpp
-async_simple::coro::Lazy<int> compute() {
+stdexec::task<int> compute() {
   auto result = co_await dcb::spawn_blocking([] {
     throw std::runtime_error("blocking failed");
     return 0;
@@ -109,7 +114,7 @@ Future<String> greet(String name) async {
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> call_greet(
+stdexec::task<std::string> call_greet(
     dcb::DartFn<std::string(std::string)> callback, std::string name) {
   try {
     auto reply = co_await callback(name);
@@ -126,7 +131,7 @@ async_simple::coro::Lazy<std::string> call_greet(
 `responseErr` 帧的 payload：
 
 ```text
-code      i32   错误码（目前恒为 0）
+code      i32   错误码（生成的 dispatch 当前使用 1）
 message   string 错误信息
 ```
 

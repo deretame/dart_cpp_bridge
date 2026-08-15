@@ -1,0 +1,59 @@
+---
+title: dart_cpp_bridge
+description: Dart ↔ C++20 interoperability bridge library
+template: splash
+hero:
+  tagline: Expose C++ libraries to Dart/Flutter in an elegant way
+  image:
+    file: ../../../assets/v1/hero.svg
+  actions:
+    - text: Quick Start
+      link: /dart_cpp_bridge/v1/getting-started/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/deretame/dart_cpp_bridge
+      icon: external
+slug: v1
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid>
+  <Card title="Synchronous Calls" icon="rocket">
+    Directly call C++ functions with zero-overhead synchronous returns.
+  </Card>
+
+  <Card title="Asynchronous Coroutines" icon="star">
+    C++20 coroutine support based on async\_simple::Lazy.
+  </Card>
+
+  <Card title="Stream" icon="list-format">
+    Push streams of data from C++ to Dart.
+  </Card>
+
+  <Card title="Reverse Calls" icon="random">
+    Call Dart closures (DartFn) from C++.
+  </Card>
+
+  <Card title="Code Generation" icon="puzzle">
+    Auto-generate FFI bindings and serialization code.
+  </Card>
+
+  <Card title="Cross-Platform" icon="laptop">
+    Support for Windows, Linux, macOS, iOS, and Android.
+  </Card>
+
+  <Card title="Pure C API" icon="document">
+    C99-compatible bridge API with no dependency on async-simple / asio.
+  </Card>
+
+  <Card title="Foreign Runtime Integration" icon="server">
+    Integrate libuv, glib, and custom event loops via ForeignExecutor.
+  </Card>
+
+  <Card title="Asynchronous Non-blocking Channels" icon="link">
+    mpsc / oneshot coroutine channels for building cross-thread non-blocking pipelines.
+  </Card>
+</CardGrid>

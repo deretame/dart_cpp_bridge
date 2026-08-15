@@ -17,6 +17,11 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+:::caution[请选择文档版本]
+已发布的 1.x 使用 async-simple；当前迁移分支使用 stdexec，文档标记为 v2，
+但 v2 尚未正式发布。请先查看[版本文档](/dart_cpp_bridge/zh-cn/versions/)。
+:::
+
 ## 特性
 
 <CardGrid>
@@ -24,7 +29,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     直接调用 C++ 函数，零开销同步返回。
   </Card>
   <Card title="异步协程" icon="star">
-    基于 async_simple::Lazy 的 C++20 协程支持。
+    基于 stdexec::task 和 sender 的 v2 C++20 异步支持。
   </Card>
   <Card title="Stream 流" icon="list-format">
     C++ 向 Dart 推送数据流。
@@ -39,10 +44,10 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Windows、Linux、macOS、iOS、Android 五端支持。
   </Card>
   <Card title="纯 C API" icon="document">
-    不依赖 async-simple / asio，C99 兼容的桥接 API。
+    不依赖 C++ 异步内部实现的 C99 兼容桥接 API。
   </Card>
   <Card title="外部运行时集成" icon="server">
-    libuv、glib、自定义事件循环通过 ForeignExecutor 接入。
+    libuv、glib、自定义事件循环通过 stdexec scheduler 接入。
   </Card>
   <Card title="异步非阻塞通道" icon="link">
     mpsc / oneshot 协程通道，构建跨线程非阻塞流水线。

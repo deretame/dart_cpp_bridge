@@ -5,6 +5,11 @@ sidebar:
   order: 2
 ---
 
+:::caution[v2 开发线]
+`BRIDGE_ASYNC` 在 v2 头文件中返回 `stdexec::task<T>` 或其他受支持的
+stdexec sender。已发布的 v1 项目复制异步声明前，请先查看[版本说明](/dart_cpp_bridge/zh-cn/versions/)。
+:::
+
 ## 概述
 
 在 C++ 头文件中使用注解标记来指示代码生成器如何处理函数和类。
@@ -44,10 +49,11 @@ BRIDGE_SYNC int32_t add(int32_t a, int32_t b);
 
 ### BRIDGE_ASYNC
 
-异步函数，返回 `Lazy<T>`：
+异步函数，返回 `stdexec::task<T>` 或其他受支持的 sender：
 
 ```cpp
-BRIDGE_ASYNC async_simple::coro::Lazy<int32_t> compute_async(int32_t input);
+#include <stdexec/execution.hpp>
+BRIDGE_ASYNC stdexec::task<int32_t> compute_async(int32_t input);
 ```
 
 ### BRIDGE_NORMAL

@@ -1,0 +1,71 @@
+{
+  "sidebar": [
+    {
+      "label": "Getting Started",
+      "slug": "getting-started",
+      "translations": {
+        "zh-CN": "快速开始"
+      }
+    },
+    {
+      "label": "Guides",
+      "translations": {
+        "zh-CN": "指南"
+      },
+      "items": [
+        {
+          "label": "Fundamentals",
+          "translations": {
+            "zh-CN": "基础"
+          },
+          "items": [
+            {
+              "autogenerate": {
+                "directory": "guides/fundamentals"
+              }
+            }
+          ]
+        },
+        {
+          "label": "Advanced",
+          "translations": {
+            "zh-CN": "进阶"
+          },
+          "items": [
+            {
+              "autogenerate": {
+                "directory": "guides/advanced"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Code Generation",
+      "translations": {
+        "zh-CN": "代码生成"
+      },
+      "items": [
+        {
+          "autogenerate": {
+            "directory": "codegen"
+          }
+        }
+      ]
+    },
+    {
+      "label": "Reference",
+      "translations": {
+        "zh-CN": "参考"
+      },
+      "items": [
+        {
+          "autogenerate": {
+            "directory": "reference"
+          }
+        }
+      ]
+    }
+  ]
+}

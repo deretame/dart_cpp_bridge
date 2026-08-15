@@ -1,7 +1,15 @@
 ---
-title: Multiple Runtimes
+title: "v1 archive: Multiple Runtimes"
 description: Create independent asio + async-simple runtimes outside the dart_cpp_bridge main Runtime, and communicate with the main Runtime through coroutine channels.
+sidebar:
+  hidden: true
 ---
+
+:::caution[v1 archive]
+This page documents the v1 AsioExecutor / async-simple implementation. For v2,
+adapt an independent event loop as a plain stdexec scheduler; see the current
+[foreign runtime guide](/dart_cpp_bridge/guides/advanced/foreign-runtime/).
+:::
 
 `dart_cpp_bridge`'s `dcb::Runtime` is a process-level singleton and cannot be copied. If you need another independent event loop (for example, to isolate heavy computation, independent subsystems, or third-party async libraries in their own thread), you can assemble a **WorkerRuntime** yourself: an `asio::io_context` + `dcb::AsioExecutor` + a `std::thread`.
 

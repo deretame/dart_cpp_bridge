@@ -5,6 +5,12 @@ sidebar:
   order: 2
 ---
 
+:::caution[v2 development line]
+For `BRIDGE_ASYNC`, v2 headers return `stdexec::task<T>` or another supported
+stdexec sender. Published v1 projects should use the [version guide](/dart_cpp_bridge/versions/)
+before copying an async declaration.
+:::
+
 ## Overview
 
 Use annotation markers in C++ header files to tell the code generator how to handle functions and classes.
@@ -44,10 +50,11 @@ BRIDGE_SYNC int32_t add(int32_t a, int32_t b);
 
 ### BRIDGE_ASYNC
 
-Asynchronous function that returns `Lazy<T>`:
+Asynchronous function that returns `stdexec::task<T>` or another supported sender:
 
 ```cpp
-BRIDGE_ASYNC async_simple::coro::Lazy<int32_t> compute_async(int32_t input);
+#include <stdexec/execution.hpp>
+BRIDGE_ASYNC stdexec::task<int32_t> compute_async(int32_t input);
 ```
 
 ### BRIDGE_NORMAL

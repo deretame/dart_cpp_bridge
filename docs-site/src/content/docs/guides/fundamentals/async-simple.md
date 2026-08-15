@@ -1,7 +1,14 @@
 ---
-title: async-simple Coroutines Primer
+title: "v1 archive: async-simple Coroutines Primer"
 description: "Basic usage of the async-simple coroutine library used by dart_cpp_bridge: Lazy, Executor, co_await, starting coroutines, and the threading model"
+sidebar:
+  hidden: true
 ---
+
+:::caution[v1 archive]
+This page documents the released v1 async-simple runtime. It is retained for
+maintenance of 1.x applications and is not valid for the v2 stdexec branch.
+:::
 
 `dart_cpp_bridge`'s C++ async layer is built on [async-simple](https://alibaba.github.io/async_simple/). You don't need to be an async-simple expert to write business code, but this chapter covers the minimum knowledge you need to get started without reading the official docs.
 

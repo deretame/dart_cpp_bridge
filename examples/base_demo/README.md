@@ -1,4 +1,7 @@
-# base_demo — Hand-written Wire Dispatch
+# base_demo — Hand-written Wire Dispatch (v2)
+
+This demo follows the current stdexec-based v2 development line. The Dart
+wire-facing API is compatible with the released v1 package.
 
 The most basic demo showing how to use `dart_cpp_bridge` with **hand-written** wire dispatch and Dart bindings. No codegen involved.
 
@@ -9,7 +12,7 @@ This is the Phase 1 approach: you manually write the C++ dispatch function and t
 | Feature | C++ | Dart |
 |---------|-----|------|
 | Sync call | `bridge_version()` | `bridge.bridgeVersion()` |
-| Async (coroutine) | `add(a, b)` → `Lazy<int32_t>` | `await bridge.add(1, 2)` |
+| Async (coroutine) | `add(a, b)` → `stdexec::task<int32_t>` | `await bridge.add(1, 2)` |
 | Normal (thread pool) | `sleep_test()` | `await bridge.sleepTest()` |
 | Stream | `ticks(sink, count, interval)` | `bridge.ticks(count: 5)` |
 | DartFn reverse call | `callDartHello` (async/sync) | `bridge.callDartHello(cb)` |
@@ -49,7 +52,7 @@ base_demo/
 ## Build & Test
 
 ```bash
-# 1. Build base library first (fetches asio / async-simple)
+# 1. Build base library first (fetches asio / stdexec)
 cmake -S ../../dart/native -B ../../dart/native/build
 cmake --build ../../dart/native/build --config Release
 

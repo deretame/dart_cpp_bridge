@@ -3,6 +3,11 @@ title: Streams
 description: Expose C++ data streams to Dart with StreamSink, including optional streams
 ---
 
+:::caution[v2 development line]
+Async stream examples use `stdexec::task` and `dcb::sleep`. The stream wire
+contract is shared with v1; only the C++ async signature changes.
+:::
+
 ## Overview
 
 A C++ function becomes a Dart `Stream<T>` when it has an export marker
@@ -16,7 +21,7 @@ marker's usual scheduling and the generated Dart API returns `Stream<T>`.
 |---|---|
 | `void f(dcb::StreamSink<T> sink, ...)` | `Stream<T> f(...)` |
 | `R f(args..., std::optional<dcb::StreamSink<T>> progress)` (`BRIDGE_SYNC`) | `R f(..., {StreamController<T>? progress})` |
-| `Lazy<R> f(args..., std::optional<dcb::StreamSink<T>> progress)` | `Future<R> f(..., {StreamController<T>? progress})` |
+| `stdexec::task<R> f(args..., std::optional<dcb::StreamSink<T>> progress)` | `Future<R> f(..., {StreamController<T>? progress})` |
 
 The function may return immediately: the sink can be kept and used later from any thread.
 This page uses the [codegen_demo](https://github.com/deretame/dart_cpp_bridge/tree/main/examples/codegen_demo) fixture as a reference.
@@ -83,7 +88,7 @@ port and delivered to the controller right after the call returns.
 
 ```cpp
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress);
 ```
 
@@ -93,14 +98,14 @@ The coroutine runs on the io thread: emit events as part of the asynchronous
 work (between `co_await` points) and never block the thread.
 
 ```cpp
-async_simple::coro::Lazy<std::string> download_with_progress(
+stdexec::task<std::string> download_with_progress(
     std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     if (progress) {
       progress->add(i * 20); // 20, 40, 60, 80, 100
       // In real code events come from async work; a cancellable sleep
       // simulates the async interval here.
-      co_await async_simple::coro::sleep(std::chrono::milliseconds(10));
+      co_await dcb::sleep(std::chrono::milliseconds(10));
     }
   }
   co_return std::string("downloaded: ") + url;
@@ -155,7 +160,7 @@ that sends them asynchronously, then return the result immediately:
 namespace {
 // Free coroutine function: parameters are copied into the coroutine frame,
 // avoiding the dangling-capture problem of a coroutine lambda.
-async_simple::coro::Lazy<> emit_progress(dcb::StreamSink<std::int32_t> sink) {
+stdexec::task<void> emit_progress(dcb::StreamSink<std::int32_t> sink) {
   for (std::int32_t i = 1; i <= 5; ++i) {
     sink.add(i * 20);  // 20, 40, 60, 80, 100
   }
@@ -164,18 +169,19 @@ async_simple::coro::Lazy<> emit_progress(dcb::StreamSink<std::int32_t> sink) {
 }  // namespace
 
 std::string sync_download_with_progress(
-    std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
+  std::string url, std::optional<dcb::StreamSink<std::int32_t>> progress) {
   if (progress) {
-    dcb::spawn_detached(emit_progress(std::move(*progress)));
+    // Application helper: wraps stdexec::spawn and an application-owned scope.
+    start_progress_task(std::move(*progress));
   }
   return std::string("downloaded: ") + url;
 }
 ```
 
 The events are queued on the reply port while the FFI call is still in flight and delivered
-to the controller right after the call returns. `dcb::spawn_detached` is the fire-and-forget
-launcher (`dcb::spawn(lazy).start([](auto&&) {})`); do not use a coroutine lambda here — its
-captures would dangle once the temporary lambda object is destroyed.
+to the controller right after the call returns. Start the task through a scope-owned stdexec
+spawn and drain that scope during Runtime shutdown; do not use a coroutine lambda here because
+its captures would dangle once the temporary lambda object is destroyed.
 
 ```dart
 final controller = StreamController<int>();

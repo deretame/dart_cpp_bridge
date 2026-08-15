@@ -1,7 +1,14 @@
 ---
-title: 多个运行时
+title: v1 归档：多个运行时
 description: 在 dart_cpp_bridge 主 Runtime 之外创建独立的 asio + async-simple 运行时，并通过协程 channel 与主 Runtime 通信
+sidebar:
+  hidden: true
 ---
+
+:::caution[v1 归档]
+本页描述 v1 的 AsioExecutor / async-simple 实现。v2 应将独立事件循环适配为
+普通 stdexec scheduler，请查看当前的[外部运行时指南](/dart_cpp_bridge/zh-cn/guides/advanced/foreign-runtime/)。
+:::
 
 `dart_cpp_bridge` 的 `dcb::Runtime` 是进程级单例，不能被复制。如果你需要另一个独立的事件循环（比如把重计算、独立子系统、第三方异步库隔离在自己的线程里），可以自己组装一个 **WorkerRuntime**：一个 `asio::io_context` + `dcb::AsioExecutor` + 一个 `std::thread`。
 

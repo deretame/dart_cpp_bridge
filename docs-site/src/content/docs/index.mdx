@@ -17,6 +17,12 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+:::caution[Choose your documentation version]
+The released 1.x line uses async-simple. The current migration branch uses
+stdexec and is documented as v2, but v2 has not been published yet. Start with
+[Versioned Documentation](/dart_cpp_bridge/versions/).
+:::
+
 ## Features
 
 <CardGrid>
@@ -24,7 +30,7 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Directly call C++ functions with zero-overhead synchronous returns.
   </Card>
   <Card title="Asynchronous Coroutines" icon="star">
-    C++20 coroutine support based on async_simple::Lazy.
+    v2 C++20 async support based on stdexec::task and senders.
   </Card>
   <Card title="Stream" icon="list-format">
     Push streams of data from C++ to Dart.
@@ -39,10 +45,10 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
     Support for Windows, Linux, macOS, iOS, and Android.
   </Card>
   <Card title="Pure C API" icon="document">
-    C99-compatible bridge API with no dependency on async-simple / asio.
+    C99-compatible bridge API with no dependency on C++ async internals.
   </Card>
   <Card title="Foreign Runtime Integration" icon="server">
-    Integrate libuv, glib, and custom event loops via ForeignExecutor.
+    Integrate libuv, glib, and custom event loops via stdexec schedulers.
   </Card>
   <Card title="Asynchronous Non-blocking Channels" icon="link">
     mpsc / oneshot coroutine channels for building cross-thread non-blocking pipelines.

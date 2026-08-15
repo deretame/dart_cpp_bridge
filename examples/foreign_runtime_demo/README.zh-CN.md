@@ -1,4 +1,4 @@
-# Foreign Runtime Demo — 把 libuv 封装为 stdexec scheduler
+# Foreign Runtime Demo — 把 libuv 封装为 stdexec scheduler（v2）
 
 演示非 asio 事件循环（libuv）如何以 **stdexec scheduler** 的身份接入 bridge 的
 sender 世界。这是旧 `ForeignExecutor` + `foreign_runtime.h` C 注册 API
@@ -17,10 +17,10 @@ UvWorker: uv_loop_t + loop 线程  (UvScheduler, 见 uv_scheduler.hpp)
   - `schedule()` — 在 loop 线程上执行一次任务（mutex + `uv_async_send` 唤醒）
   - `schedule_after(d)` — `uv_timer_t` 定时器 sender,支持 stop token 取消
   - `uv_work(f)` — `uv_queue_work`（libuv 线程池）,完成回调在 loop 线程交付
-- 业务函数是 `exec::task` 协程,用 `stdexec::starts_on(worker.scheduler(), ...)`
-  组合;exec::task 自动把完成 reschedule 回调用方的 home scheduler（io 线程）。
+- 业务函数是 `stdexec::task` 协程，用 `stdexec::starts_on(worker.scheduler(), ...)`
+  组合；task 自动把完成 reschedule 回调用方的 home scheduler（io 线程）。
 - wire dispatch（`native/generated/wire_dispatch.cpp`）在 io 线程上以
-  `exec::task` 协程启动异步方法（`starts_on` + `exec::start_detached`）。
+  `stdexec::task` 协程启动异步方法（`starts_on` + `exec::start_detached`）。
   使用静态协程函数而非协程 lambda（MSVC 19.51 捕获 bug,见 cbridge.cpp 注释）。
 
 ## 目录
@@ -30,7 +30,7 @@ UvWorker: uv_loop_t + loop 线程  (UvScheduler, 见 uv_scheduler.hpp)
 ├── uv_worker.hpp         # UvWorker: uv_loop_t + 线程,提供 scheduler()
 ├── native/
 │   ├── CMakeLists.txt    # 构建 dcb_foreign_runtime_demo（链接 libuv）
-│   ├── api/foreign_api.h # BRIDGE_* API（exec::task 签名）
+│   ├── api/foreign_api.h # BRIDGE_* API（stdexec::task 签名）
 │   ├── api_impl/foreign_api.cpp  # 业务逻辑（sender 组合）
 │   └── generated/        # wire_dispatch.*（手改为 std::exec 模式）
 ├── lib/                  # 生成的 Dart API

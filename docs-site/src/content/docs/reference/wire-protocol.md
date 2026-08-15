@@ -40,6 +40,9 @@ code      i32     Error code
 message   string  Error message (length-prefixed)
 ```
 
+Generated dispatch currently uses error code 1. The field remains part of the
+protocol; callers should not depend on the formatting of the error text.
+
 ## Type Encoding
 
 ### Primitive Types
@@ -47,15 +50,18 @@ message   string  Error message (length-prefixed)
 | Type | Encoding |
 |---|---|
 | `bool` | 1 byte (0/1) |
-| `i8` / `u8` | 1 byte |
-| `i16` / `u16` | 2 bytes little-endian |
+| `u8` | 1 byte |
 | `i32` / `u32` | 4 bytes little-endian |
-| `i64` / `u64` | 8 bytes little-endian |
+| `i64` | 8 bytes little-endian |
 | `f32` | 4 bytes IEEE 754 |
 | `f64` | 8 bytes IEEE 754 |
 | `string` | u32 length + UTF-8 bytes (no NUL terminator) |
 | `DateTime` | i64 Unix microsecond timestamp (UTC, no timezone) |
 | `Int128` / `UInt128` | u32 length + decimal ASCII string; Dart handles conversion to `BigInt` |
+
+Internal frame fields, object handles, and `uint8_t*` addresses use `u64`. The
+codec can represent `i16`, `u16`, and `u64`, but they are not public codegen
+primitive types at present.
 
 ### Enums
 
@@ -65,12 +71,18 @@ message   string  Error message (length-prefixed)
 
 | Type | Encoding |
 |---|---|
-| `std::vector<T>` / `std::array<T, N>` | u32 count + T[] |
-| `std::unordered_map<K, V>` | u32 count + (K, V)[] |
-| `std::unordered_set<T>` | u32 count + T[] |
+| `std::vector<T>` | u32 count + T[]; `vector<uint8_t>` is followed by raw bytes |
+| `std::array<T, N>` | exactly N values, **no count prefix** |
+| `std::map<K, V>` / `std::unordered_map<K, V>` | u32 count + (K, V)[] |
+| `std::set<T>` / `std::unordered_set<T>` | u32 count + T[] |
 | `std::pair<T1, T2>` | T1 + T2 |
 | `std::tuple<T1, T2, ...>` | T1 + T2 + ... (in position order) |
 | `std::optional<T>` | u8 tag (1 = Some, 0 = None) + T (only if Some) |
+
+`std::uint8_t*` / `const std::uint8_t*` encode only the native address (`u64`);
+they do not encode pointed-to bytes or a length. The length must be passed by
+the API separately. Data classes use declaration order, while `BRIDGE_OPAQUE`
+values encode only their object handle.
 
 ## Security Considerations
 

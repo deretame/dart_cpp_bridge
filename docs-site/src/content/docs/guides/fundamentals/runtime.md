@@ -1,234 +1,138 @@
 ---
-title: Built-in Runtime
-description: The built-in asio + async-simple runtime in dart_cpp_bridge, plus foundational tools such as spawn, spawn_blocking, channel, and sleep.
+title: Built-in Runtime (v2)
+description: The Asio and stdexec runtime used by the v2 development line
 ---
 
-`dart_cpp_bridge` includes a built-in **asio + async-simple** runtime on the C++ side. By default, it starts automatically when `DartCppBridge.init()` is called from Dart; business code can write `async_simple::coro::Lazy<T>` coroutines directly without creating its own `io_context` or `Executor`. This chapter introduces the foundational tools and how to use them directly.
-
-## Libraries Ready to Use
-
-The bridge already pulls in and initializes these for you via FetchContent:
-
-- **Asio standalone** — `asio::io_context` single-threaded event loop + `asio::thread_pool` blocking thread pool
-- **async-simple** — `async_simple::coro::Lazy<T>` coroutines and `async_simple::Executor` scheduling model
-- **moodycamel::ConcurrentQueue** — the lock-free queue underlying `co::mpsc::unbounded<T>` (`concurrentqueue.h`)
-
-Common headers:
-
-```cpp
-#include "dart_cpp_bridge/runtime.hpp"        // Runtime, spawn, spawn_blocking
-#include "dart_cpp_bridge/asio_executor.hpp"  // AsioExecutor
-#include "dart_cpp_bridge/channel.hpp"        // co::oneshot / co::mpsc
-#include "async_simple/coro/Lazy.h"             // Lazy<T>
-#include "async_simple/coro/Sleep.h"            // sleep
-```
-
-## Runtime Singleton
-
-`dcb::Runtime` is a process-wide singleton that holds:
-
-- `asio::io_context` — single-threaded event loop (io thread)
-- `dcb::AsioExecutor` — async-simple's `Executor` implementation that schedules coroutines back onto the `io_context`
-- `asio::thread_pool` — blocking worker pool (default 4 threads, adjustable via `set_pool_threads()`)
-
-```cpp
-#include "dart_cpp_bridge/runtime.hpp"
-
-// Manual start/stop (normally done automatically by Dart-side init; C++ unit tests need to call it manually)
-dcb::Runtime::instance().start();
-dcb::Runtime::instance().stop();
-```
-
-Main interfaces:
-
-| Interface | Purpose |
-|---|---|
-| `start()` / `stop()` | Start/stop the io thread and thread pool |
-| `running()` | Whether it has started |
-| `io()` | Get `asio::io_context&` |
-| `pool()` | Get `asio::thread_pool&` |
-| `executor()` | Get `dcb::AsioExecutor*` |
-| `spawn_on_asio(factory)` | Post a Lazy factory from a non-coroutine context to the io thread to start |
-
-## `co_await` Directly in Business Coroutines
-
-Business functions invoked by wire dispatch already run as `Lazy<T>` on the io thread, so you can use these tools directly:
-
-```cpp
-async_simple::coro::Lazy<std::string> my_api(std::string input) {
-  // Non-blocking sleep, backed by asio::steady_timer
-  co_await async_simple::coro::sleep(std::chrono::milliseconds(100));
-
-  // Hand blocking work off to the thread pool
-  auto result = co_await dcb::spawn_blocking([&] {
-    return heavyComputation(input);
-  });
-
-  co_return result;
-}
-```
-
-## spawn / spawn_detached
-
-When you are not in a coroutine context (e.g., a normal function or callback) and want to post a Lazy to the io thread for execution:
-
-```cpp
-#include "async_simple/coro/SyncAwait.h"
-
-// Start and wait for the result (do not call on the io thread, or it will deadlock)
-auto result = async_simple::coro::syncAwait(
-    dcb::spawn(my_coroutine()));
-
-// Start and discard the result (fire-and-forget)
-dcb::spawn_detached(my_coroutine());
-```
-
-`dcb::spawn(lazy)` returns a `RescheduleLazy<T>` already bound to the Runtime executor. It supports:
-
-- `syncAwait(...)` — block the current thread until completion
-- `.start(callback)` — custom completion callback
-- `spawn_detached(...)` — start directly, ignoring results and exceptions
-
-:::caution
-Do not call `syncAwait(...)` on the io thread. The coroutine being awaited also needs the io thread to resume, causing a self-deadlock.
+:::caution[v2 development line]
+This page describes the current stdexec runtime. Published v1 applications use
+the [v1 async-simple archive](/dart_cpp_bridge/guides/fundamentals/async-simple/)
+instead.
 :::
 
-## spawn_blocking
+`dart_cpp_bridge` includes a process-wide runtime built from Asio and stdexec.
+`DartCppBridge.init()` starts it automatically. C++ business code can use the
+runtime scheduler without creating another event loop.
 
-Run blocking tasks on the `thread_pool` without blocking the io thread:
+## Runtime components
+
+- **Asio `io_context`** — one event-loop thread for bridge dispatch and
+  non-blocking async work.
+- **`IoContextScheduler`** — the v2 stdexec scheduler returned by
+  `Runtime::io_scheduler()`.
+- **Asio thread pool** — the blocking scheduler returned by
+  `Runtime::blocking_scheduler()`.
+- **Channels** — `co::oneshot` and `co::mpsc` senders for cross-thread
+  communication.
 
 ```cpp
-async_simple::coro::Lazy<int> compute(int n) {
-  auto result = co_await dcb::spawn_blocking([n] {
-    // Runs on a pool thread; can sleep or do synchronous IO
-    int sum = 0;
-    for (int i = 1; i <= n; ++i) sum += i;
-    return sum;
+#include <dart_cpp_bridge/runtime.hpp>
+#include <stdexec/execution.hpp>
+
+auto& runtime = dcb::Runtime::instance();
+runtime.start();                         // normally done by Dart init
+auto* io = runtime.io_scheduler();        // single-threaded scheduler
+auto blocking = runtime.blocking_scheduler();
+```
+
+## Async business code
+
+Use `stdexec::task<T>` for coroutine APIs exposed with `BRIDGE_ASYNC`:
+
+```cpp
+#include <dart_cpp_bridge/annotate.h>
+#include <dart_cpp_bridge/runtime.hpp>
+#include <stdexec/execution.hpp>
+#include <string>
+
+BRIDGE_ASYNC
+stdexec::task<std::string> delayed_echo(std::string message) {
+  co_await dcb::sleep(std::chrono::milliseconds(100));
+  co_return message;
+}
+```
+
+The task is started on the bridge scheduler by generated dispatch. It suspends
+without occupying the io thread. Use current stdexec names such as
+`starts_on`, `continues_on`, `on`, `when_all`, and `sync_wait`; do not use the
+v1 `Lazy` / `Executor` APIs.
+
+## Blocking work
+
+Never block the io thread. Use `dcb::spawn_blocking` from a task when the
+operation must remain part of an async pipeline:
+
+```cpp
+BRIDGE_ASYNC
+stdexec::task<int> compute(int n) {
+  auto value = co_await dcb::spawn_blocking([n] {
+    return expensive_synchronous_work(n);
   });
-
-  // Exceptions are caught on the pool thread and rethrown at the co_await site
-  co_return result;
+  co_return value;
 }
 ```
 
-## Asynchronous sleep
+For a wholly ordinary blocking function, use `BRIDGE_NORMAL`; generated
+dispatch sends it to the runtime's blocking pool and still returns
+`Future<T>` to Dart.
 
-`async_simple::coro::sleep(dur)` is non-blocking in a coroutine bound to `AsioExecutor`: AsioExecutor overrides async-simple's `schedule(Func, Duration)` and uses `asio::steady_timer`, so it does not occupy a thread.
+## Waiting from a non-coroutine function
 
-If the coroutine chain is bound to a cancellation signal (`Lazy::setLazyLocal`),
-the sleep is also **cancellable**: emitting `SignalType::Terminate` cancels the
-timer and the `co_await sleep(...)` throws `async_simple::SignalException`.
+`dcb::sync_wait(sender)` is a blocking convenience for non-coroutine callers.
+It rejects calls made on the io thread because waiting there would deadlock the
+event loop:
 
 ```cpp
-#include "async_simple/coro/Sleep.h"
-
-async_simple::coro::Lazy<std::string> delayed_echo(std::string msg) {
-  co_await async_simple::coro::sleep(std::chrono::seconds(1));
-  co_return msg;
-}
+auto result = dcb::sync_wait(
+    stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                       stdexec::just(42)));
 ```
 
-:::caution
-If the Lazy is not bound to `AsioExecutor` via `.via(ex)`, sleep may fall back to async-simple's default "spawn another thread to sleep" implementation. Business code usually runs on AsioExecutor through wire dispatch or `dcb::spawn`.
-:::
+Use it from a worker or external thread, not from `BRIDGE_SYNC` business code.
 
-## Cross-Coroutine Communication: channel
-
-`dart_cpp_bridge/channel.hpp` provides two Tokio-style channel types for passing data between coroutines or across threads. `co::mpsc::unbounded<T>` uses **moodycamel::ConcurrentQueue** as its lock-free queue underneath.
-
-### oneshot — one-shot request/response
+## Channels and cancellation
 
 ```cpp
-auto [tx, rx] = co::oneshot::channel<std::string>();
-
-// Send from any thread
+auto [tx, rx] = dcb::co::oneshot::channel<std::string>();
 tx.send("hello");
 
-// Receive in a coroutine
-auto value = co_await rx.recv();  // std::optional<std::string>
-if (value) { /* ... */ }
+// In a stdexec::task:
+auto value = co_await std::move(rx);  // std::optional<std::string>
 ```
 
-### mpsc — multi-producer, single-consumer
+For mpsc channels, use `co_await rx.recv()`; the oneshot receiver is already a
+sender. `recv()` is stop-token aware. v2 cancellation uses
+`stdexec::inplace_stop_source` / `stdexec::stop_token`; cancelled operations
+complete through `set_stopped()`. A Dart `Future` is not force-cancellable, so
+applications that need cancellation should expose an explicit task ID and
+cancel method.
 
-```cpp
-auto [tx, rx] = co::mpsc::unbounded<int>();
+## Pool configuration
 
-// Send from any thread / multiple producers
-tx.send(1);
-tx.send(2);
+The built-in blocking pool defaults to four threads. Configure it before the
+first session starts the runtime with `DartCppBridge.init(poolThreads: 8)` (or
+the generated `threadPoolSize` option). C++ can call
+`Runtime::set_pool_threads(8)` before `start()`. For a separate pool per
+workload, pass its scheduler as the second argument to `dcb::spawn_blocking`;
+see [Threading and Blocking Work](/dart_cpp_bridge/guides/fundamentals/threading/).
 
-// Receive in a coroutine
-while (auto v = co_await rx.recv()) {
-  // process v
-}
-```
-
-`Sender` is thread-safe and `send()` never blocks. `Receiver::recv()` must not be called concurrently.
-
-:::caution[Single-consumer]
-`co::oneshot` and `co::mpsc` are both **single-consumer** models:
-
-- `oneshot` can only receive once
-- `mpsc` may have multiple `Sender`s sending at the same time, but there can be only one `Receiver`, and that `Receiver` must not call `recv()` concurrently from multiple threads or coroutines
-
-If you need multiple consumers, distribute tasks from a single `recv()` loop to multiple processing coroutines.
-:::
-
-:::caution[channel value constraints]
-The channel requires the value type `T` to satisfy:
-
-```cpp
-std::movable<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
-```
-
-That is, `T` must be **movable** and must not be a `const` or `volatile` type. If the type is immovable (e.g., it contains a `std::mutex` or `const` member), wrap it in `std::shared_ptr<T>` or `std::unique_ptr<T>` before enqueuing.
-:::
-
-## Creating a Standalone Asio Runtime
-
-By default `dcb::Runtime` is a process-wide singleton. If you need an independent event loop isolated from the main Runtime (for example, a dedicated worker thread), you can assemble one yourself:
-
-```cpp
-#include "dart_cpp_bridge/asio_executor.hpp"
-#include <asio/io_context.hpp>
-#include <asio/executor_work_guard.hpp>
-
-asio::io_context ioc;
-auto guard = std::make_unique<asio::executor_work_guard<asio::io_context::executor_type>>(
-    ioc.get_executor());
-auto ex = std::make_unique<dcb::AsioExecutor>(ioc);
-
-std::thread t([&] {
-  ex->set_io_thread_id(std::this_thread::get_id());
-  ioc.run();
-});
-
-// You can then run coroutines on this standalone executor:
-// my_coroutine().via(ex.get()).start([](auto&&) {});
-```
-
-For the full implementation, see `examples/multi_runtime_demo/worker_runtime.hpp`.
-
-## Threading Rules
+## Threading rules
 
 :::caution
-- Never block the `io_context` thread
-- Use `dcb::spawn_blocking` for blocking operations
-- `syncAwait` must not be called on the io thread (`AsioExecutor::currentThreadInExecutor()` will assert)
-- Prefer `channel` for cross-thread / cross-runtime communication instead of raw locks + condition variables
+
+- Never perform blocking I/O, sleep, or a blocking lock on the io thread.
+- Do not call `dcb::sync_wait` from the io thread.
+- Keep sender completion lambdas `noexcept` when passing them to detached or
+  scope-owned operations.
+- Drain structured-concurrency scopes before destroying their scheduler.
 :::
 
-## Full Examples
+## Examples and references
 
-- `examples/base_demo` — basic sync / async / stream / DartFn
-- `examples/multi_runtime_demo` — standalone AsioExecutor runtime + channel
-- `examples/foreign_runtime_demo` — non-asio runtime integration via `ForeignExecutor`
-
-## Further Reading
-
-- [async-simple Coroutine Basics](/dart_cpp_bridge/guides/fundamentals/async-simple/)
+- `examples/base_demo` — runtime smoke tests and wire dispatch
+- `examples/multi_runtime_demo` — independent runtime/channel patterns
+- `examples/foreign_runtime_demo` — libuv exposed as a plain stdexec scheduler
+- [v2 stdexec async C++](/dart_cpp_bridge/guides/fundamentals/stdexec/)
+- [Channels](/dart_cpp_bridge/guides/fundamentals/channels/)
+- [Threading and Blocking Work](/dart_cpp_bridge/guides/fundamentals/threading/)
 - [Architecture](/dart_cpp_bridge/guides/fundamentals/architecture/)
-- [Multi-Runtime](/dart_cpp_bridge/guides/advanced/multi-runtime/)
-- [Foreign Runtime Integration](/dart_cpp_bridge/guides/advanced/foreign-runtime/)
-- [Pure C Bridge API](/dart_cpp_bridge/guides/advanced/cbridge/)
+- [Versioned Documentation](/dart_cpp_bridge/versions/)

@@ -5,18 +5,46 @@ sidebar:
   order: 3
 ---
 
+:::caution[v2 开发线]
+本页示例使用 `stdexec::task` 和 `dcb::sync_wait`。Dart 类型映射和 wire 编码
+与 v1 共用，但 v1 的 C++ 异步签名使用 async-simple。参见[版本文档](/dart_cpp_bridge/zh-cn/versions/)。
+:::
+
 ## 基础类型
 
 | C++ 类型 | Dart 类型 | 说明 |
 |----------|-----------|------|
 | `bool` | `bool` | 1 字节编码 |
-| `int8_t` / `int16_t` / `int32_t` / `int64_t` | `int` | 有符号整数 |
-| `uint8_t` / `uint16_t` / `uint32_t` / `uint64_t` | `int` | 无符号整数 |
+| `int` / `std::int32_t` | `int` | 有符号 32 位整数 |
+| `std::uint8_t` / `std::uint32_t` | `int` | 无符号整数 |
+| `std::int64_t` | `int` | 有符号 64 位整数 |
 | `float` | `double` | 32 位浮点 |
 | `double` | `double` | 64 位浮点 |
 | `std::string` | `String` | 按字节原样传输，不以 `\0` 截断 |
 | `std::chrono::system_clock::time_point` | `DateTime` | i64 Unix 微秒时间戳，不带时区信息 |
-| `Int128` / `UInt128` | `BigInt` | 仅为标记用，不可实际使用 |
+| `dcb::Int128` / `dcb::UInt128` | `BigInt` | 十进制字符串编码的 128 位值类型 |
+
+代码生成器的公开基础类型白名单是上表中的类型。`int8_t`、`int16_t`、
+`uint16_t` 和 `uint64_t` 虽然可能出现在底层 codec 或 FFI 字段中，但目前
+不是 codegen 的公开 API 类型；`u64` 主要用于 frame 字段、对象 handle 和
+指针地址。
+### 唯一支持的原始指针
+
+代码生成器对原始指针只有一个特判：
+
+| C++ 类型 | Dart 类型 | Wire 表示 |
+|----------|-----------|-----------|
+| `std::uint8_t*` | `Pointer<Uint8>` | native 地址，编码为 `u64` |
+| `const std::uint8_t*` | `Pointer<Uint8>` | native 地址，编码为 `u64` |
+
+这是一种“地址传递”模式，不是通用的零拷贝序列化。指针参数只携带地址，
+不携带长度，wire codec 也不会复制指针指向的字节；长度必须作为独立参数
+传入。`const` 只表达 C++ 的输入意图，生成的 Dart 类型仍然是
+`Pointer<Uint8>`。
+
+该映射用于导出函数或方法的参数/返回值。其他原始指针（如
+`int32_t*`、`char*`、`void*`）、引用和智能指针仍然不支持；数据类
+字段仍使用值类型白名单，也不应放入指针。
 
 ## 枚举
 
@@ -51,20 +79,13 @@ enum OrderStatus { created, paid, shipped }
 
 | C++ 类型 | Dart 类型 |
 |----------|-----------|
-| `std::vector<uint8_t>` / `std::array<uint8_t, N>` | `Uint8List` |
-| `std::vector<int8_t>` / `std::array<int8_t, N>` | `Int8List` |
-| `std::vector<int16_t>` / `std::array<int16_t, N>` | `Int16List` |
-| `std::vector<int32_t>` / `std::array<int32_t, N>` | `Int32List` |
-| `std::vector<int64_t>` / `std::array<int64_t, N>` | `Int64List` |
-| `std::vector<uint16_t>` / `std::array<uint16_t, N>` | `Uint16List` |
-| `std::vector<uint32_t>` / `std::array<uint32_t, N>` | `Uint32List` |
-| `std::vector<uint64_t>` / `std::array<uint64_t, N>` | `Uint64List` |
-| `std::vector<float>` / `std::array<float, N>` | `Float32List` |
-| `std::vector<double>` / `std::array<double, N>` | `Float64List` |
-| `std::vector<T>` / `std::array<T, N>`（其他） | `List<T>` |
-| `std::vector<bool>` / `std::array<bool, N>` | `List<bool>` |
+| `std::vector<uint8_t>` | `Uint8List` |
+| `std::vector<T>`（其他） | `List<T>` |
+| `std::array<T, N>` | `List<T>`，Dart 侧校验长度为 `N` |
+| `std::vector<bool>` | `List<bool>` |
 
-固定宽度整数/浮点元素**优先使用 typed list**（`Uint8List`、`Int32List` 等），避免装箱。Dart 没有 `BoolList`；`std::vector<bool>` 与 `std::array<bool, N>` 均回退为 `List<bool>`。
+目前只有 `std::vector<uint8_t>` 有专门的 `Uint8List` 映射；其他容器生成
+为普通 Dart `List`，避免把未实现的 typed-list 支持写成 API 保证。
 
 ### std::optional → 可空类型
 
@@ -72,14 +93,19 @@ enum OrderStatus { created, paid, shipped }
 |----------|-----------|
 | `std::optional<T>` | `T?` |
 
-Wire 编码使用 presence tag：`Some(T)` = tag 1 + T 编码，`None` = tag 0。
+presence tag 和具体字节布局见 [Wire 编码与运行时编解码](/dart_cpp_bridge/zh-cn/guides/fundamentals/encoding/)；本页只说明它在 Dart 侧表现为可空类型。
 
-### std::unordered_map / std::unordered_set
+### map / set
 
 | C++ 类型 | Dart 类型 |
 |----------|-----------|
 | `std::unordered_map<K, V>` | `Map<K, V>` |
 | `std::unordered_set<T>` | `Set<T>` |
+| `std::map<K, V>` | `Map<K, V>` |
+| `std::set<T>` | `Set<T>` |
+
+有序和无序容器都受 codegen 支持；Dart 侧都表现为 `Map` / `Set`。无序
+容器的迭代顺序不应作为业务语义依赖。
 
 ### std::pair / std::tuple → Dart Record
 
@@ -88,7 +114,7 @@ Wire 编码使用 presence tag：`Some(T)` = tag 1 + T 编码，`None` = tag 0�
 | `std::pair<T1, T2>` | `(T1, T2)` |
 | `std::tuple<T1, T2, ...>` | `(T1, T2, ...)` |
 
-按位置一一对应，wire 中按元素顺序编码，不传长度或字段名。
+按位置一一对应；具体编码顺序见 [Wire 编码与运行时编解码](/dart_cpp_bridge/zh-cn/guides/fundamentals/encoding/)。
 
 ## DartFn 反向回调
 
@@ -103,17 +129,17 @@ Wire 编码使用 presence tag：`Some(T)` = tag 1 + T 编码，`None` = tag 0�
 ```cpp
 // 在协程中通过 co_await 调用 Dart 闭包，不阻塞 io 线程
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> greet_dart_fn(
+stdexec::task<std::string> greet_dart_fn(
     dcb::DartFn<std::string(std::string)> callback, std::string name);
 ```
 
 ```cpp
-// 实现：DartFn 是仿函数，operator() 返回 Lazy<Ret>
+// 实现：DartFn 是仿函数，operator() 返回 sender
 auto reply = co_await callback(name);
 co_return "hello, " + reply;
 ```
 
-### 阻塞调用（syncAwait）
+### 阻塞调用（`dcb::sync_wait`）
 
 ```cpp
 // 阻塞当前线程直到 Dart 回复 — 必须在线程池中使用（BRIDGE_NORMAL）
@@ -124,8 +150,8 @@ std::string concat_dart_fn(
 ```
 
 ```cpp
-// 实现：通过 syncAwait + spawn 阻塞等待
-auto reply = async_simple::coro::syncAwait(dcb::spawn(callback(a, b)));
+// 实现：通过 dcb::sync_wait 阻塞等待
+auto reply = dcb::sync_wait(callback(a, b));
 return "sync:" + reply;
 ```
 
@@ -149,7 +175,7 @@ Future<String> concatDartFn({
 ### 规则
 
 - `co_await fn(args...)`：在协程内使用（`BRIDGE_ASYNC`），通过 oneshot channel 挂起，不阻塞 io 线程
-- `syncAwait(dcb::spawn(fn(args...)))`：阻塞调用线程直到 Dart 回复，**必须在 `BRIDGE_NORMAL`（线程池）中使用**，禁止在 io 线程调用
+- `dcb::sync_wait(fn(args...))`：阻塞调用线程直到 Dart 回复，**必须在 `BRIDGE_NORMAL`（线程池）中使用**，禁止在 io 线程调用
 - Dart 闭包必须返回 `Future`（异步），C++ 侧等待最终结果
 - 支持多参数：`DartFn<Ret(A1, A2, ...)>` 对应 Dart `Future<Ret> Function(A1, A2, ...)`
 - **禁止** `BRIDGE_SYNC` + DartFn 回调：`dispatch_sync` 跑在 Dart isolate 线程上，阻塞该线程等待 Dart 回复，形成永久死锁
@@ -165,13 +191,13 @@ BRIDGE_SYNC
 BRIDGE_PERSIST
 bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback);
 
-// 触发方式 A：BRIDGE_NORMAL（线程池），通过 syncAwait 调用已存储的闭包
+// 触发方式 A：BRIDGE_NORMAL（线程池），通过 dcb::sync_wait 调用已存储的闭包
 BRIDGE_NORMAL
 std::string invoke_registered(std::string input);
 
 // 触发方式 B：BRIDGE_ASYNC（协程），通过 co_await fn(...) 调用，不阻塞 io 线程
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input);
+stdexec::task<std::string> invoke_registered_async(std::string input);
 ```
 
 ```cpp
@@ -187,11 +213,11 @@ bool register_dart_fn(dcb::DartFn<std::string(std::string)> callback) {
 
 std::string invoke_registered(std::string input) {
   if (!g_registered_fn) throw std::runtime_error("no registered dart fn");
-  auto reply = async_simple::coro::syncAwait(dcb::spawn(g_registered_fn(input)));  // 安全：跑在线程池
+  auto reply = dcb::sync_wait(g_registered_fn(input));  // 安全：不在 io 线程等待
   return "registered:" + reply;
 }
 
-async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input) {
+stdexec::task<std::string> invoke_registered_async(std::string input) {
   if (!g_registered_fn) throw std::runtime_error("no registered dart fn");
   auto reply = co_await g_registered_fn(input);  // 协程挂起，io 不阻塞
   co_return "async_registered:" + reply;
@@ -202,7 +228,7 @@ async_simple::coro::Lazy<std::string> invoke_registered_async(std::string input)
 // Dart 侧使用
 final ok = registerDartFn(callback: (s) => 'echo:$s');  // 同步，只存储
 
-// 方式 A：线程池 syncAwait
+// 方式 A：线程池 dcb::sync_wait
 final r1 = await invokeRegistered(input: 'world');
 print(r1); // registered:echo:world
 
@@ -216,7 +242,7 @@ print(r2); // async_registered:echo:world
 | 阶段 | 执行位置 | 是否调用 Dart 闭包 |
 |------|----------|-------------------|
 | `registerDartFn()` | Dart isolate 线程（sync FFI） | 否，只存储 |
-| `invokeRegistered()` | 线程池（BRIDGE_NORMAL） | 是，`syncAwait` 阻塞 pool 线程 |
+| `invokeRegistered()` | 线程池（BRIDGE_NORMAL） | 是，`dcb::sync_wait` 阻塞 pool 线程 |
 | `invokeRegisteredAsync()` | io 线程协程（BRIDGE_ASYNC） | 是，`co_await fn(...)` 挂起协程 |
 
 两种方式都不会死锁：isolate 事件循环始终空闲，可以正常处理 port 消息并回复。
@@ -235,7 +261,7 @@ print(r2); // async_registered:echo:world
 
 ```cpp
 #include <dart_cpp_bridge/annotate.h>
-#include <async_simple/coro/Lazy.h>
+#include <stdexec/execution.hpp>
 
 namespace demo::api {
 
@@ -247,7 +273,7 @@ std::int32_t bridge_version();
 // BRIDGE_ASYNC — C++20 协程，在 io 线程调度，可 co_await 挂起
 // 适合：异步 IO、协程组合、需要等待其他异步操作
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::int32_t> add(std::int32_t a, std::int32_t b);
+stdexec::task<std::int32_t> add(std::int32_t a, std::int32_t b);
 
 // BRIDGE_NORMAL — 普通函数，投递到线程池执行
 // 适合：CPU 密集计算、阻塞式文件/网络 IO、任何会阻塞的操作
@@ -260,7 +286,7 @@ std::string sleep_greeting(std::string name);
 ### 规则
 
 - `BRIDGE_SYNC`：返回值直接编码回传，Dart 侧为同步调用（返回 `T`）
-- `BRIDGE_ASYNC`：返回类型必须是 `async_simple::coro::Lazy<T>`，Dart 侧为 `Future<T>`
+- `BRIDGE_ASYNC`：返回类型必须是 `stdexec::task<T>` 或受支持 sender，Dart 侧为 `Future<T>`
 - `BRIDGE_NORMAL`：普通 C++ 函数（无协程），运行时自动投递到 `asio::thread_pool`，Dart 侧为 `Future<T>`
 - 函数名自动从 `snake_case` 转为 Dart `camelCase`
 - 参数在 Dart 侧生成为命名参数（`{required int a}`）
@@ -318,7 +344,7 @@ struct BRIDGE_DATA_CLASS Rect {
 
 #### 基础类型
 
-`bool`、`int8/16/32/64_t`、`uint8/16/32/64_t`、`float`、`double`、`std::string`、`std::chrono::system_clock::time_point`
+`bool`、`int` / `std::int32_t`、`std::uint8_t`、`std::uint32_t`、`std::int64_t`、`float`、`double`、`std::string`、`std::chrono::system_clock::time_point`、`dcb::Int128` / `dcb::UInt128`
 
 示例：`std::string name;`
 
@@ -330,7 +356,9 @@ struct BRIDGE_DATA_CLASS Rect {
 
 #### 容器
 
-`std::vector<T>`、`std::array<T, N>`、`std::optional<T>`、`std::unordered_map<K, V>`、`std::unordered_set<T>`、`std::pair<T1, T2>`、`std::tuple<T1, ...>`
+`std::vector<T>`、`std::array<T, N>`、`std::optional<T>`、`std::map<K, V>`、
+`std::unordered_map<K, V>`、`std::set<T>`、`std::unordered_set<T>`、
+`std::pair<T1, T2>`、`std::tuple<T1, ...>`
 
 示例：`std::vector<int32_t> ids;`
 
@@ -348,19 +376,15 @@ struct BRIDGE_DATA_CLASS Circle {
 ```
 
 **注意**：
-- `Int128` / `UInt128` 仅作为标记存在，**不可实际用于字段**。
+- `dcb::Int128` / `dcb::UInt128` 在生成的 Dart API 中对应 `BigInt`，按十进制字符串编码。
 - 字段不支持指针、引用、不透明类、原始 C 数组、位域、联合体、`std::variant`、`std::any` 等。
 - 容器元素也必须是白名单内类型（例如 `std::vector<AnotherDataClass>` 合法，`std::vector<std::unique_ptr<T>>` 不合法）。
 - 不支持 `std::optional<std::optional<T>>` 等嵌套可空。
 
 ### Wire 编码
 
-按 C++ 头文件中的**声明顺序**逐字段编码，不传字段名：
-
-```text
-Point  → x (f64) + y (f64)
-Rect   → topLeft.x + topLeft.y + bottomRight.x + bottomRight.y
-```
+字段按 C++ 头文件中的**声明顺序**逐个传值，不传字段名。帧结构和字段的
+具体字节布局见 [Wire 编码与运行时编解码](/dart_cpp_bridge/zh-cn/guides/fundamentals/encoding/)。
 
 ### Dart 生成形态
 
@@ -412,7 +436,7 @@ class BRIDGE_OPAQUE Counter {
 
     // 异步实例方法
     BRIDGE_ASYNC
-    async_simple::coro::Lazy<std::int32_t> value() const;
+    stdexec::task<std::int32_t> value() const;
 
     // 线程池方法
     BRIDGE_NORMAL
@@ -424,7 +448,7 @@ class BRIDGE_OPAQUE Counter {
 
     // 返回自身类型的方法 — 这不是工厂，只是普通异步方法
     BRIDGE_ASYNC
-    async_simple::coro::Lazy<Counter> duplicate() const;
+    stdexec::task<Counter> duplicate() const;
 
     // toString
     BRIDGE_TO_STRING
@@ -490,43 +514,81 @@ class Counter extends CppOpaqueInterface {
 
 ## 大缓冲区：地址传递模式
 
-dart_cpp_bridge 的 wire 协议本身**不是零拷贝**的，帧数据需要在 Dart 与 C++ 之间做序列化/反序列化。不过对于日常类型（基础类型、小数据类、短字符串）来说，这份拷贝开销极小，基本不需要关心。
+普通的 `std::vector<uint8_t>` 会映射为 `Uint8List`，字节会被序列化进
+bridge frame。对于大块 native 内存，应使用上面的 `uint8_t*` 特判，并把
+长度作为独立参数传给 C++。此时 wire 仍然会传输地址和长度字段，但不会
+复制地址指向的字节。
 
-当你需要读写大段原始内存（图片、音频采样、大数组等）时，推荐在 Dart 侧分配 native 内存，然后只把**地址和长度**两个整数传给 C++：
+代码生成 demo 中有完整的同步和异步 round trip：
+[`bridge_api.h`](https://github.com/deretame/dart_cpp_bridge/blob/main/examples/codegen_demo/native/api/bridge_api.h)
+和
+[`api_test.dart`](https://github.com/deretame/dart_cpp_bridge/blob/main/examples/codegen_demo/integration_test/api_test.dart)。
 
 ```cpp
-BRIDGE_NORMAL
-std::tuple<int64_t, int64_t, int64_t> process_buffer(
-    int64_t address, int64_t length);
+// 头文件：Pointer<Uint8> 没有长度，所以长度必须进入 API。
+BRIDGE_SYNC
+std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len);
+
+BRIDGE_ASYNC
+stdexec::task<std::uint8_t*> async_echo_bytes(
+    const std::uint8_t* data, std::int32_t len);
+```
+
+```cpp
+// 实现：返回的地址必须在约定的生命周期内保持有效。
+namespace {
+thread_local std::vector<std::uint8_t> echo_buffer(256);
+}
+
+std::uint8_t* echo_bytes(const std::uint8_t* data, std::int32_t len) {
+  if (len < 0 || len > static_cast<std::int32_t>(echo_buffer.size())) {
+    throw std::runtime_error("length out of range");
+  }
+  if (len != 0) {
+    std::memcpy(echo_buffer.data(), data, static_cast<std::size_t>(len));
+  }
+  return echo_buffer.data();
+}
+
+stdexec::task<std::uint8_t*> async_echo_bytes(
+    const std::uint8_t* data, std::int32_t len) {
+  co_return echo_bytes(data, len);
+}
 ```
 
 ```dart
 import 'dart:ffi';
+import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
-final bufferSize = 1024 * 1024;
-final buffer = calloc<Uint8>(bufferSize);
-
+final input = Uint8List.fromList([10, 20, 30, 40]);
+final nativeInput = calloc<Uint8>(input.length);
 try {
-  // 只传递两个 int64，消息拷贝开销可忽略
-  final (outAddr, outLen, checksum) = await processBuffer(
-    address: buffer.address,
-    length: bufferSize,
-  );
-  // 如需读取 C++ 输出的内存，继续用 outAddr/outLen 访问
+  nativeInput.asTypedList(input.length).setAll(0, input);
+  final nativeOutput = echoBytes(data: nativeInput, len: input.length);
+  final output = nativeOutput.asTypedList(input.length);
+  print(output); // [10, 20, 30, 40]
 } finally {
-  calloc.free(buffer);
+  calloc.free(nativeInput);
 }
 ```
 
-这种方式的好处：
+所有权是函数契约的一部分，不会体现在生成的类型中：
 
-- 真正的大缓冲区**不会走消息通道**，Dart 和 C++ 通过同一段 native 内存协作
-- wire 上只传递两个 `int64`，拷贝开销几乎可以忽略
-- 异步代码写起来和普通函数一样，codegen 自动处理 FFI 调用和端口回调
+- Dart 分配的输入内存必须一直存活到同步调用返回，或异步 `Future`
+  完成；
+- C++ 必须自行校验地址和长度，bridge 无法验证任意 native 指针；
+- 返回指针只在 C++ 文档约定的生命周期内有效。demo 返回的是 C++ 线程
+  局部 buffer，不归 Dart 所有，不能传给 `calloc.free`；
+- 地址只在当前进程内有效，不能持久化、跨进程传递，也不能假设跨 isolate
+  有效。
+
+普通数据优先使用 `std::vector<uint8_t>` → `Uint8List`，它更安全并且
+具有值语义。
 
 :::caution[注意]
-Dart 分配的内存需要自己管理生命周期，记得在合适的时机 `calloc.free(buffer)`。C++ 侧不应该在 Dart 已经释放内存之后继续访问该地址。
+只要 native 代码仍可能访问 buffer，就绝不能释放或复用它。指针不是能力
+对象，也不是生命周期句柄；codegen 不会自动添加所有权和边界检查。
 :::
 
 ---
@@ -535,9 +597,10 @@ Dart 分配的内存需要自己管理生命周期，记得在合适的时机 `c
 
 以下类型当前**不支持**，codegen 遇到时报错：
 
-- 指针（`T*`、`std::unique_ptr<T>`、`std::shared_ptr<T>`）
+- 除 `std::uint8_t*` / `const std::uint8_t*` 之外的原始指针（如
+  `int32_t*`、`char*`、`void*`）
+- `std::unique_ptr<T>` 和 `std::shared_ptr<T>`
 - 引用（`T&`）作为参数/返回值
-- `std::map`、`std::set`（有序容器）
 - `std::variant`、`std::any`
 - 位域、联合体
 - 嵌套可空（`std::optional<std::optional<T>>`）

@@ -1,4 +1,7 @@
-# 多运行时通信示例 (multi_runtime_demo)
+# v1 归档：多运行时通信示例 (multi_runtime_demo)
+
+> 本示例文档描述 v1 AsioExecutor / async-simple 实现。v2 使用独立的普通
+> stdexec scheduler，参见 `examples/foreign_runtime_demo` 和 `docs/versioning.zh-CN.md`。
 
 演示 `dart_cpp_bridge` 主调度器与多个独立 C++ 运行时之间如何通过协程 channel 进行**完全非阻塞**的消息传递。
 

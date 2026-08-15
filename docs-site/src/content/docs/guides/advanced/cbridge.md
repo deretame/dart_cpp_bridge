@@ -3,6 +3,11 @@ title: Pure C Bridge API
 description: C99-compatible API for pure C callers — encoding/decoding, async operations, and calling Dart functions
 ---
 
+:::caution[v2 development line]
+The C ABI in this chapter is stable across v1 and v2. C++ coroutine examples use
+`stdexec::task`; pure C callers still need no C++ dependency.
+:::
+
 This page introduces the **pure C API** provided by `cbridge.h` and `dcb_codec.h`, plus `cbridge_wait.hpp` used together with C++ coroutines.
 
 You can use it for three things:
@@ -11,7 +16,7 @@ You can use it for three things:
 - Use `dcb_invoke_dart_fn` to call registered Dart callbacks from any thread
 - Use `dcb_async_*` with `cbridge_wait.hpp` to let C++ coroutines wait non-blocking for external C async operations to complete
 
-If your code is a **pure C project, can only export C symbols, or you don't want to bring async-simple / asio / C++20 coroutines into the caller**, use the C entry points in this chapter.
+If your code is a **pure C project, can only export C symbols, or you don't want to bring C++20 coroutines into the caller**, use the C entry points in this chapter.
 
 > Other language runtimes (such as Python `ctypes`, Rust FFI, Go `cgo`) can also use this C API as the minimal entry point.
 
@@ -21,7 +26,7 @@ Choose this entry point in the following cases:
 
 - **Your code is a pure C project, or can only export C symbols**: C compilation units have no `co_await`, templates, or `Executor`, so they cannot directly use the bridge's C++ coroutine entry points.
 - **You call the bridge from another language runtime**: Python `ctypes`, Rust FFI, Go `cgo`, etc. can only bind to the C ABI.
-- **You want the caller to keep zero C++ dependencies**: the C side only compiles C headers; the bridge's internal async-simple + asio is invisible to the caller.
+- **You want the caller to keep zero C++ dependencies**: the C side only compiles C headers; the bridge's internal async runtime is invisible to the caller.
 
 :::caution[C side cannot await]
 **C code itself cannot `co_await` these async operations.** The awaiting side of `dcb_async_*` is C++ coroutines (via `cbridge_wait.hpp`); the C side is only responsible for creating, completing, or canceling operations.
@@ -252,7 +257,7 @@ static void http_done(void* ctx, int status, const uint8_t* body, uint32_t body_
 
 // ─── bridge coroutine (called by wire dispatch; arguments already decoded from Dart) ───
 // url is the std::string decoded from the Dart request by wire dispatch
-async_simple::coro::Lazy<std::string> fetch_url(std::string url) {
+stdexec::task<std::string> fetch_url(std::string url) {
     // 1. create async operation
     uint64_t op_id = dcb_async_create();
 
@@ -365,7 +370,7 @@ void c_start_greet(uint64_t session_id, uint64_t fn_id,
                    uint64_t op_id, const char* name);
 
 // wire dispatch calls this coroutine after decoding
-async_simple::coro::Lazy<std::string> start_greet_task(
+stdexec::task<std::string> start_greet_task(
     dcb::DartFn<std::string(std::string)> callback,
     std::string name) {
   // 1. extract the IDs needed by the pure C API

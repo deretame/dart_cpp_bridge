@@ -3,6 +3,11 @@ title: 生命周期管理
 description: Runtime、Session、Opaque 对象与 NativeFinalizer 的生命周期
 ---
 
+:::caution[v2 开发线]
+本页使用 `IoContextScheduler`；`AsioExecutor` 是 v1 名称。Session、Dart 和
+finalizer 生命周期规则在两代中共用。
+:::
+
 bridge 的生命周期分三层：进程级 Runtime、Isolate 级 Session、对象级 Opaque handle。理解它们谁创建、谁释放、谁不能动，是避免死锁和内存泄漏的关键。
 
 ## Runtime：进程级单例
@@ -10,7 +15,7 @@ bridge 的生命周期分三层：进程级 Runtime、Isolate 级 Session、对�
 `dcb::Runtime` 是进程级单例，内部管理：
 
 - `asio::io_context` 事件循环
-- `AsioExecutor`
+- `IoContextScheduler`（stdexec scheduler）
 - `thread_pool`
 - Session 注册表
 

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
+import starlightVersions from "starlight-versions";
 
 /** Dev-only rewrite: / -> /dart_cpp_bridge/ so local dev can start from the root URL. */
 function devRootRewrite() {
@@ -36,6 +37,12 @@ export default defineConfig({
       head: [],
       favicon: "/favicon.svg",
       customCss: ["./src/styles/custom.css"],
+      plugins: [
+        starlightVersions({
+          versions: [{ slug: "v1", label: "v1" }],
+          current: { label: "v2" },
+        }),
+      ],
       social: [
         {
           icon: "github",

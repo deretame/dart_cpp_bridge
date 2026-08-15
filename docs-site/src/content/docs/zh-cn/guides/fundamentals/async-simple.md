@@ -1,7 +1,14 @@
 ---
-title: async-simple 协程入门
+title: v1 归档：async-simple 协程入门
 description: dart_cpp_bridge 使用的 async-simple 协程库基础用法：Lazy、Executor、co_await、启动与线程模型
+sidebar:
+  hidden: true
 ---
+
+:::caution[v1 归档]
+本页描述已发布 v1 的 async-simple 运行时，仅用于维护 1.x 项目，不适用于
+v2 stdexec 开发线。
+:::
 
 `dart_cpp_bridge` 的 C++ 异步层基于 [async-simple](https://alibaba.github.io/async_simple/) 构建。你不需要成为 async-simple 专家就能写业务代码，但这章会介绍“不读官方文档也能上手”的最小必要知识。
 

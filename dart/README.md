@@ -10,8 +10,16 @@ Write normal C++ code and call it from Dart/Flutter, with sync, async, stream, a
 
 - Write **plain C++20** functions and classes — no hand-written FFI boilerplate
 - Codegen generates Dart API + C++ wire dispatch from annotated headers
-- Built-in runtime based on Asio + async-simple coroutines
+- Built-in runtime based on Asio + stdexec senders and coroutines
 - Supports Android, iOS, Windows, Linux, and macOS
+
+## Documentation versions
+
+This package is currently published as the v1 `1.x` line (`1.3.0`). The
+repository's `feat/stdexec-migration` branch documents the next v2 C++ async
+model, but v2 has not been published yet. See the
+[version guide](https://github.com/deretame/dart_cpp_bridge/blob/main/docs/versioning.md)
+before copying C++ async examples.
 
 ## Quickstart
 
@@ -26,11 +34,13 @@ See the documentation for a complete quickstart:
 
 ```cpp
 #include <dart_cpp_bridge/annotate.h>
+#include <stdexec/execution.hpp>
+#include <string>
 
 BRIDGE_SYNC int32_t add(int32_t a, int32_t b) { return a + b; }
 
 BRIDGE_ASYNC
-async_simple::coro::Lazy<std::string> greet(std::string name) {
+stdexec::task<std::string> greet(std::string name) {
   co_return "Hello, " + name;
 }
 ```
@@ -58,7 +68,7 @@ void main() async {
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — architecture and product shape inspiration
 - [Asio](https://think-async.com/Asio/) — event loop and asynchronous I/O
-- [async-simple](https://github.com/alibaba/async_simple) — C++20 coroutine runtime
+- [stdexec](https://github.com/NVIDIA/stdexec) — sender/receiver and scheduler foundation for v2
 - [MPMCQueue](https://github.com/rigtorp/MPMCQueue) — lock-free bounded MPMC queue (strict FIFO), the buffer of `co::mpsc::bounded` channels
 - Dart / Flutter team — FFI, Isolate, NativeFinalizer, and the broader Dart native ecosystem
 

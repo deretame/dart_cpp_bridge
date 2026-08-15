@@ -5,6 +5,11 @@ sidebar:
   order: 1
 ---
 
+:::caution[v2 开发线]
+当前生成器解析的异步返回类型是 `stdexec::task<T>`。已发布的 v1 生成器使用
+async-simple；请让生成器和 Runtime 使用同一 revision。
+:::
+
 ## 配置文件
 
 每个需要代码生成的项目需要一个 `dart_cpp_bridge.yaml`，放在项目根目录：
@@ -86,7 +91,7 @@ dcb_gen_tool generate dart_cpp_bridge.yaml
 
 - C++ 标准库头文件（用于签名中的类型）；
 - `dart_cpp_bridge/*` 运行时头文件；
-- `BRIDGE_ASYNC` 返回类型需要的 `async_simple/coro/Lazy.h`（真实依赖未拉取时由
+- `BRIDGE_ASYNC` 返回类型需要的 `stdexec/execution.hpp`（vendored 依赖不可用时由
   `dcb_gen_tool` 的 stubs 兜底）。
 
 **不要**在被扫描的头文件中 include 其他三方库或项目依赖头文件——包括只存在于
@@ -99,7 +104,7 @@ dcb_gen_tool generate dart_cpp_bridge.yaml
 - **数据类**和**不透明类**必须直接定义在头文件内；codegen 只解析被扫描的头文件，不会解析头文件外部定义的类。
 - 自由函数、静态方法、构造函数等实现请放在对应的 `.cpp` 文件中。
 - **不要写类型别名**（`using Foo = ...` 或 `typedef ...`），codegen 目前无法解析别名，直接展开为实际类型。
-- **不要写 `using namespace`**，所有类型和函数调用都应写完整命名空间（如 `std::int32_t`、`async_simple::coro::Lazy`）。
+- **不要写 `using namespace`**，所有类型和函数调用都应写完整命名空间（如 `std::int32_t`、`stdexec::task`）。
 - 函数/方法参数和返回值类型请使用完整限定名，确保 codegen 能正确识别。
 
 ## 自定义数据类 `toString()` {#dart_code}

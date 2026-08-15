@@ -1,4 +1,8 @@
-# 类 FRB 原生桥：机制说明与 C++ 实现草案
+# v1 历史设计：类 FRB 原生桥
+
+> 本文是 v1 async-simple 时代的设计记录。当前分支已经迁移到 stdexec；
+> 新的异步 C++ 代码请先读 [v2 版本说明](./versioning.zh-CN.md) 和
+> [stdexec 使用指南](./cpp26_executor_model_usage.md)。
 
 > 通用设计文档：说明 Flutter Rust Bridge（FRB）如何对接原生异步运行时与 Dart 事件循环，以及若用 C++20 按同一模式自研桥时如何落地。
 >
