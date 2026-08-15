@@ -19,8 +19,20 @@ endif()
 
 file(READ "${_hdr}" _content)
 
-set(_anchor "    __any_allocator() = default;\n")
-set(_inject "    __any_allocator() = default;\n\n    // MSVC does not implement [class.access]: members of a class template\n    // cannot access private members of other specializations of the same\n    // template. The converting constructor below relies on that rule, so\n    // declare the friendship explicitly.\n    template <class>\n    friend struct __any_allocator;\n")
+# Use bracket arguments instead of quoted multi-line strings.  CMake 4.4's
+# list handling can otherwise turn the newlines in a quoted value into literal
+# semicolons, corrupting the patched header.
+set(_anchor [=[    __any_allocator() = default;
+]=])
+set(_inject [=[    __any_allocator() = default;
+
+    // MSVC does not implement [class.access]: members of a class template
+    // cannot access private members of other specializations of the same
+    // template. The converting constructor below relies on that rule, so
+    // declare the friendship explicitly.
+    template <class>
+    friend struct __any_allocator;
+]=])
 
 if(_content MATCHES "friend struct __any_allocator")
   message(STATUS "patch_stdexec_any_allocator: already applied, skipping")

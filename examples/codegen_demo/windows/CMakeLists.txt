@@ -1,5 +1,15 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
+
+# Visual Studio 18's CMake/MSBuild integration can leave the compiler process
+# suspended while CMake probes the compiler ABI. Disable MSBuild file tracking
+# for this generated runner so Flutter's Debug build can complete reliably.
+set(CMAKE_VS_GLOBALS
+  "TrackFileAccess=false"
+  "UseMultiToolTask=false"
+  CACHE STRING "Visual Studio global properties" FORCE)
+list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_VS_GLOBALS)
+
 project(codegen_demo LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
