@@ -65,7 +65,27 @@ void main(List<String> args) async {
 | `sourceDir` | `String?` | 包根目录 | 相对包根的 CMake 源码目录。通常是 `'native'`。 |
 | `libName` | `String?` | 包名 | CMake 库基础名。必须和 `CMakeLists.txt` 里的 `add_library(<name> ...)` 一致。 |
 | `extraDefines` | `List<String>` | `[]` | 传给 CMake configure 的额外 `-D` 参数。全平台生效。 |
+| `useDefaultCmakeArgs` | `bool` | `true` | 是否注入 builder 自动生成的 CMake configure 参数。设为 `false` 后由项目自己的 `CMakeLists.txt` 或 `extraDefines` 控制这些选项。 |
 | `buildOptions` | `DcbBuildOptions` | `DcbBuildOptions()` | 控制 Debug/Release、并行编译、`compile_commands.json`。 |
+
+### 取消 builder 的默认 CMake 参数
+
+如果项目自己的 `CMakeLists.txt` 已经负责生成器、工具链、架构、构建类型和运行时链接选项，可以关闭 builder 的默认参数：
+
+```dart
+await DcbCMakeBuilder(
+  config: config,
+  sourceDir: 'native',
+  assetName: 'src/native_gen/dcb_bindings.dart',
+  libName: 'my_project',
+  useDefaultCmakeArgs: false,
+  extraDefines: const [
+    '-DMY_PROJECT_FEATURE=ON',
+  ],
+).run(input: input, output: output);
+```
+
+`false` 会跳过 builder 自动生成的 `-G`、架构、工具链、`CMAKE_BUILD_TYPE`、运行时链接、`BUILD_SHARED_LIBS` 和 `CMAKE_EXPORT_COMPILE_COMMANDS` 等 configure 参数；`-S/-B`、后续的 `cmake --build`、`--parallel` 以及你显式提供的 `extraDefines` 仍然会保留。关闭后，`DcbBuildOptions.debug` 不再通过 configure 参数设置构建类型，`copyCompileCommands` 也不会强制 CMake 生成该文件（但如果项目自行生成，builder 仍会尝试复制它）。
 
 ## CMake 生成器选择
 

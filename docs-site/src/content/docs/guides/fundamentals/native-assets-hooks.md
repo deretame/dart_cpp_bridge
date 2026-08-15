@@ -65,7 +65,27 @@ Constructor options:
 | `sourceDir` | `String?` | package root | CMake source directory relative to the package root. Usually `'native'`. |
 | `libName` | `String?` | package name | CMake library base name. Must match `add_library(<name> ...)` in `CMakeLists.txt`. |
 | `extraDefines` | `List<String>` | `[]` | Extra `-D` flags passed to the CMake configure step. Applied on all platforms. |
+| `useDefaultCmakeArgs` | `bool` | `true` | Whether to inject the builder's generated CMake configure arguments. Set to `false` when the project owns these settings in `CMakeLists.txt` or `extraDefines`. |
 | `buildOptions` | `DcbBuildOptions` | `DcbBuildOptions()` | Debug/release override, parallel build toggle, and `compile_commands.json` control. |
+
+### Disable the builder's default CMake arguments
+
+If the project's own `CMakeLists.txt` already controls the generator, toolchain, architecture, build type, and runtime linkage, disable the builder-generated arguments:
+
+```dart
+await DcbCMakeBuilder(
+  config: config,
+  sourceDir: 'native',
+  assetName: 'src/native_gen/dcb_bindings.dart',
+  libName: 'my_project',
+  useDefaultCmakeArgs: false,
+  extraDefines: const [
+    '-DMY_PROJECT_FEATURE=ON',
+  ],
+).run(input: input, output: output);
+```
+
+With `false`, the builder skips generated configure arguments such as `-G`, architecture, toolchain, `CMAKE_BUILD_TYPE`, runtime linkage, `BUILD_SHARED_LIBS`, and `CMAKE_EXPORT_COMPILE_COMMANDS`. The required `-S/-B` arguments, the later `cmake --build` invocation, `--parallel`, and explicitly supplied `extraDefines` are still kept. In this mode `DcbBuildOptions.debug` no longer sets the configure-time build type, and `copyCompileCommands` does not force CMake to generate the file (the builder still copies it if the project generates one itself).
 
 ## CMake generator selection
 
