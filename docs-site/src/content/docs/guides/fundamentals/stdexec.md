@@ -274,5 +274,5 @@ auto task = [](Request request) -> stdexec::task<void> {
 This page is the usage path. For compile-verified details on completion
 signatures, connect/start, async_scope, bulk, callback interop, and
 common diagnostics, read the repository reference:
-[docs/cpp26_executor_model_usage.md](https://github.com/deretame/dart_cpp_bridge/blob/main/docs/cpp26_executor_model_usage.md).
+[docs/cpp26_executor_model_usage.en.md](https://github.com/deretame/dart_cpp_bridge/blob/main/docs/cpp26_executor_model_usage.en.md).
 

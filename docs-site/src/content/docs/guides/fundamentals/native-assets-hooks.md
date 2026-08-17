@@ -87,6 +87,65 @@ await DcbCMakeBuilder(
 
 With `false`, the builder skips generated configure arguments such as `-G`, architecture, toolchain, `CMAKE_BUILD_TYPE`, runtime linkage, `BUILD_SHARED_LIBS`, and `CMAKE_EXPORT_COMPILE_COMMANDS`. The required `-S/-B` arguments, the later `cmake --build` invocation, `--parallel`, and explicitly supplied `extraDefines` are still kept. In this mode `DcbBuildOptions.debug` no longer sets the configure-time build type, and `copyCompileCommands` does not force CMake to generate the file (the builder still copies it if the project generates one itself).
 
+## CMake dependency ownership
+
+The `dart/native` CMake project can be embedded in a larger CMake build. By
+default it retains a self-contained `FetchContent` path for the pinned
+standalone Asio and stdexec dependencies. If the host project already owns
+these dependencies through a package manager, a monorepo, or its own
+`FetchContent` declarations, turn off the corresponding fetch options before
+adding the bridge:
+
+```cmake
+# Set these before add_subdirectory(dart_cpp_bridge/dart/native ...).
+set(DCB_FETCH_STDEXEC OFF CACHE BOOL "" FORCE)
+set(DCB_FETCH_ASIO OFF CACHE BOOL "" FORCE)
+
+# The host project must provide these targets before add_subdirectory:
+#   STDEXEC::stdexec
+#   asio_iface, or a package that exposes asio::asio
+add_subdirectory(path/to/dart_cpp_bridge/dart/native
+                 ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
+```
+
+With `DCB_FETCH_STDEXEC=OFF`, the supplied stdexec target must include the
+Asio adapter (`STDEXEC_ENABLE_ASIO=ON`) and use the same Asio implementation
+as the bridge. With `DCB_FETCH_ASIO=OFF`, provide an existing `asio_iface`
+target, or make `find_package(asio CONFIG)` expose `asio::asio`. The bridge
+then links its runtime target against these host-provided targets without
+downloading or patching Asio/stdexec itself.
+
+This only changes ownership of Asio and stdexec. Other native dependencies
+and the Dart API headers keep their existing build/download behavior.
+
+## Selecting the Asio namespace
+
+The public C++ headers use `DCB_ASIO_NS` for Asio types and functions. The
+namespace is selected consistently for the runtime and downstream business
+code:
+
+| CMake option | `DCB_ASIO_NS` | Dependency |
+|---|---|---|
+| default | `asio` | standalone Asio |
+| `-DDCB_USE_BOOST_ASIO=ON` | `boost::asio` | Boost.Asio supplied by the host project or the selected stdexec setup |
+
+Write integration code against the macro instead of hard-coding `asio::`:
+
+```cpp
+#include <dart_cpp_bridge/runtime.hpp>
+
+DCB_ASIO_NS::io_context io;
+DCB_ASIO_NS::post(io, [] {
+  // work on the selected Asio implementation
+});
+```
+
+When using Boost.Asio, set `DCB_USE_BOOST_ASIO=ON` and make the matching Boost
+headers/targets available to the host build. In host-provided stdexec mode,
+stdexec must also be configured for the Boost Asio adapter. `DCB_ASIO_NS` is
+the bridge's supported namespace switch; business code should not define a
+second hard-coded Asio namespace of its own.
+
 ## CMake generator selection
 
 `CmakeGenerator` selects the CMake build-system generator. The right choice depends on the platform and whether the host has the matching toolchain on PATH.
@@ -94,10 +153,11 @@ With `false`, the builder skips generated configure arguments such as `-G`, arch
 | Generator | Value | Platforms | Notes |
 |---|---|---|---|
 | `msbuild` | `CmakeGenerator.msbuild` | Windows only | Visual Studio multi-config generator. Requires no extra PATH setup; CMake auto-detects MSBuild. |
-| `ninja` | `CmakeGenerator.ninja` | All | Fast single-config generator. On Windows requires the MSVC environment; the builder invokes `vcvarsall.bat` automatically. |
+| `ninja` | `CmakeGenerator.ninja` | All | Fast single-config generator. On Windows, MSVC/clang-cl builds initialize the MSVC environment automatically; MSYS2 builds use their own ucrt64 toolchain environment. |
 | `makefiles` | `CmakeGenerator.makefiles` | Linux, macOS, iOS | Unix Makefiles single-config generator. Always available but slower than Ninja. |
 
-- On **Windows**, leaving `generator` as `null` lets CMake auto-select the Visual Studio generator. Use `ninja` for faster incremental builds.
+- On **Windows**, `WindowsCompiler.msvc` with `generator: null` lets CMake auto-select the Visual Studio generator. `clangCl`, `msys2Clang`, and `msys2Gcc` default to Ninja so the selected compiler is not silently replaced by the MSVC toolset.
+- On **Windows**, `msys2Clang` and `msys2Gcc` support **Ninja only**. `CmakeGenerator.msbuild` is rejected for these GNU-style toolchains, and `CmakeGenerator.makefiles` is not supported on Windows.
 - On **Linux / macOS / iOS**, leaving `generator` as `null` lets CMake pick Unix Makefiles. Set `ninja` when `ninja` is on PATH.
 - On **Android**, `ninja` is the default because the NDK bundles it.
 
@@ -147,10 +207,53 @@ Key behaviors:
 
 - `dynamicCrt: true` produces a DLL that depends on the MSVC runtime. Set `bundleCrt: true` to copy the correct runtime DLLs next to the output so the app loads the matching version.
 - `dynamicCrt: false` links the CRT statically (`/MT`) for a self-contained DLL.
-- `vsInstallPath` is used both for selecting the CMake/MSBuild generator and for locating `vcvarsall.bat` when Ninja is requested.
-- `CmakeGenerator.ninja` requires the MSVC environment. The builder calls `vcvarsall.bat <arch>` from the resolved VS installation automatically, but only when the current process does not already have a VS developer environment (`VSCMD_VER`, `LIB`, or `PATH` containing MSVC paths).
+- For `msvc` and `clangCl`, `vsInstallPath` is used both for selecting the CMake/MSBuild generator and for locating `vcvarsall.bat` when Ninja is requested.
+- For MSVC-style Ninja builds (`msvc` / `clangCl`), the builder calls `vcvarsall.bat <arch>` from the resolved VS installation automatically, but only when the current process does not already have a VS developer environment (`VSCMD_VER`, `LIB`, or `PATH` containing MSVC paths). MSYS2 builds do not use this environment.
 - `compiler: WindowsCompiler.clangCl` builds with LLVM `clang-cl`. With `CmakeGenerator.ninja` (the default for clang-cl when `generator` is `null`), the builder initializes the MSVC environment via `vcvarsall.bat` first, then locates clang-cl: an explicit `clangClPath` wins, then a VS-bundled clang-cl (visible on the vcvars PATH when the "C++ Clang tools for Windows" component is installed), then PATH / LLVM installs / the LLVM registry key. The resolved compiler is passed as `-DCMAKE_C(XX)_COMPILER=<clang-cl>` and its directory is added to `PATH` for the CMake process, so clang-cl does not need to be on PATH globally. With `CmakeGenerator.msbuild`, the builder passes `-T clangcl` to select the clang-cl toolset inside Visual Studio.
 - `compiler: WindowsCompiler.msys2Clang` / `msys2Gcc` build with the GNU/MinGW-style MSYS2 ucrt64 clang / gcc (`x86_64-w64-windows-gnu` target, `mingw-w64-ucrt-x86_64-clang` / `-gcc` packages). Only the Ninja generator is supported (the default when `generator` is `null`). The MSYS2 root is resolved from `msys2Path` → `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2`, and `-DCMAKE_C(XX)_COMPILER=<root>\ucrt64\bin\clang(++).exe` (or `gcc(++).exe`) is passed; no vcvars environment is needed. By default (`staticRuntime: true`) libgcc / libstdc++ / winpthread are statically linked into the DLL, so the output only depends on the system UCRT and needs no MSYS2 runtime DLLs on PATH at runtime. With `staticRuntime: false` the output depends on the MSYS2 runtime DLLs (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll` from `<root>\ucrt64\bin`) — they are bundled next to the output when `bundleCrt` is `true`.
+
+#### Windows compiler examples
+
+Use `clangCl` when you want LLVM's MSVC-compatible driver while keeping the
+Visual Studio headers, libraries, and ABI:
+
+```dart
+WindowsConfig(
+  compiler: WindowsCompiler.clangCl,
+  generator: CmakeGenerator.ninja,
+  // Optional with Ninja; auto-detection also finds VS-bundled or installed LLVM.
+  clangClPath: r'C:\Program Files\LLVM\bin\clang-cl.exe',
+)
+```
+
+With the `clangCl` compiler, install the Visual Studio C++ workload (for its
+headers, libraries, and MSVC STL) plus either the VS "C++ Clang tools for
+Windows" component or a standalone LLVM installation. The hook initializes the
+MSVC environment before locating `clang-cl.exe`. It checks an explicit `clangClPath`, the VS-bundled
+Clang tools, `PATH`, common LLVM installations, and the LLVM registry key. For
+the Visual Studio generator, CMake's `clangcl` toolset is selected instead.
+
+Use MSYS2 when you want the GNU/MinGW-style ucrt64 toolchain. Install the
+matching package (`mingw-w64-ucrt-x86_64-clang` or
+`mingw-w64-ucrt-x86_64-gcc`) and point the hook at the MSYS2 root when it is not
+in one of the auto-detected locations:
+
+```dart
+WindowsConfig(
+  compiler: WindowsCompiler.msys2Clang, // or WindowsCompiler.msys2Gcc
+  generator: CmakeGenerator.ninja,       // MSYS2 is Ninja-only
+  msys2Path: r'D:\msys2',
+  staticRuntime: true,                   // no MSYS2 runtime DLLs at load time
+)
+```
+
+The MSYS2 ucrt64 environment is x64-only. The hook resolves
+`msys2Path` → `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2`, adds
+`<root>\ucrt64\bin` to the CMake process `PATH`, and does not invoke
+`vcvarsall.bat`. With `staticRuntime: false`, keep that directory on the
+application `PATH` or set `bundleCrt: true` so the hook copies
+`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and `libwinpthread-1.dll` beside the
+output DLL. `dynamicCrt` controls only MSVC-style (`msvc` / `clangCl`) builds.
 
 ### Linux (`LinuxConfig`)
 

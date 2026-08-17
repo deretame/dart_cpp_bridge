@@ -87,6 +87,60 @@ await DcbCMakeBuilder(
 
 `false` 会跳过 builder 自动生成的 `-G`、架构、工具链、`CMAKE_BUILD_TYPE`、运行时链接、`BUILD_SHARED_LIBS` 和 `CMAKE_EXPORT_COMPILE_COMMANDS` 等 configure 参数；`-S/-B`、后续的 `cmake --build`、`--parallel` 以及你显式提供的 `extraDefines` 仍然会保留。关闭后，`DcbBuildOptions.debug` 不再通过 configure 参数设置构建类型，`copyCompileCommands` 也不会强制 CMake 生成该文件（但如果项目自行生成，builder 仍会尝试复制它）。
 
+## CMake 依赖由谁负责
+
+`dart/native` 下的 CMake 可以嵌入更大的 CMake 工程。默认情况下，它仍
+保留通过 `FetchContent` 拉取固定版本 standalone Asio 和 stdexec 的路径。
+如果宿主工程已经通过包管理器、monorepo 或自己的 `FetchContent` 声明管理
+这些依赖，可以在加入 bridge 之前关闭对应的 fetch 选项：
+
+```cmake
+# 在 add_subdirectory(dart_cpp_bridge/dart/native ...) 之前设置。
+set(DCB_FETCH_STDEXEC OFF CACHE BOOL "" FORCE)
+set(DCB_FETCH_ASIO OFF CACHE BOOL "" FORCE)
+
+# 宿主工程必须在 add_subdirectory 之前提供这些 target：
+#   STDEXEC::stdexec
+#   asio_iface，或一个导出 asio::asio 的 package
+add_subdirectory(path/to/dart_cpp_bridge/dart/native
+                 ${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
+```
+
+`DCB_FETCH_STDEXEC=OFF` 时，宿主提供的 stdexec target 必须包含 Asio
+适配器（`STDEXEC_ENABLE_ASIO=ON`），并且使用与 bridge 一致的 Asio 实现。
+`DCB_FETCH_ASIO=OFF` 时，需要提供已有的 `asio_iface` target，或者让
+`find_package(asio CONFIG)` 暴露 `asio::asio`。之后 runtime 会直接链接
+这些宿主 target，不再自行下载或 patch Asio/stdexec。
+
+这只改变 Asio 和 stdexec 的依赖所有权；其他 native 依赖以及 Dart API
+头文件仍保持现有的构建/下载流程。
+
+## 选择 Asio 命名空间
+
+公共 C++ 头文件使用 `DCB_ASIO_NS` 表示 Asio 类型和函数。Runtime 与下游
+业务代码会统一使用所选的命名空间：
+
+| CMake 选项 | `DCB_ASIO_NS` | 依赖 |
+|---|---|---|
+| 默认 | `asio` | standalone Asio |
+| `-DDCB_USE_BOOST_ASIO=ON` | `boost::asio` | 由宿主工程或对应的 stdexec 配置提供 Boost.Asio |
+
+业务代码也应使用这个宏，不要把 `asio::` 写死：
+
+```cpp
+#include <dart_cpp_bridge/runtime.hpp>
+
+DCB_ASIO_NS::io_context io;
+DCB_ASIO_NS::post(io, [] {
+  // 在当前选择的 Asio 实现上执行工作
+});
+```
+
+使用 Boost.Asio 时，设置 `DCB_USE_BOOST_ASIO=ON`，并确保宿主工程提供
+匹配的 Boost 头文件/target。在宿主提供 stdexec 的模式下，stdexec 也必须
+配置为使用 Boost Asio 适配器。`DCB_ASIO_NS` 是 bridge 支持的命名空间切换
+入口；业务代码不应再自行写死另一套 Asio 命名空间。
+
 ## CMake 生成器选择
 
 `CmakeGenerator` 选择 CMake 的构建系统生成器。选择依据是目标平台以及宿主是否已把对应工具链放到 PATH 上。
@@ -94,10 +148,11 @@ await DcbCMakeBuilder(
 | 生成器 | 值 | 可用平台 | 说明 |
 |---|---|---|---|
 | `msbuild` | `CmakeGenerator.msbuild` | 仅 Windows | Visual Studio 多配置生成器。不需要额外 PATH 配置，CMake 会自动探测 MSBuild。 |
-| `ninja` | `CmakeGenerator.ninja` | 全部 | 单配置生成器，增量编译更快。在 Windows 上需要 MSVC 环境；builder 会自动调用 `vcvarsall.bat`。 |
+| `ninja` | `CmakeGenerator.ninja` | 全部 | 单配置生成器，增量编译更快。在 Windows 上，MSVC/clang-cl 构建会自动初始化 MSVC 环境；MSYS2 构建使用自己的 ucrt64 工具链环境。 |
 | `makefiles` | `CmakeGenerator.makefiles` | Linux、macOS、iOS | Unix Makefiles 单配置生成器。永远可用，但比 Ninja 慢。 |
 
-- 在 **Windows** 上，`generator` 为 `null` 时 CMake 通常自动选择 Visual Studio 生成器。想要更快的增量编译可显式设为 `ninja`。
+- 在 **Windows** 上，`WindowsCompiler.msvc` 且 `generator: null` 时，CMake 通常自动选择 Visual Studio 生成器。`clangCl`、`msys2Clang` 和 `msys2Gcc` 会默认使用 Ninja，避免选中的编译器被静默替换成 MSVC toolset。
+- 在 **Windows** 上，`msys2Clang` 和 `msys2Gcc` **只支持 Ninja**。这些 GNU 风格工具链不能使用 `CmakeGenerator.msbuild`；`CmakeGenerator.makefiles` 也不支持 Windows。
 - 在 **Linux / macOS / iOS** 上，`generator` 为 `null` 时 CMake 通常选择 Unix Makefiles。如果 PATH 上有 `ninja`，建议设为 `ninja`。
 - 在 **Android** 上，默认就是 `ninja`，因为 NDK 自带 Ninja。
 
@@ -118,6 +173,10 @@ WindowsConfig(
   architecture: 'x64',    // 'x64' 或 'arm64'
   generator: CmakeGenerator.ninja,
   generatorPath: null,
+  compiler: WindowsCompiler.msvc, // msvc | clangCl | msys2Clang | msys2Gcc
+  clangClPath: null,        // compiler 为 clangCl 时可指定 clang-cl.exe
+  msys2Path: null,          // compiler 为 msys2* 时可指定 MSYS2 根目录
+  staticRuntime: true,      // MSYS2 runtime 静态链接
   extraDefines: const [],
 )
 ```
@@ -128,19 +187,62 @@ WindowsConfig(
 |---|---|---|---|
 | `cmake` | `String` | `'cmake'` | CMake 可执行文件。可以是绝对路径，也可以是 PATH 上的命令。 |
 | `dynamicCrt` | `bool` | `true` | `true` 表示动态链接 MSVC 运行时（`/MD`），`false` 表示静态链接（`/MT`）。 |
-| `bundleCrt` | `bool` | `true` | 将对应版本的 CRT DLL（`MSVCP140.dll`、`VCRUNTIME140.dll`、`VCRUNTIME140_1.dll`）复制到产物旁边。仅在 `dynamicCrt` 为 `true` 时生效。 |
+| `bundleCrt` | `bool` | `true` | MSVC/clang-cl 的 `dynamicCrt: true` 构建会复制 `MSVCP140.dll`、`VCRUNTIME140.dll`、`VCRUNTIME140_1.dll`；MSYS2 的 `staticRuntime: false` 构建会复制 `libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll`。 |
 | `vsInstallPath` | `String?` | `null` | Visual Studio / Build Tools 安装根目录。`null` 时通过 `vswhere.exe` 自动探测，再回退到常见路径。 |
 | `architecture` | `String` | `'x64'` | 传给 CMake `-A` 的目标架构。支持 `'x64'`、`'arm64'`。 |
 | `generator` | `CmakeGenerator?` | `null` | CMake 生成器。`null` 让 CMake 自动选择（Windows 上通常是 Visual Studio / MSBuild）。 |
 | `generatorPath` | `String?` | `null` | 生成器可执行文件的显式路径。`ninja` 对应 `ninja.exe`，`msbuild` 对应 `MSBuild.exe`。 |
+| `compiler` | `WindowsCompiler` | `msvc` | `msvc` 使用 `cl.exe`；`clangCl` 使用 MSVC 兼容的 LLVM `clang-cl`；`msys2Clang` / `msys2Gcc` 使用 MSYS2 ucrt64 的 GNU/MinGW 风格 clang / gcc。 |
+| `clangClPath` | `String?` | `null` | `compiler: clangCl` 且使用 Ninja 时，可指定 `clang-cl.exe` 的路径；省略时自动探测。使用 Visual Studio 生成器时由 `clangcl` toolset 负责查找。 |
+| `msys2Path` | `String?` | `null` | `compiler: msys2Clang` / `msys2Gcc` 时的 MSYS2 根目录。省略时按 `MSYS2_ROOT`、`C:\msys64`、`C:\msys2`、`D:\msys2` 探测。 |
+| `staticRuntime` | `bool` | `true` | 仅用于 MSYS2。静态链接 libgcc / libstdc++ / winpthread；设为 `false` 时运行时需要 MSYS2 DLL，且可配合 `bundleCrt` 复制。 |
 | `extraDefines` | `List<String>` | `[]` | 传给 CMake configure 的额外 `-D` 参数。 |
 
 关键行为：
 
 - `dynamicCrt: true` 产出的 DLL 依赖 MSVC 运行时。设 `bundleCrt: true` 可把对应版本的运行时 DLL 复制到产物旁边，避免目标系统加载到不兼容版本。
 - `dynamicCrt: false` 会静态链接 CRT（`/MT`），产出自包含 DLL。
-- `vsInstallPath` 既用于选择 CMake/MSBuild 生成器，也用于在使用 Ninja 时定位 `vcvarsall.bat`。
-- `CmakeGenerator.ninja` 需要 MSVC 环境。builder 会自动调用 `vcvarsall.bat <arch>`，但仅当当前进程还没有 VS 开发者环境时（即没有 `VSCMD_VER`，且 `LIB`/`PATH` 里也没有 MSVC 路径）。
+- 对 `msvc` 和 `clangCl`，`vsInstallPath` 既用于选择 CMake/MSBuild 生成器，也用于在使用 Ninja 时定位 `vcvarsall.bat`。
+- `compiler: WindowsCompiler.clangCl` 使用 LLVM 的 MSVC 兼容驱动，同时复用 Visual Studio 的头文件、库和 ABI。使用 Ninja 时，builder 会先调用 `vcvarsall.bat <arch>`，再按显式 `clangClPath`、VS 自带 Clang 工具、PATH、常见 LLVM 安装路径和 LLVM 注册表的顺序查找 `clang-cl.exe`；使用 Visual Studio 生成器时则选择 CMake 的 `clangcl` toolset。
+- `compiler: WindowsCompiler.msys2Clang` / `msys2Gcc` 使用 MSYS2 ucrt64 的 GNU/MinGW 风格 clang / gcc，**不需要** `vcvarsall.bat`，但只支持 x64 和 Ninja。builder 会把 `<root>\ucrt64\bin` 加入 CMake 进程的 PATH。
+- MSYS2 根目录按 `msys2Path` → `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2` 的顺序查找。默认 `staticRuntime: true` 会把 libgcc / libstdc++ / winpthread 静态链接进 DLL；设为 `false` 时需要让 MSYS2 运行时 DLL 位于应用 PATH，或设置 `bundleCrt: true` 将它们复制到 DLL 旁边。`dynamicCrt` 只对 `msvc` / `clangCl` 生效。
+
+#### Windows 编译器示例
+
+如果希望使用 LLVM 的 MSVC 兼容驱动，同时保留 Visual Studio 的头文件、库和
+ABI，可以使用 `clangCl`。需要安装 Visual Studio C++ workload（提供头文件、
+库和 MSVC STL），并安装 VS 的 “C++ Clang tools for Windows” 组件或独立的
+LLVM：
+
+```dart
+WindowsConfig(
+  compiler: WindowsCompiler.clangCl,
+  generator: CmakeGenerator.ninja,
+  // Ninja 下可选；自动探测也会查找 VS 自带或已安装的 LLVM。
+  clangClPath: r'C:\Program Files\LLVM\bin\clang-cl.exe',
+)
+```
+
+如果希望使用 GNU/MinGW 风格的 MSYS2 ucrt64 工具链，请安装对应 package
+（`mingw-w64-ucrt-x86_64-clang` 或 `mingw-w64-ucrt-x86_64-gcc`），并在自动
+探测不到时指定 MSYS2 根目录：
+
+```dart
+WindowsConfig(
+  compiler: WindowsCompiler.msys2Clang, // 或 WindowsCompiler.msys2Gcc
+  generator: CmakeGenerator.ninja,       // MSYS2 只支持 Ninja
+  msys2Path: r'D:\msys2',
+  staticRuntime: true,                   // 加载时不需要 MSYS2 runtime DLL
+)
+```
+
+MSYS2 ucrt64 工具链目前只支持 x64。builder 会按
+`msys2Path` → `MSYS2_ROOT` → `C:\msys64` → `C:\msys2` → `D:\msys2` 查找，
+把 `<root>\ucrt64\bin` 加入 CMake 进程的 PATH，并且不会调用
+`vcvarsall.bat`。设 `staticRuntime: false` 时，需要让该目录保留在应用
+PATH 中，或设置 `bundleCrt: true`，使 builder 把
+`libgcc_s_seh-1.dll`、`libstdc++-6.dll` 和 `libwinpthread-1.dll` 复制到
+输出 DLL 旁边。
 
 ### Linux（`LinuxConfig`）
 

@@ -27,7 +27,9 @@ Before starting, make sure your development environment meets the following requ
 - **CMake >= 3.24**
 - **C++ compiler** that supports C++20 (MSVC 2019+, GCC 10+, Clang 12+)
 - **Dart SDK >= 3.10.0**
-- **Git** (for pulling C++ dependencies such as Asio and stdexec)
+- **Git** (needed when using the default CMake dependency path that fetches
+  Asio and stdexec; host-provided dependencies can use a package manager or
+  an existing monorepo setup instead)
 
 ## Add dependencies
 

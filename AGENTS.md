@@ -14,9 +14,10 @@ resulting model.
 
 **Authoritative references — read before writing any async C++:**
 
-- `docs/cpp26_executor_model_usage.md` — usage guide for this repo's stdexec
-  (Chinese). Core examples are compile- and run-verified against the vendored
-  clone. **Follow it for any sender/scheduler/task code.**
+- `docs/cpp26_executor_model_usage.md` — full usage guide for this repo's
+  stdexec (Chinese); `docs/cpp26_executor_model_usage.en.md` is the English
+  companion. Core examples are compile- and run-verified against the vendored
+  clone. **Follow these references for any sender/scheduler/task code.**
 - `third_party/stdexec` — vendored stdexec @ `f0e8ae6f` (≈ v0.11.0,
   nvhpc-26.05 baseline). Header-only, **C++20 only** (no C++26 needed).
   Integrate with `add_subdirectory(third_party/stdexec)` +
@@ -172,6 +173,7 @@ internals and the documented coroutine-type switch.
 ├── docs/
 │   ├── frb_and_cpp_bridge_design.md   # Design decisions (Chinese)
 │   ├── cpp26_executor_model_usage.md  # stdexec usage guide (Chinese, compile-verified)
+│   ├── cpp26_executor_model_usage.en.md # English companion
 │   ├── progress.md                    # Implementation progress
 │   └── known_issues.md                # Resolved/known tech debt
 ├── dart/                      # Dart package (pub package root) + native library
@@ -464,6 +466,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 | `README.zh-CN.md`                   | Chinese overview.                                               |
 | `docs/frb_and_cpp_bridge_design.md` | Full design, FRB comparison, codegen model (Chinese).           |
 | `docs/cpp26_executor_model_usage.md`| stdexec / P2300 usage guide, migration reference (Chinese, compile-verified). |
+| `docs/cpp26_executor_model_usage.en.md`| English companion to the stdexec / P2300 usage guide. |
 | `docs/channel_stop_token_design.md` | Channel 取消语义与 stop token 改造（中文，已实施：值撤回 + stop token 协作取消）。 |
 | `docs/progress.md`                  | Landed checklist, current phase, next steps.                    |
 | `docs/known_issues.md`              | Resolved issues (DartFn oneshot, etc.) and accepted trade-offs. |

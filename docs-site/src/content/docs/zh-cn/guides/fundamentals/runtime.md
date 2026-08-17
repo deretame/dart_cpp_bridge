@@ -20,6 +20,11 @@ description: v2 开发线使用的 Asio 与 stdexec 运行时
   `Runtime::blocking_scheduler()` 返回；
 - **通道** — `co::oneshot` 和 `co::mpsc` sender，用于跨线程通信。
 
+Runtime 头文件通过 `DCB_ASIO_NS` 暴露当前选择的 Asio 实现：默认展开为
+`asio`，设置 `DCB_USE_BOOST_ASIO=ON` 后展开为 `boost::asio`。业务代码应
+使用 `DCB_ASIO_NS::...`，这样同一份源码可以适配两种实现。宿主工程提供
+stdexec/Asio 时的 CMake 配置见[依赖所有权与 Asio 命名空间](/dart_cpp_bridge/zh-cn/guides/fundamentals/native-assets-hooks/#cmake-依赖由谁负责)。
+
 ```cpp
 #include <dart_cpp_bridge/runtime.hpp>
 #include <stdexec/execution.hpp>

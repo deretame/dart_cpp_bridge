@@ -24,6 +24,13 @@ runtime scheduler without creating another event loop.
 - **Channels** — `co::oneshot` and `co::mpsc` senders for cross-thread
   communication.
 
+The runtime headers expose the selected Asio implementation through
+`DCB_ASIO_NS`: it expands to `asio` by default and to `boost::asio` when
+`DCB_USE_BOOST_ASIO=ON`. Use `DCB_ASIO_NS::...` in business code so the same
+source works with either implementation. See [CMake dependency ownership and
+Asio namespace](/dart_cpp_bridge/guides/fundamentals/native-assets-hooks/#cmake-dependency-ownership)
+for host-provided stdexec/Asio configuration.
+
 ```cpp
 #include <dart_cpp_bridge/runtime.hpp>
 #include <stdexec/execution.hpp>

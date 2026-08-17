@@ -64,5 +64,6 @@ repository revision explicitly and regenerate code with the matching tool.
 | `Signal` / `Slot` | stop source / stop token |
 | `ForeignExecutor` | user-provided stdexec scheduler |
 
-For the v2 usage rules and compile-verified examples, see
-[`docs/cpp26_executor_model_usage.md`](./cpp26_executor_model_usage.md).
+For the v2 usage rules and compile-verified examples, see the full
+[`English reference`](./cpp26_executor_model_usage.en.md) or the full
+[`Chinese reference`](./cpp26_executor_model_usage.md).
