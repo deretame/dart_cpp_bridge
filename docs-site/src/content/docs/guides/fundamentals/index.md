@@ -3,9 +3,9 @@ title: Fundamentals (v2)
 description: Core concepts for the current stdexec-based dart_cpp_bridge implementation
 ---
 
-:::caution[v2 development line]
-The current guides describe the stdexec implementation on the migration branch.
-For a released 1.x application, start with [Versioned Documentation](/dart_cpp_bridge/versions/)
+:::caution[v2 stdexec documentation]
+The current guides describe the v2 stdexec implementation. For a released 1.x
+application, start with [Versioned Documentation](/dart_cpp_bridge/versions/)
 and use the v1 archive pages.
 :::
 

@@ -3,8 +3,8 @@ title: 基础（v2）
 description: 当前 stdexec 版 dart_cpp_bridge 的核心概念
 ---
 
-:::caution[v2 开发线]
-当前指南描述迁移分支中的 stdexec 实现。已发布的 1.x 项目请先查看
+:::caution[v2 stdexec 文档]
+当前指南描述 v2 stdexec 实现。已发布的 1.x 项目请先查看
 [版本文档](/dart_cpp_bridge/zh-cn/versions/)，再使用 v1 归档页面。
 :::
 
