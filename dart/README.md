@@ -15,11 +15,23 @@ Write normal C++ code and call it from Dart/Flutter, with sync, async, stream, a
 
 ## Documentation versions
 
-This package is currently published as the v1 `1.x` line (`1.3.0`). The
-repository's `feat/stdexec-migration` branch documents the next v2 C++ async
-model, but v2 has not been published yet. See the
+The package's current major line is v2.0.0, based on stdexec. It contains a
+broad C++ async/concurrency migration from the v1 async-simple model. The Dart
+API, C ABI, wire protocol, generated file layout, and method-ID contracts remain
+stable, but C++ async business code is not source-compatible with v1. See the
 [version guide](https://github.com/deretame/dart_cpp_bridge/blob/main/docs/versioning.md)
 before copying C++ async examples.
+
+Before upgrading from v1:
+
+- Use `stdexec::task<T>` or another stdexec sender instead of
+  `async_simple::coro::Lazy<T>`.
+- Migrate `Executor` / `.via(...)` and `Signal` / `Slot` to stdexec schedulers,
+  current sender operations, and stop tokens.
+- Regenerate bindings with the matching `dcb_gen_tool` 2.0.0 release; do not
+  mix v1 generated native code with v2 runtime headers or tooling.
+- Build native code as C++20 and link the vendored stdexec target. Keep blocking
+  work off the single-threaded I/O scheduler.
 
 ## Quickstart
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.0
+
+- **Breaking (generated C++ API):** async functions now use
+  `stdexec::task` / stdexec senders, and generated dispatch uses the v2
+  scheduler and stop-token model. Existing Dart API and generated file
+  contracts remain compatible; C++ business async signatures must migrate.
+- Version aligned with `dart_cpp_bridge` 2.0.0.
+
 ## 1.3.0
 
 - Codegen: `BRIDGE_SYNC` functions with `std::optional<dcb::StreamSink<T>>`

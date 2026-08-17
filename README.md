@@ -20,10 +20,31 @@ Write normal C++20 code and call it from Dart/Flutter, with sync, async, stream,
 
 - **v1** — released 1.x line (current published version: 1.3.0), based on
   async-simple. Use this when maintaining an existing v1 application.
-- **v2** — current development line on `feat/stdexec-migration`, based on
-  stdexec. It is not published as `^2.0.0` yet.
+- **v2.0.0** — the current major line in this repository, based on stdexec.
+  It contains a broad C++ async/concurrency migration; read the migration
+  notice below before upgrading from v1.
 
 See the [version guide](docs/versioning.md) before copying C++ async examples.
+
+## v2.0.0 migration notice
+
+v2 is a major release with a broad migration from async-simple to stdexec.
+The Dart API, C ABI, wire protocol, generated file layout, and method-ID
+contracts remain stable, but C++ async business code is not source-compatible
+with v1.
+
+Before upgrading from v1:
+
+- Return `stdexec::task<T>` or another stdexec sender from async C++ APIs;
+  `async_simple::coro::Lazy<T>` is no longer the v2 model.
+- Replace `Executor` / `.via(...)` with stdexec schedulers and current
+  `starts_on`, `on`, `continues_on`, and `sync_wait` usage. Replace
+  `Signal` / `Slot` cancellation with stop tokens.
+- Regenerate bindings with the matching `dcb_gen_tool` 2.0.0 release. Do not
+  mix v1 generated native code, runtime headers, and v2 tooling.
+- Update native CMake integration for C++20 and the vendored stdexec target
+  (`STDEXEC::stdexec`), and keep blocking work off the single-threaded I/O
+  scheduler.
 
 ## Quickstart
 

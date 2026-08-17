@@ -1,4 +1,9 @@
-## Unreleased
+## 2.0.0
+
+- **Breaking (C++ async API):** migrated the runtime and generated async
+  dispatch from async-simple to stdexec senders and `stdexec::task`. The Dart
+  API, C ABI, wire protocol, and generated file contracts remain compatible,
+  but C++ business APIs must use the stdexec model.
 
 - `hook.dart`: `WindowsConfig` now supports two non-MSVC compilers via
   `WindowsCompiler`:
