@@ -4,13 +4,15 @@
 > **使用方法**：怎么启动任务、协程环境怎么用、普通函数怎么用、发射后不理、切换执行器、
 > 取消、编排、结构化并发，以及怎么把回调式 C API 包成 sender。
 >
-> 所有示例均基于本仓库克隆的参考实现 `third_party/stdexec`（stdexec 是 P2300 的参考
-> 实现，`std::execution` 与它几乎一一对应）。**版本锚定：commit `f0e8ae6f`（约 v0.11.0，
+> 所有示例均基于本仓库克隆的参考实现 `third_party/stdexec`。它覆盖 P2300 以及
+> task、scope、环境工具等后续提案，但也包含尚未标准化的 `exec::` 扩展。
+> **版本锚定：commit `f0e8ae6f`（约 v0.11.0，
 > nvhpc-26.05 基线）**——stdexec 的 API 随版本漂移较快，升级克隆后请重新核对示例。
 >
 > **不需要 C++26 工具链**：stdexec 只要求 C++20（见[第 1 节](#1-工具链与接入)）。
-> 本文核心示例已用 Clang 22 + 本克隆编译并运行验证；未来切到标准库时，把 `stdexec::`
-> 换成 `std::execution::` 即可（`exec::` 扩展没有标准对应物，见
+> 本文的核心写法按严格 C++20 对照本克隆和本项目实际代码验证。未来切到标准库时必须
+> **逐项核对**命名空间、头文件、约束和返回类型，不能把 `stdexec::` 机械替换成
+> `std::execution::`；`exec::` 扩展通常更没有直接标准对应物（见
 > [1.4](#14-与标准库的对应关系)）。
 
 ## 目录
@@ -118,14 +120,18 @@ stdexec 跟随标准草案持续演进，老名字不断被改名（保留 `[[de
 
 ### 1.4 与标准库的对应关系
 
-- `stdexec::` ≈ 未来的 `std::execution::`（P2300 + P3149 + P3325 的内容）。迁移时机械替换
-  命名空间即可，但实现细节（如 `on()` 的回退调度器行为）以标准文案为准。
+- `stdexec::` 是标准提案的实现命名空间，主要覆盖 P2300、P3149、P3325 和 P3552。
+  它与当前 C++ 工作草案**不是逐字符同构**：例如草案中的 `sync_wait` 位于
+  `std::this_thread`，而本克隆提供 `stdexec::sync_wait`；头文件拆分、约束和实现扩展
+  也可能不同。迁移时必须按 API 逐项核对当前工作草案和目标标准库。
 - `exec::` 是 NVIDIA 的实验扩展命名空间（= `experimental::execution`），**没有标准对应物**：
-  `async_scope`、`static_thread_pool`、`single_thread_context`、`task`（扩展版）、`when_any`、
+  `async_scope`、`static_thread_pool`、`single_thread_context`、`task`（旧扩展版）、`when_any`、
   `split`、`ensure_started`、`start_detached`、`timed_thread_context`、`at_coroutine_exit`、
   `create` 等。其中 `async_scope` 的思想已标准化为 `counting_scope`（API 不同，见
   [10.3](#103-stdexeccounting_scope--simple_counting_scope标准)）；具体线程池未来可能由
   "system context / parallel scheduler" 系列提案覆盖（见 [12.4](#124-系统级并行调度器get_parallel_scheduler)）。
+- `stdexec::task` 对应 P3552 的 scheduler-affine coroutine task，并非 P2300 本体。
+  本项目的异步 C++ 公共写法统一使用它；`exec::task` 只在介绍本克隆的历史扩展时出现。
 
 ---
 
@@ -148,6 +154,25 @@ stdexec 跟随标准草案持续演进，老名字不断被改名（保留 `[[de
 - `set_stopped()`：被取消/主动放弃，**没有值**。
 - 发送方在调用完成函数**之前**必须把所有资源状态切换到"已就绪"，完成后立刻丢弃内部状态。
 
+### 2.1 `sender` 与 `sender_in`：环境也是类型系统的一部分
+
+`stdexec::sender<S>` 只说明 `S` 是一个 sender；它不保证 `S` 在任意接收者环境里都能
+计算出完成签名并成功连接。真正检查“这个 sender 放进这个环境是否合法”的概念是：
+
+```cpp
+template <class S>
+  requires stdexec::sender_in<S, my_env_t>
+void launch(S&& sndr);
+```
+
+- `sender_in<S, Env>` 会在 `Env` 下查询 `completion_signatures_of_t<S, Env>`；依赖
+  scheduler、stop token 或 allocator 的 sender，换一个 env 后可能改变完成签名，甚至变成
+  不合法。
+- `sender` 适合泛指“配方”；编写启动器、scope 包装或自定义 receiver 时，优先用与实际
+  receiver 环境一致的 `sender_in` 约束，错误会更靠近调用点。
+- 不要只在空环境 `env<>` 下验证后就假定 sender 到处可用。`on()`、task 的 home
+  scheduler、可取消回调等都依赖真实环境。
+
 ---
 
 ## 3. 头文件与命名空间
@@ -161,8 +186,8 @@ stdexec 里有两层命名空间：
 
 | 命名空间                             | 内容                                                                                                                                                                                                         | 对应标准                                |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
-| `stdexec`（内部宏 `STDEXEC`）        | P2300 标准 API：`schedule`、`then`、`when_all`、`sync_wait`、`just`、`on`、`starts_on`、`continues_on`、`get_scheduler`、`get_stop_token`、`task`、`run_loop`、`spawn`、`spawn_future`、`counting_scope`、`read_env`、`write_env`、`prop`、`inline_scheduler`… | 未来 `std::execution`                   |
-| `exec`（=`experimental::execution`） | 参考实现扩展：`static_thread_pool`、`single_thread_context`、`async_scope`、`start_detached`、`split`、`ensure_started`、`when_any`、`finally`、`repeat_until`、`unless_stop_requested`、`reschedule`、`task`（扩展版）、`timed_thread_context`、`create`、`at_coroutine_exit`… | 部分将进 C++26 之后的修订（LWG/P 提案） |
+| `stdexec`（内部宏 `STDEXEC`）        | 标准提案 API：`schedule`、`then`、`when_all`、`sync_wait`、`just`、`on`、`starts_on`、`continues_on`、`get_scheduler`、`get_stop_token`、`task`、`run_loop`、`spawn`、`spawn_future`、`counting_scope`、`read_env`、`write_env`、`prop`、`inline_scheduler`… | P2300 + P3149 + P3325 + P3552 等的本克隆快照 |
+| `exec`（=`experimental::execution`） | 参考实现扩展：`static_thread_pool`、`single_thread_context`、`async_scope`、`start_detached`、`split`、`ensure_started`、`when_any`、`finally`、`repeat_until`、`unless_stop_requested`、`reschedule`、`task`（旧扩展版）、`timed_thread_context`、`create`、`at_coroutine_exit`… | 非标准扩展；部分思想另有标准提案         |
 
 常用头文件：
 
@@ -173,7 +198,7 @@ stdexec 里有两层命名空间：
 #include <exec/single_thread_context.hpp> // exec::single_thread_context（单线程）
 #include <exec/start_detached.hpp>        // exec::start_detached（发射后不理）
 #include <exec/async_scope.hpp>           // exec::async_scope（结构化并发）
-#include <exec/task.hpp>                  // exec::task、exec::reschedule_coroutine_on
+#include <exec/task.hpp>                  // 旧扩展 exec::task；本项目业务代码不使用
 #include <exec/reschedule.hpp>            // exec::reschedule（迁移到环境的 start scheduler）
 #include <exec/when_any.hpp>              // exec::when_any（竞争）
 #include <exec/finally.hpp>               // exec::finally（清理 sender）
@@ -251,9 +276,12 @@ int main()
 - 返回值是 `std::optional<std::tuple<Ts...>>`：**值**为各 `set_value` 参数；
 - sender 以 `set_stopped()` 结束 → 返回 `std::nullopt`；
 - sender 以 `set_error(e)` 结束 → **抛出** `e`（`std::exception_ptr` 会 `std::rethrow_exception`）。
-- `sync_wait` 内部自带一个 `stdexec::run_loop` 作为调度上下文：它的环境同时应答
+- `sync_wait` 内部自带一个 `stdexec::run_loop`。它的环境同时应答
   `get_scheduler` / `get_start_scheduler` / `get_delegation_scheduler`（都指向这个
-  run_loop 的 scheduler），所以"谁调用 sync_wait，完成就回到谁的线程上"（见下例）。
+  run_loop 的 scheduler），因此 `on()`、scheduler-affine task 和主动查询 delegation
+  scheduler 的 sender 可以把工作投回等待线程。**但这不保证任意 sender 的最终完成回调
+  都发生在等待线程**：例如 `schedule(pool) | then(...)` 可以直接从池线程完成 receiver；
+  `sync_wait` 只是由等待线程驱动 run_loop 并阻塞到收到完成信号。
 
 ```cpp
 // 零参的 get_scheduler() 是一个 sender（等价于 read_env(get_scheduler)）：
@@ -266,7 +294,9 @@ auto [sch2] = sync_wait(get_scheduler()).value();   // 拿到 sync_wait 提供�
 >   `when_all(a, b)` 产出的扁平 `set_value(x, y)` 也算"一种"，合法。
 >   有多种成功形态的 sender 请改用 `stdexec::sync_wait_with_variant()`（返回 variant-of-tuples）。
 > - 不可取消：环境不提供 stop token（查询回退到 `never_stop_token`）。
-> - `sync_wait` 只能在**非协程函数**里用（它内部是阻塞的）。
+> - `sync_wait` 是阻塞 API。技术上它可以写进任何普通 C++ 调用位置，但**不要在协程、
+>   单线程事件循环或其 scheduler 线程里调用**；如果被等待的操作还需要该线程推进，
+>   就会自锁。协程内请直接 `co_await`。
 
 ### 5.2 start_detached：发射后不理（fire-and-forget）
 
@@ -460,158 +490,175 @@ int main()
 
 ## 6. 在协程环境中启动
 
-### 6.1 两种协程类型：stdexec::task 和 exec::task
+### 6.1 本项目统一使用 `stdexec::task`
 
-| 类型               | 头文件                  | 特点                                                                                                              |
-| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `stdexec::task<T>` | `stdexec/execution.hpp` | P2300 标准协程；`co_await` 任何 sender；取消/执行器靠环境传播                                                     |
-| `exec::task<T>`    | `exec/task.hpp`         | 扩展版：**调度亲和**（默认粘在启动它的调度器上）、支持 `co_await exec::reschedule_coroutine_on(sched)` 切换       |
-
-写异步业务代码就是写协程：
+`stdexec::task<T, TaskEnv = env<>>` 是本克隆对 P3552 scheduler-affine task 的实现。
+它是惰性协程，也是 sender；本项目的业务代码、运行时和代码生成器都统一返回
+`stdexec::task<T>`。不要再为“亲和性”改用旧扩展 `exec::task<T>`：当前
+`stdexec::task` 已经会在每次 `co_await` 后自动回到自己的 **home/start scheduler**。
 
 ```cpp
 #include <stdexec/execution.hpp>
 #include <exec/static_thread_pool.hpp>
-#include <exec/task.hpp>    // exec::task
 
 using namespace stdexec;
 
-// 普通函数风格 + 协程：
-auto fetch_and_add(exec::static_thread_pool& pool) -> exec::task<int>
+auto fetch_and_add(exec::static_thread_pool& pool) -> stdexec::task<int>
 {
-  // co_await 一个 sender：单值解包成裸值、错误抛出、停止则向上传播（见 6.2）
-  // 注意括号：co_await 优先级高于 |，管道必须整体括起来（见 6.2 末尾的陷阱说明）
+  // schedule(pool) 在池线程完成；task 随后自动回到启动它的 home scheduler。
   int a = co_await (schedule(pool.get_scheduler())
                   | then([] { return 20; }));
   int b = co_await (schedule(pool.get_scheduler())
                   | then([] { return 22; }));
-  co_return a + b;                          // 42
+  co_return a + b;
 }
 
 int main()
 {
   exec::static_thread_pool pool{2};
   auto [ans] = sync_wait(fetch_and_add(pool)).value();
-  std::cout << ans << '\n';
+  std::cout << ans << '\n';                       // 42
 }
 ```
 
-### 6.2 co_await 的语义
+这里 task 的 home scheduler 来自启动它的 receiver 环境中的 `get_start_scheduler`；
+`sync_wait` 会提供自己的 run_loop scheduler。task 的 promise 环境同时把这个 scheduler
+作为 `get_scheduler` / `get_start_scheduler` 的查询结果，并向所等待的 sender 传播
+allocator 和 stop token。
 
-在 `stdexec::task` / `exec::task` 里 `co_await sndr`：
+### 6.2 `co_await` 的值、错误与停止语义
 
-| 上游完成                          | `co_await` 表达式的行为                       |
-| --------------------------------- | --------------------------------------------- |
-| `set_value()`                     | `void`                                        |
-| `set_value(v)`（恰好一个值）      | **`v` 本身（裸值，不是 tuple！）**            |
-| `set_value(v1, v2, …)`（多个值）  | `std::tuple<...>`（decayed）                  |
-| `set_error(e)`                    | **抛出** `e`                                  |
-| `set_stopped()`                   | 见下面的精确语义                              |
+在 `stdexec::task` 里 `co_await sndr`：
+
+| 上游完成                         | `co_await` 表达式的行为            |
+| -------------------------------- | ---------------------------------- |
+| `set_value()`                    | `void`                             |
+| `set_value(v)`（恰好一个值）     | **`v` 本身（裸值，不是 tuple）**   |
+| `set_value(v1, v2, …)`（多个值） | `std::tuple<...>`（decayed）       |
+| `set_error(e)`                   | **抛出** `e`                       |
+| `set_stopped()`                  | 不恢复当前语句，停止向父级传播     |
 
 > 对比：`sync_wait` 的返回**总是** `std::optional<std::tuple<...>>`，所以
 > `auto [v] = sync_wait(...).value()` 对单值也成立；而 `co_await` 对单值给裸值，
-> 要写 `int a = co_await ...`，`auto [a] = co_await ...` 只对多值结果成立。
+> 要写 `int a = co_await ...`。
 >
-> 陷阱：`co_await` 的优先级**高于** `|`——`co_await a | then(f)` 会被解析成
-> `(co_await a) | then(f)`（然后编译报错 `'void' does not satisfy 'sender'`）。
-> `co_await` 一个管道时务必整体加括号：`co_await (a | then(f))`。
+> `co_await` 的优先级**高于** `|`。`co_await a | then(f)` 会解析为
+> `(co_await a) | then(f)`；等待管道必须写成 `co_await (a | then(f))`。
 
-`set_stopped()` 的精确语义：等待中的协程**不再被 resume**；停止信号沿 promise 链向上
-找 `unhandled_stopped()`——`stdexec::task` / `exec::task` 都有，于是停止逐层向外传播；
-协程作为 sender 被 connect 时（`sync_wait`、`when_all`、`spawn` 等），最外层的
-`unhandled_stopped` 变成对下游 receiver 的 `set_stopped`。如果某层 promise 没有
-`unhandled_stopped()`（比如你自己的普通协程类型），默认回调是 `std::terminate()`。
-
-协程本身是 sender：`stdexec::task<T>` 和 `exec::task<T>` 的完成签名都是
-`set_value_t(T)`（`T = void` 时为 `set_value_t()`）/ `set_error_t(std::exception_ptr)` /
-`set_stopped_t()`，所以它可以被 `when_all`、`then` 等组合，也可以被 `sync_wait` 直接等。
+当等待对象以 `set_stopped()` 完成时，task 不会执行 `co_await` 后面的语句；停止通过
+promise 的 `unhandled_stopped()` 向外传播，最终使 task sender 对下游调用
+`set_stopped()`。`stdexec::task<T>` 默认完成签名为 `set_value_t(T)`（`void` 时无参数）、
+`set_error_t(std::exception_ptr)` 和 `set_stopped_t()`，因此可以直接参与 `when_all`、
+`then`、`sync_wait` 等组合。
 
 ### 6.3 协程里查询执行环境
 
-协程的 promise 里可以直接用这些"查询"（零参调用时是一个 sender，等价于
-`read_env(query)`，值 = 查询结果）：
+查询 CPO 的零参调用会产生一个 `read_env(query)` sender，可以直接 `co_await`：
 
 ```cpp
-auto query_env() -> exec::task<void>
+auto query_env() -> stdexec::task<void>
 {
-  scheduler auto sch = co_await get_scheduler();      // 当前在哪执行？(sender 形式)
-  auto tok = co_await get_stop_token();               // 当前 stop token
-  (void) sch; (void) tok;
+  scheduler auto sch = co_await get_scheduler();
+  auto tok = co_await get_stop_token();
+  (void) sch;
+  (void) tok;
   co_return;
 }
 ```
 
-- 这套零参写法在普通函数里同样有效，例如 `sync_wait(get_scheduler())`。
-- 相关的第三个查询是 `get_start_scheduler()`（"本操作在哪个调度器上启动的"，见
-  [第 7 节](#72-get_start_scheduler回家机制)）。
-- stdexec 扩展（非标准）：env 不应答 `get_scheduler` 但应答 `get_start_scheduler` 时，
-  `get_scheduler` 查询会回退到后者。`exec::task` 的 context 就是只应答
-  `get_start_scheduler`，靠这个回退让 `co_await get_scheduler()` 可用。
+- `get_scheduler()` 是 task 当前的 home scheduler；`get_start_scheduler()` 在这里返回
+  同一个 scheduler。
+- `get_stop_token()` 是与父环境联动的 token。父级请求停止后，task 和它等待的 sender
+  共享同一条协作取消链。
+- 零参查询在普通 sender 链中也成立，例如 `sync_wait(get_scheduler())`。
 
-### 6.4 协程里切换执行器
+### 6.4 在别的 scheduler 做工作，然后自动回家
 
-`exec::task` 支持把协程"搬家"到别的执行器上继续跑：
+`stdexec::task` 没有、也不需要 `exec::reschedule_coroutine_on`。要把某段工作放到线程池，
+`co_await` 一个在目标 scheduler 上启动的 sender；等待结束后 task 的 `affine` 机制会把
+协程恢复投回 home scheduler：
 
 ```cpp
-#include <exec/task.hpp>
-
-auto worker(exec::single_thread_context& io,
-            exec::single_thread_context& ui) -> exec::task<void>
+auto handle_request(exec::static_thread_pool& workers) -> stdexec::task<result>
 {
-  // ... 在调用方的执行器上做轻量准备 ...
+  auto value = co_await stdexec::starts_on(
+    workers.get_scheduler(),
+    stdexec::just() | stdexec::then([] { return blocking_compute(); }));
 
-  co_await exec::reschedule_coroutine_on(io.get_scheduler());   // 切到后台线程
-  do_heavy_work();                                              // 在后台线程上跑
-
-  co_await exec::reschedule_coroutine_on(ui.get_scheduler());   // 切到 UI 线程
-  update_ui();                                                  // 在 UI 线程上跑
+  // 这里已经回到启动本 task 的 home scheduler。
+  co_return finish_on_home(std::move(value));
 }
 ```
 
-> `reschedule_coroutine_on` 做三件事：把 continuation 投递到给定 scheduler 上恢复执行；
-> 把协程的 **home scheduler 更新为新 scheduler**（之后每次 `co_await` 结束都回到新 home）；
-> 并注册协程退出时的清理（`at_coroutine_exit`）。Apple Clang 上不可用。
->
-> 注意：它会把调度器**类型擦除**后存进 task 的 context（`exec/any_sender_of.hpp` 的
-> `any_scheduler`），个别调度器类型擦除不进去会编译失败——本版本里
-> `static_thread_pool` 的 scheduler 在 Clang 下就擦除不了；库自带测试用的是
-> `single_thread_context` 的 scheduler，最稳妥。
->
-> exec::task 的"调度亲和"：每次 `co_await` 一个 sender 后，协程自动调度回 home
-> scheduler（除非被 await 的 sender 保证"在哪启动就在哪完成"）。home 的初始值 =
-> 启动时父环境的 `get_start_scheduler`。
+如果要改变**整个 task 的 home scheduler**，在最外层启动时写
+`starts_on(home, task())`。不要期望 `continues_on(target)` 永久改变 task 的 home；它只改变
+被等待 sender 的完成位置，task 恢复前仍会执行亲和性回迁。
 
-### 6.5 启动一个协程任务（汇总）
+### 6.5 `TaskEnv` 与 home scheduler 的硬约束
 
-协程写好了之后，用第 4 节的五种方式启动它：
+第二模板参数 `TaskEnv` 可定制 task 的 allocator、`start_scheduler_type`、
+`stop_source_type`、`error_types` 和附加环境；默认分别是字节 allocator、
+`stdexec::task_scheduler`、`inplace_stop_source`、`std::exception_ptr` 和空附加环境。
+绝大多数业务代码应继续使用默认值。
+
+默认 `task_scheduler` 会类型擦除 home scheduler。这里有两个容易在自定义 scheduler 上
+踩到的实现约束：
+
+1. `schedule(home)` 必须是**不会失败**的 sender。仅满足 `stdexec::scheduler` 概念还不够；
+   如果完成签名仍声明 `set_error`，task 在构造 home scheduler 时会编译失败。
+2. 类型擦除后的 schedule operation state 必须放进固定大小的内联缓冲区。默认宏
+   `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE` 是 72 字节；自定义 scheduler 的 opstate 更大时，
+   需要在所有相关翻译单元中一致地提高这个宏（本项目设为 256，见 12.6.2/12.6.6）。
+
+这两个要求是本克隆 `task_scheduler` 的实现约束，不是判断普通 scheduler 是否合格的
+通用规则。
+
+### 6.6 启动 task：先指定 home，再统一兜底
 
 ```cpp
-// 1) 阻塞等结果（main 或普通线程里）：
+// 1) 普通线程阻塞等待：sync_wait 的 run_loop 是 home。
 auto [v] = sync_wait(my_task()).value();
 
-// 2) 发射后不理：task 的完成签名带 set_error/set_stopped，
-//    start_detached 出错会 terminate，所以先全部兜底（注意 noexcept，见 5.2）：
-exec::start_detached(my_task()
+// 2) 在指定事件循环上启动并作为 home；detached 前处理所有非 value 通道。
+exec::start_detached(
+  starts_on(io_scheduler, my_void_task())
   | upon_error([](std::exception_ptr e) noexcept { log_error(e); })
-  | upon_stopped([]() noexcept { /* 停止时兜底 */ }));
+  | upon_stopped([]() noexcept { log_stopped(); }));
 
-// 3) 进 scope 跟踪：
+// 3) 由 scope 跟踪生命周期。
 exec::async_scope scope;
-scope.spawn(my_task());
+scope.spawn(my_void_task()
+  | upon_error([](std::exception_ptr e) noexcept { log_error(e); }));
 
-// 4) 进 scope 并拿结果：
-sender auto fut = scope.spawn_future(my_task());
-
-// 5) 手动：
-auto op = connect(my_task(), my_receiver{});
-start(op);
+// 4) 由 scope 跟踪并保留结果。
+sender auto future = scope.spawn_future(my_task());
 ```
 
-> 注意：`exec::task` 启动/`co_await` 时要求**父环境能应答 `get_start_scheduler`**，
-> 否则 `static_assert`：`"exec::task<T> cannot be co_await-ed in a coroutine that does
-> not have an associated start scheduler."`。`sync_wait` 的环境提供它；裸
-> `exec::start_detached(my_task())` 走 root env 的 `inline_scheduler` 回退，通常也没问题。
-> `when_all` 里的多个 `exec::task` 共享同一个环境，即共享同一个 start scheduler。
+本项目生成的 wire dispatch 使用固定启动器：先用
+`starts_on(Runtime::io_scheduler(), task)` 指定 io scheduler 为 home，再接
+`upon_error` / `upon_stopped` 的 `noexcept` 收尾，最后交给 `start_detached`。启动器用
+`sender_in<S, spawn_env_t>` 对实际 io 环境做编译期校验，而不是只检查裸 `sender<S>`。
+
+### 6.7 惰性协程 lambda：禁止把捕获当作协程状态
+
+这是会在优化构建中变成悬垂访问的高风险陷阱：
+
+```cpp
+// 错误：task 是惰性的。lambda 临时对象先销毁，首次 resume 时捕获成员已经悬垂。
+auto bad = [session, request]() -> stdexec::task<void> {
+  co_await dispatch(session, request);
+}();
+
+// 正确：零捕获 IIFE，把所有状态作为参数按值放进协程帧。
+auto good = [](std::shared_ptr<Session> session, Request request)
+              -> stdexec::task<void> {
+  co_await dispatch(session, request);
+}(std::move(session), std::move(request));
+```
+
+协程 lambda 的捕获属于闭包对象，不自动复制进协程帧；task 真正启动前闭包可能已销毁。
+协程**参数**则在调用时进入协程帧，能活到 task 完成。因此使用命名协程函数，或使用
+“零捕获 IIFE + 显式值参数”。IIFE 内也不能偷偷保留其他捕获；任何捕获都重新引入同一风险。
 
 ---
 
@@ -676,13 +723,14 @@ sender auto s =
 
 ### 7.2 get_start_scheduler："回家"机制
 
-`on()`、`exec::reschedule`、`exec::task` 三处都依赖 `get_start_scheduler(env)`——
+`on()`、`exec::reschedule`、`stdexec::task` 都会使用 `get_start_scheduler(env)`——
 "当前操作是在哪个调度器上启动的"：
 
 - `sync_wait` 的环境同时应答 `get_scheduler` / `get_start_scheduler` /
   `get_delegation_scheduler`，都指向它内部的 run_loop——所以
   `sync_wait(on(pool, ...))` 能回到等待线程。
-- `exec::task` 的 context 应答 `get_start_scheduler`（即它的 home scheduler，见 6.4）。
+- `stdexec::task` 启动时从父 receiver 环境构造 home scheduler；task 自己的 promise
+  环境随后让 `get_scheduler` / `get_start_scheduler` 都应答这个 home（见 6.4）。
 - `exec::reschedule` = `continues_on(sndr, 特殊调度器)`，这个特殊调度器在 connect 时
   从 receiver 环境读 `get_start_scheduler`；env 没有则编译错误 `_CANNOT_RESCHEDULE_`。
 - stdexec 扩展（非标准）：env 不应答 `get_scheduler` 但应答 `get_start_scheduler` 时，
@@ -770,6 +818,9 @@ sender auto err = stopped_as_error(work, my_error{"cancelled"});  // set_error(m
 sender auto cb  = upon_stopped(work, [] { std::cout << "cancelled\n"; });
 ```
 
+`stopped_as_optional` 只接受**恰好一种成功完成签名，且该签名恰好携带一个值**的 sender；
+`set_value()`、多值或多种 value 形态都不满足约束。多形态结果应先用 `into_variant` 统一。
+
 ### 8.5 超时与竞速：用 when_any 实现"trigger 取消"
 
 > 注意：P2300 早期草案里的 `stop_when(sndr, trigger)` 在标准化前被移除了。stdexec
@@ -783,7 +834,7 @@ exec::timed_thread_context timer;   // 长寿命对象（成员变量或静态�
 sender auto fetch_with_timeout()
 {
   auto timeout = exec::schedule_after(timer.get_scheduler(), 200ms)
-               | then([] -> int { throw timeout_error{}; });   // 抛异常 → set_error
+               | then([]() -> int { throw timeout_error{}; }); // C++20；抛异常 → set_error
 
   // 谁先完成谁赢；败者分支收到 request_stop（协作式取消）
   return exec::when_any(fetch_from_network(), std::move(timeout));
@@ -794,17 +845,22 @@ sender auto fetch_with_timeout()
 - 定时先触发 → `then` 里抛异常 → `when_any` 以 `set_error(timeout_error)` 完成，
   网络分支被取消。
 - `when_any` 内部所有分支**共享一个** `inplace_stop_source`：首个完成者胜出后对它
-  `request_stop()`，败者收到停止信号。取消是**协作式**的：败者分支若不检查 stop
-  token，仍会跑完，只是结果被丢弃。
+  `request_stop()`，败者收到停止信号。取消是**协作式**的。
+- **这不是硬超时。** 当前实现虽然在首个结果到达时选定赢家，却要等所有分支都完成后
+  才向下游发送那个结果。败者若忽略 stop token、卡在不可取消 I/O，或永不回调，整个
+  `when_any` 仍然会一直等；不能把 `200ms` 理解成调用方必定在 200ms 返回。
+- 真正的 deadline 必须让底层操作可取消并保证取消后的**静默/收尾**：例如关闭 socket、
+  取消 Asio operation，并等待其 completion handler 到达。若选择把败者 detach，则必须用
+  共享状态把其资源生命周期与调用栈解耦，并明确晚到回调如何丢弃，不能让它继续引用局部变量。
 - `when_any` 的完成签名是所有分支的**并集**（值取各自形态，不包 variant），
   下游 `then` 的参数类型要兼容各分支的值。
 
 ### 8.6 协程里取消
 
-`stdexec::task` / `exec::task` 自带与父环境的停止联动：
+`stdexec::task` 自带与父环境的停止联动：
 
 ```cpp
-auto guarded() -> exec::task<int>
+auto guarded() -> stdexec::task<int>
 {
   std::optional<int> r = co_await stopped_as_optional(expensive_work());
   co_return r.value_or(-1);
@@ -834,9 +890,9 @@ auto result = stdexec::sync_wait(
 // 形态 2：自定义 receiver —— get_env() 返回
 //   stdexec::env{stdexec::prop{stdexec::get_stop_token, tok}}
 
-// 形态 3：exec::task 里 co_await —— 外层 receiver env 里的 token 会被 task 转发到
+// 形态 3：stdexec::task 里 co_await —— 外层 receiver env 里的 token 会被 task 转发到
 // co_await 的 channel 操作（透传已验证）。顶层启动一个可取消的 task
-// （exec::task 要求 env 里有调度器）：
+// （starts_on 同时指定 task 的 home scheduler）：
 auto op = stdexec::connect(
   stdexec::starts_on(stdexec::inline_scheduler{},
     stdexec::write_env(task(), stdexec::prop{stdexec::get_stop_token, src.get_token()})),
@@ -846,7 +902,7 @@ auto op = stdexec::connect(
 - **撤回语义（tokio cancel-safety）**：值在交付（claimed）前始终属于发送方 opstate；
   取消（stop 请求，或销毁 opstate 的兜底路径）⟹ 值不落通道。认领与 stop 并发时先到
   先得（通道锁下裁决），认领后 stop 认输。
-- **`exec::task` 遇 `set_stopped` 的表现（已验证）**：`co_await` 的 sender 以 stopped
+- **`stdexec::task` 遇 `set_stopped` 的表现（已验证）**：`co_await` 的 sender 以 stopped
   完成时，协程**不再恢复**（对称转移到 promise 的 `unhandled_stopped`），task 自身以
   `set_stopped` 完成，`co_await` 之后的语句不执行。需要区分「关闭」与「取消」的
   调用方用 `stopped_as_optional` 或 receiver 的 `set_stopped` 分支处理。
@@ -866,14 +922,14 @@ auto op = stdexec::connect(
 | `let_value(sndr, f)`                   | 成功后**动态拼接**新 sender（f 返回 sender）                                                           | 依赖上一步结果发起新请求                                                |
 | `upon_error(sndr, f)`                  | 错误恢复                                                                                               | `sndr \| upon_error([](std::exception_ptr e){ ...; return fallback; })` |
 | `upon_stopped(sndr, f)`                | 停止时兜底                                                                                             | `sndr \| upon_stopped(f)`                                               |
-| `when_all(sndrs...)`                   | 全部成功才完成；任一失败/停止→对其余分支 `request_stop` 并整体失败/停止                                | 并行请求                                                                |
-| `exec::when_any(sndrs...)`             | 第一个完成者胜出，其余取消                                                                             | 超时竞争、多源选择（见 8.5）                                            |
+| `when_all(sndrs...)`                   | 同时启动全部分支；全部成功才完成；任一失败/停止→对其余分支 `request_stop` 并整体失败/停止               | 并发请求（是否并行取决于各分支 scheduler）                               |
+| `exec::when_any(sndrs...)`             | 第一个完成者胜出并请求停止其余分支，但等待所有分支收尾后才完成                                          | 协作式竞速（不是硬超时，见 8.5）                                         |
 | `bulk(sndr, pol, shape, f)`            | 对 shape 个索引并行执行 f（线程池上自动分块）                                                          | 并行循环                                                                |
 | `starts_on(sched, sndr)`               | 指定启动执行器                                                                                         | 见[第 7 节](#7-切换执行器)                                              |
 | `continues_on(sndr, sched)`            | 指定继续执行器                                                                                         | 见[第 7 节](#7-切换执行器)                                              |
 | `on(sched, sndr)` / `on(sndr, sched, closure)` | 启动/执行一段后回到启动处调度器                                                                | 见[第 7 节](#7-切换执行器)                                              |
-| `exec::split(sndr)`                    | 把"只能消费一次"的 sender 变成可多次订阅（lvalue 可反复 connect；首个 connect 才真正 start，结果广播） | 多消费者                                                  |
-| `exec::ensure_started(sndr)`           | 立即 start 并缓存结果；**返回的 sender 只能 connect 一次**（要多次订阅用 `split`）                     | 提前预热                                                                |
+| `exec::split(sndr)`                    | 把"只能消费一次"的 sender 变成可多次订阅；首个 connect 才 start，缓存值以 `const T&` 广播给所有订阅者 | 多消费者                                                                |
+| `exec::ensure_started(sndr)`           | 立即 start 并缓存结果；返回 sender 只能 connect 一次，成功值以 `T&&` 交给该消费者                       | 提前预热；多订阅请用 `split`                                             |
 | `exec::finally(sndr, cleanup)`         | initial 无论以何种通道完成都接着跑 cleanup；cleanup 必须是 "sender of void"（只发 `set_value_t()`）；cleanup 失败会替换 initial 的结果下传 | 释放资源、埋点                            |
 | `exec::repeat_until(sndr, pred)`       | 循环执行直到 pred 满足（`repeat_effect_until` 是它的别名；旧头文件 `exec/repeat_effect_until.hpp` 已废弃） | 轮询                                                              |
 | `exec::materialize(sndr)`              | 把完成信号变成值：`set_value(vs...)` → `set_value(set_value_t{}, vs...)`、`set_error(e)` → `set_value(set_error_t{}, e)`、`set_stopped()` → `set_value(set_stopped_t{})`；逆操作 `exec::dematerialize` | 错误变成值处理   |
@@ -903,6 +959,8 @@ sender auto download_and_parse(std::string url)
 > **`when_all` 的值形态**：全部成功时把各分支的值**扁平拼接**成一次
 > `set_value(vs1..., vs2..., ...)`（不是 tuple-of-tuples）。配合 6.2 的解包规则，
 > 各分支各产一个值时：`auto [a, b] = co_await when_all(x, y);` 直接可用。
+> `when_all` 会启动全部子 sender，但“并发启动”不等于“多核并行”：如果分支都在同一个
+> 单线程事件循环上，它们仍然串行推进；实际并行度由各分支使用的 scheduler 决定。
 
 ```cpp
 using namespace stdexec;
@@ -931,11 +989,15 @@ sender auto parallel_double(exec::static_thread_pool& pool, span<int> data)
 
 `start_detached` 的问题是：**发起者不能确定后台工作何时结束**，程序退出时会有悬空操作；
 手动 `connect + start` 的问题是：**opstate 的析构顺序得自己保证**，容易写出生命周期 bug。
-结构化并发把"一组并发子任务"绑定到一个 **scope 对象**上：scope 析构（或显式 `join`）时，
-保证所有子任务已完成。这恢复了两条宝贵的不变量：
+结构化并发把"一组并发子任务"绑定到一个 **scope 对象**上，并提供显式的排空/join
+协议。这恢复了两条宝贵的不变量：
 
 1. **子任务不越过父作用域的生命周期**（父 scope 存活 ⇒ 子任务存活；子任务跑完之前 scope 不会空）。
 2. **失败/取消可以整体传播**：scope.request_stop() 通知所有子任务。
+
+> scope 的析构函数**不会替你阻塞等待**。`exec::async_scope` 析构只断言已经为空；
+> `counting_scope` 在非法状态析构会 `std::terminate()`。所谓“不越界”是调用方在析构前
+> 正确执行 `on_empty()` 或 `close() + join()` 后得到的保证，不是析构器自动完成的工作。
 
 ### 10.2 exec::async_scope（最常用）
 
@@ -979,8 +1041,10 @@ struct server
 
   void start(exec::static_thread_pool& pool)
   {
-    scope.spawn(schedule(pool.get_scheduler())
-              | then([this] { accept_loop(); }));      // 常驻循环
+    // accept_loop_sender 必须读取环境 stop token，并能取消底层 accept；
+    // 仅把一个阻塞 while-loop 放进 then() 不会因 request_stop 自动退出。
+    scope.spawn(accept_loop_sender(pool)
+              | upon_error([](std::exception_ptr e) noexcept { log_error(e); }));
   }
 
   void shutdown()
@@ -1022,10 +1086,10 @@ scope.request_stop();                      // （可在 close 前）请求取消
 
 `simple_counting_scope` 与 `counting_scope` 的区别：前者没有停止源、`wrap` 不转发取消（更轻量）。
 
-> ⚠ **析构纪律**：`counting_scope` / `simple_counting_scope` 析构时若没走到
-> joined（或"从未使用且已 close"）状态，**直接 `std::terminate()`**。
-> 也就是说 `close()` + 等待 `join()` 完成（`sync_wait` 或 `co_await`）必须发生在
-> scope 析构之前。
+> ⚠ **析构纪律**：从未关联过操作的 untouched `unused` 状态可以直接析构；
+> `unused-and-closed` 和 `joined` 也是合法终态。一旦真正关联过操作，就必须在析构前
+> `close()` 并等待 `join()` 完成（`sync_wait` 或 `co_await`）；其他状态析构会
+> `std::terminate()`。不要把“从未使用”误写成也必须 join。
 
 ### 10.4 嵌套 scope：结构化并发可以递归
 
@@ -1069,18 +1133,21 @@ outer.spawn(phase(pool) | upon_error([](std::exception_ptr e) noexcept { log_err
 1. **sender 是值**：可以移动、可以按值捕获进 `then` 的 lambda；连接后 sender 可以丢弃。
 2. **opstate 不可移动**：`connect` 的结果必须放在一个稳定的存储里，
    存活到操作完成之后（栈上、成员里、或者堆上让操作自己删除自己）。
-3. **完成后不得触碰**：receiver 的完成函数被调用后，opstate、receiver、以及
+3. **惰性协程 lambda 不持有捕获**：返回 `stdexec::task` 的 lambda 闭包可能先于首次
+   resume 析构；不要用 `[x] { co_await ...; }()` 保存状态。用命名函数，或零捕获 IIFE
+   并把状态作为值参数传进协程帧（见 6.7）。
+4. **完成后不得触碰**：receiver 的完成函数被调用后，opstate、receiver、以及
    捕获进操作状态里的所有东西都算"已死"，不能再使用（这是最常见的 UB 来源）。
-4. **scope 先于子操作析构是错误**：`async_scope` 析构时若 `__active_ != 0`，
+5. **scope 先于子操作析构是错误**：`async_scope` 析构时若 `__active_ != 0`，
    debug 断言失败 / release UB；`counting_scope` 系列更狠——没 join 完析构直接
    `std::terminate()`。想"不管了直接退出"，请先 `request_stop()` + 等排空/join，
    或让 scope 存活更久。
-5. **stop callback 生命周期**：`inplace_stop_callback` 必须在源存活期内析构；
+6. **stop callback 生命周期**：`inplace_stop_callback` 必须在源存活期内析构；
    别在回调里销毁源。
-6. **错误必须处理**：`stdexec::spawn` 在**编译期**拒绝会 `set_error` 的 sender；
+7. **错误必须处理**：`stdexec::spawn` 在**编译期**拒绝会 `set_error` 的 sender；
    `exec::start_detached` / `async_scope::spawn` **没有**编译期拦截，出错
    `std::terminate()`；`when_all` 中任一失败会取消其余分支并整体失败。
-7. **取消是协作式的**：`request_stop()` 只保证"收到停止信号"，
+8. **取消是协作式的**：`request_stop()` 只保证"收到停止信号"，
    不保证操作立即停止；业务代码必须自己检查 stop token 才能提前退出。
 
 ---
@@ -1126,7 +1193,8 @@ sender auto s = schedule(tramp) | then([] { /* ... */ });
 
 ### 12.3 协程清理：at_coroutine_exit
 
-RAII 的协程版：无论协程以哪种方式退出（值/异常/停止）都执行一段**异步**清理：
+这是 `exec::task` 配套的扩展：无论协程以哪种方式退出（值/异常/停止）都执行一段
+**异步**清理：
 
 ```cpp
 #include <exec/at_coroutine_exit.hpp>
@@ -1149,6 +1217,9 @@ auto use_connection() -> exec::task<void>
 
 - `at_coroutine_exit` 接受一个 callable（可带额外参数），协程退出时 `co_await` 它的返回值。
 - Apple Clang 不支持（头文件直接 `#error`）。
+- 它不是 P3552 `stdexec::task` 的通用能力。本项目使用 `stdexec::task`，不要假定这段
+  `exec::task` 示例能直接换返回类型；优先把异步清理组织成 `exec::finally(initial, cleanup)`
+  的 sender 链，或在业务协议中显式等待 cleanup。普通同步资源仍用常规 RAII。
 
 ### 12.4 系统级并行调度器：get_parallel_scheduler
 
@@ -1215,7 +1286,10 @@ sender auto s = timer.async_wait(exec::asio::use_sender);
 
 #### 12.6.2 把现有 io_context 包成 scheduler
 
-"在事件循环上跑一次"的 sender 就是 `post(ioc, use_sender)`，包一层即得 scheduler：
+"在事件循环上跑一次"的底层 sender 是 `post(ioc, use_sender)`，但不能原样拿来作为
+`stdexec::task` 的 home scheduler：Asio 适配器保守地声明了 error/stopped 通道，而默认
+`task_scheduler` 要求 `schedule()` **infallible**。本项目把实际上不会失败、也不可取消的
+`post` 两条分支归一化为 `set_value()`：
 
 ```cpp
 class io_context_scheduler
@@ -1227,7 +1301,11 @@ class io_context_scheduler
 
   stdexec::sender auto schedule() const noexcept
   {
-    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
+    // post 本身不会失败且不可取消；use_sender 仍保守声明 error/stopped，
+    // 因此把这两条理论上不会触发的通道都映射成成功。
+    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender)
+         | stdexec::upon_error([](std::exception_ptr) noexcept {})
+         | stdexec::upon_stopped([]() noexcept {});
   }
 
   bool operator==(const io_context_scheduler&) const noexcept = default;
@@ -1240,7 +1318,13 @@ class io_context_scheduler
 - `asio_impl` 是**生成的**命名空间别名：standalone 时 = `::asio`，boost 时 =
   `::boost::asio`（`asio_config.hpp`，见 12.6.6）。
 - 之后 `starts_on(sched, ...)` / `on(sched, ...)` / `continues_on(sched)` 都能把
-  链路搬上 io 线程；协程里 `co_await exec::reschedule_coroutine_on(sched)` 也行。
+  链路搬上 io 线程；`starts_on(sched, stdexec_task())` 会把它设为 task 的 home，task
+  内部等待其他 sender 后会自动回到 io 线程。
+- 仅通过 `stdexec::scheduler<io_context_scheduler>` 并不能验证 task 约束；还要实际实例化
+  `starts_on(sched, task())` 或用对应 `sender_in` 环境做编译检查。
+- 上述适配后的 schedule opstate 可能大于 task_scheduler 默认的 72 字节内联缓冲；本项目
+  统一定义 `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256`。如果你的编译器/Asio 组合仍触发
+  opstate-size `static_assert`，应依据实际 `sizeof` 提高它，而不是改成堆上悬空对象。
 - 生命周期：schedule() 的 sender 捕获 io_context 的引用，**scheduler 不得比
   io_context 活得久**（本项目由 Runtime 的成员声明顺序保证）。
 - 驱动侧：`io_context::run()` 在队列变空时就会返回——常驻事件循环要用
@@ -1299,7 +1383,15 @@ set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
 set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)  # 或 "boost"（默认）
 # standalone 模式由 stdexec 自动拉取 asio-1.31.0
 target_link_libraries(your_target PRIVATE STDEXEC::asioexec)  # 兼容别名：STDEXEC::asio_pool
+
+# 仅当自定义 scheduler 被 stdexec::task 当作 home，且默认 72 字节确实不够时设置。
+# 必须传播给所有会实例化 stdexec::task / scheduler 的下游翻译单元。
+target_compile_definitions(your_target PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
 ```
+
+`STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE` 会改变头文件模板的对象布局；同一个程序中不同翻译
+单元取值不一致会形成 ODR/ABI 风险。把它放在公共 CMake target 的 `PUBLIC` compile
+definitions 上，不要只给某个 `.cpp` 私有定义。本项目的 `dcb_runtime` 就按此方式传播。
 
 ---
 
@@ -1338,6 +1430,8 @@ sender auto fetch_async(int id)
 - receiver 必须**恰好完成一次**（value/error/stopped 之一），多调少调都是契约违反。
 - `fn` 在 `start()` 时**同步**执行——只该做"注册回调"，别在里面跑耗时逻辑
   （要迁移线程就套 `starts_on` / `continues_on`）。
+- `fn` 返回 `void` 时不保存额外状态；返回对象时，`exec::create` 会把该对象存进
+  opstate 直到完成。用它持有注册句柄、取消回调等 RAII 状态（见 13.3）。
 
 包好的 sender 用法与普通 sender 完全相同：
 `sync_wait(fetch_async(1))`、`co_await fetch_async(1)`、
@@ -1387,7 +1481,9 @@ struct tick_sender
 
 ### 13.3 让包装支持取消
 
-在 `exec::create` 的 fn 里从 receiver 环境读 stop token，把取消转发给 C API：
+在 `exec::create` 的启动函数里从 receiver 环境读 stop token，并把停止请求转发给 C API。
+一个关键细节是：**启动函数的返回值会被 `exec::create` 存进 opstate，直到操作结束**。
+因此取消句柄和 stop callback 应由这个返回状态持有，不能做成启动函数的局部变量：
 
 ```cpp
 sender auto fetch_cancellable(int id)
@@ -1395,22 +1491,61 @@ sender auto fetch_cancellable(int id)
   return exec::create<set_value_t(int), set_stopped_t()>(
     [id]<class Ctx>(Ctx& ctx) noexcept {
       auto tok = get_stop_token(get_env(ctx.receiver));
-      if (!tok.stop_possible())
+
+      // 这里假设 C API 的契约是：
+      // 1) callback 不会在 dcb_fetch 返回前内联调用；
+      // 2) 正常或取消最终都恰好回调一次；
+      // 3) cancelled=true 时表示取消已经收尾，不会再访问 user。
+      auto handle = dcb_fetch(
+        id,
+        [](void* user, int value, bool cancelled) noexcept {
+          auto& c = *static_cast<Ctx*>(user);
+          if (cancelled)
+            set_stopped(std::move(c.receiver));
+          else
+            set_value(std::move(c.receiver), value);
+          // 完成后 c/opstate 可能已经被下游销毁，绝不能再访问 c。
+        },
+        &ctx);
+
+      struct cancel_fn
       {
-        // 环境不可取消：注册普通完成回调即可
-        register_completion(id, &ctx);
-        return;
-      }
-      // 可取消：再注册一个 inplace_stop_callback，
-      // request_stop 时调 dcb_cancel(id)，并在取消回调里
-      // set_stopped(std::move(ctx.receiver))
-      register_completion_with_cancel(id, &ctx, tok);
+        fetch_handle handle;
+        void operator()() const noexcept { dcb_cancel(handle); }
+      };
+      using token_t = decltype(tok);
+      using callback_t = stdexec::stop_callback_for_t<token_t, cancel_fn>;
+
+      struct state
+      {
+        fetch_handle handle;
+        callback_t callback;
+      };
+
+      // 返回值被 exec::create 的 opstate 持有；tok 已经 stopped 时，
+      // callback 构造过程可能立即同步调用 cancel_fn。
+      return state{handle, callback_t{tok, cancel_fn{handle}}};
     });
 }
 ```
 
-要点：先查 `stop_possible()` / `stop_requested()`；取消路径同样遵守
-"恰好完成一次、完成后不碰 ctx"。
+上例是**契约示意**，不是对任意 C API 都成立的万能模板。落地前逐项确认：
+
+- `stop_possible()` 为 false 时可以省掉注册；但泛型代码通常直接用
+  `stop_callback_for_t<Token, F>`，让 token 类型决定具体 callback 类型。构造 callback 前
+  仍要考虑 `stop_requested()` 已经为 true 的情况——注册可能立即同步执行回调。
+- 最安全的模型是：stop callback **只请求底层取消**，由底层唯一的 completion callback
+  在真正静默后发送 `set_stopped`。不要一收到 stop 就立刻 `set_stopped`，同时还允许 C
+  callback 晚到并引用 `ctx`；下游可能已经销毁 opstate，晚到回调会 UAF。
+- 如果底层的 cancel API 明确保证“返回时 callback 已取消且没有正在执行的 callback”，
+  stop callback 才可以自行赢得完成权。它仍需原子状态仲裁 stop 与正常完成，确保 receiver
+  只被移动一次；完成后任何路径都不得再碰 `ctx`。
+- 若注册函数可能**同步回调**，上面的 `exec::create` 简写不安全：启动函数还没返回、返回
+  状态还没放进 opstate，完成就可能触发 opstate 销毁。应手写 sender/shared state，先完整
+  建好状态，再调用注册函数，并为同步完成单独仲裁。
+- 如果 C API 既不保证取消后回调静默，也不保证最终回调，就不能安全地把 `ctx` 裸指针交给
+  它。使用独立 `shared_ptr` 状态和代际/原子完成标记，让晚到回调只访问共享状态；同时明确
+  何时释放底层句柄。此时手写 sender 通常比继续堆叠 `exec::create` 更清楚。
 
 ---
 
@@ -1421,13 +1556,15 @@ _WITH_ENVIRONMENT_(...)` 的结构组织，看懂结构就能定位。常见条�
 
 | 错误文案（节选）                                                                                                                            | 出处                 | 原因与解法                                                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `exec::task<T> cannot be co_await-ed in a coroutine that does not have an associated start scheduler.`                                      | `exec/task.hpp`      | 父协程/环境没有 start scheduler。用 `sync_wait` / `when_all` / scope 启动，或让父 promise 的环境应答 `get_start_scheduler` |
 | `_CANNOT_RESTORE_EXECUTION_CONTEXT_AFTER_ON_` + `_THE_CURRENT_EXECUTION_ENVIRONMENT_DOESNT_HAVE_A_SCHEDULER_`（`on_t`）                      | `__on.hpp`           | `on()` 完成后找不到"回家"的调度器。外层接 `sync_wait`（其环境提供），或在 receiver env 里提供 `get_start_scheduler` |
 | `_CANNOT_RESCHEDULE_`（同上 WHY）                                                                                                           | `exec/reschedule.hpp` | `exec::reschedule` 需要 env 的 `get_start_scheduler`，解法同上                                              |
 | `The argument to stdexec::sync_wait() is a sender that cannot complete successfully... exactly one signature of the form set_value_t(...)` | `__sync_wait.hpp`    | 被等的 sender 没有 value 通道（只会 stopped/error）                                                          |
 | `...can complete successfully in more than one way. Use stdexec::sync_wait_with_variant() instead.`                                         | `__sync_wait.hpp`    | 多种 value 形态；改用 `stdexec::sync_wait_with_variant()`（返回 variant）                                    |
 | `spawn expects a sender that cannot fail`                                                                                                   | `__spawn.hpp`        | `stdexec::spawn` 的 sender 带 `set_error` 签名；先 `upon_error` 兜底并把收尾 lambda 标 `noexcept`            |
 | `_INVALID_ARGUMENT_TO_THE_FINALLY_ALGORITHM_` / `_THE_FINAL_SENDER_MUST_BE_A_SENDER_OF_VOID_`                                               | `__finally.hpp`      | `finally` 的 cleanup 不是 void-sender；cleanup 只许发 `set_value_t()`                                       |
+| 无法从自定义 scheduler 构造 `task_scheduler` / constructor constraints not satisfied                                                        | `__task_scheduler.hpp` | `schedule(sch)` 仍声明 error 通道，不满足 task home scheduler 的 infallible 约束；把不可能发生的 error/stopped 显式归一化，或换 scheduler |
+| `operation state ... too large to fit in the preallocated storage of task_scheduler`                                                        | `__task_scheduler.hpp` | home scheduler 的 opstate 超过默认 72 字节；在所有相关翻译单元一致提高 `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE`（见 12.6.6） |
+| `sender_in<S, Env>` / completion signatures 查询失败                                                                                        | sender 约束          | sender 依赖的 scheduler、stop token 或 allocator 不在实际 Env 中；用 receiver 的真实 env 检查，不要只测 `sender<S>` |
 
 ---
 
@@ -1444,7 +1581,8 @@ scope.spawn_future(sndr);                     // 发射进 scope + 返回结果 
 connect(sndr, rcvr) -> start(op);             // 手动（op 必须活到完成回调之后）
 run_loop loop; loop.get_scheduler();          // 自驱事件循环：run() 内/外调 finish() 才退出
 co_await sndr;                                // 协程内启动并等待（单值给裸值，多值给 tuple）
-co_await stdexec::task / exec::task 协程      // 协程本身就是 sender
+stdexec::task<T> task();                      // 本项目唯一的 task 类型；协程本身就是 sender
+starts_on(home, task());                      // 指定 task 的 home scheduler
 ```
 
 ### 执行器
@@ -1461,7 +1599,8 @@ exec::trampoline_scheduler tramp;              // 防递归 schedule 压栈
 stdexec::get_parallel_scheduler();             // 系统级并行调度器（12.4，需开 build 选项）
 exec::asio::asio_thread_pool apool{N};         // Asio 版线程池（需 STDEXEC_ENABLE_ASIO）
 // 把现有 asio::io_context 包成 scheduler：schedule() 返回
-//   exec::asio::asio_impl::post(ioc, exec::asio::use_sender)（见 12.6.2）
+//   post(ioc, use_sender) | upon_error(noexcept) | upon_stopped(noexcept)
+// task home opstate 较大时统一定义 STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE（见 12.6.2/12.6.6）
 // Asio 定时：steady_timer + async_wait(exec::asio::use_sender)（见 12.6.3）
 ```
 
@@ -1473,7 +1612,7 @@ sndr | on(sched, closure);                   // 形式 2：切到 sched 应用�
 stdexec::starts_on(sched, sndr);             // 在 sched 上启动（无管道形式）
 sndr | continues_on(sched);                  // 完成后迁到 sched
 sndr | exec::reschedule();                   // 回 env 的 get_start_scheduler
-co_await exec::reschedule_coroutine_on(sched);  // exec::task 内迁移（并更新 home scheduler）
+co_await starts_on(worker, work);             // stdexec::task 暂去 worker，之后自动回 home
 ```
 
 ### 取消
@@ -1485,7 +1624,7 @@ get_stop_token(env);                           // 读环境（协程里 co_await
 read_env(get_stop_token);                      // 以 sender 形式读环境（read 是旧名）
 exec::unless_stop_requested(sndr);
 stopped_as_optional(sndr);  stopped_as_error(sndr, err);  upon_stopped(sndr, f);
-exec::when_any(a, b);                          // 竞速：胜者完成即取消败者（超时模式见 8.5）
+exec::when_any(a, b);                          // 协作竞速；请求取消败者并等其收尾，不是硬超时
 scope.request_stop();        counting_scope::request_stop();
 ```
 
@@ -1509,7 +1648,7 @@ scope.request_stop();
 stdexec::counting_scope cs;
 auto t = cs.get_token();  auto wrapped = t.wrap(s);  cs.close();  sync_wait(cs.join());
 cs.request_stop();
-// 析构前必须完成 close()+join()，否则 std::terminate()
+// 一旦关联过操作，析构前必须完成 close()+join()，否则 std::terminate()
 ```
 
 ---
@@ -1525,5 +1664,9 @@ cs.request_stop();
   `simple_counting_scope` 的出处（2025 年推进进入 C++26）。
 - **P3325** A Utility for Creating Execution Environments：`prop` / `env` /
   `write_env` 环境工具的出处。
+- **P3552R3** [Add a Coroutine Task Type](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3552r3.html)：
+  scheduler-affine `task` / `affine` 的出处；本克隆的 `stdexec::task` 以该方向实现。
+- [当前 C++ 工作草案 execution/task 章节](https://eel.is/c++draft/exec.task)：用于核对标准
+  命名空间和语义；本克隆的接口仍应以 vendored 源码为准。
 - `third_party/stdexec/README.md`：编译器支持矩阵与接入方式（CPM / add_subdirectory /
   Conan / 手动 `-I`）。

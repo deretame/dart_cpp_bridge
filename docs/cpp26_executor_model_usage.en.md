@@ -7,15 +7,19 @@
 > and wrapping callback-style C APIs as senders.
 >
 > All examples use the reference implementation cloned at
-> `third_party/stdexec`. The pinned baseline is commit `f0e8ae6f`
-> (approximately v0.11.0, nvhpc-26.05). stdexec's API changes quickly, so
-> re-check examples after upgrading it.
+> `third_party/stdexec`. It covers P2300 as well as later task, scope, and
+> environment proposals, and also contains non-standard `exec::` extensions.
+> **Pinned baseline: commit `f0e8ae6f`** (approximately v0.11.0,
+> nvhpc-26.05). stdexec's API changes quickly, so re-check examples after
+> upgrading it.
 >
 > **A C++26 toolchain is not required.** stdexec requires C++20 (see
-> [Section 1](#1-toolchain-and-integration)). The core examples were compiled
-> and run with Clang 22 against this checkout. When a standard-library
-> implementation is used, replace `stdexec::` with `std::execution::`;
-> `exec::` extensions have no direct standard counterpart.
+> [Section 1](#1-toolchain-and-integration)). The core patterns were checked
+> against this checkout and the project's actual code under strict C++20.
+> When moving to a standard-library implementation, **check the namespace,
+> headers, constraints, and return types one by one**; do not mechanically
+> replace `stdexec::` with `std::execution::`. `exec::` extensions generally
+> have even less direct standard correspondence (see [1.4](#14-relationship-to-the-standard-library)).
 
 ## Contents
 
@@ -128,16 +132,22 @@ not a deprecated alias.
 
 ### 1.4 Relationship to the standard library
 
-- `stdexec::` is approximately the future `std::execution::` namespace,
-  covering P2300 and related P3149/P3325 facilities. Migration is mostly a
-  namespace replacement, but final standard wording controls details such as
-  `on()` fallback behavior.
+- `stdexec::` is the implementation namespace for proposal facilities,
+  primarily covering P2300, P3149, P3325, and P3552. It is **not character-
+  for-character identical** to the current C++ working draft: for example,
+  the draft places `sync_wait` in `std::this_thread`, while this checkout
+  provides `stdexec::sync_wait`; headers, constraints, and implementation
+  extensions may also differ. Check each API against the target standard
+  library and current working draft.
 - `exec::` is NVIDIA's experimental extension namespace
   (`experimental::execution`) and has no direct standard counterpart. It
   contains `async_scope`, `static_thread_pool`, `single_thread_context`, the
-  extension `task`, `when_any`, `split`, `ensure_started`, `start_detached`,
+  old extension `task`, `when_any`, `split`, `ensure_started`, `start_detached`,
   `timed_thread_context`, `at_coroutine_exit`, and `create`. The idea of
   `async_scope` is standardized as `counting_scope`, but the APIs differ.
+- `stdexec::task` is the scheduler-affine coroutine task from P3552, not part
+  of P2300 itself. This project uses it consistently for asynchronous C++
+  business code; `exec::task` appears only when discussing the old extension.
 
 ---
 
@@ -161,6 +171,30 @@ Completion means:
 - A sender must make its resources ready before calling completion and discard
   its internal state immediately afterwards.
 
+### 2.1 `sender` and `sender_in`: the environment is part of the type system
+
+`stdexec::sender<S>` only says that `S` is a sender; it does not guarantee that
+`S` can compute completion signatures or connect successfully in every receiver
+environment. The concept that checks whether a sender is valid in a particular
+environment is:
+
+```cpp
+template <class S>
+  requires stdexec::sender_in<S, my_env_t>
+void launch(S&& sndr);
+```
+
+- `sender_in<S, Env>` queries `completion_signatures_of_t<S, Env>` under
+  `Env`. A sender that depends on a scheduler, stop token, or allocator can
+  change its completion signatures—or become invalid—when the environment
+  changes.
+- Use `sender` for a generic recipe; when writing a launcher, scope wrapper,
+  or custom receiver, prefer a `sender_in` constraint matching the real
+  receiver environment so errors appear closer to the call site.
+- Do not validate a sender only in an empty `env<>` and assume it works
+  everywhere. `on()`, a task's home scheduler, and cancellable callbacks all
+  depend on the actual environment.
+
 ---
 
 ## 3. Headers and namespaces
@@ -172,8 +206,8 @@ Completion means:
 
 | Namespace | Contents | Standard relationship |
 | --- | --- | --- |
-| `stdexec` (`STDEXEC`) | `schedule`, `then`, `when_all`, `sync_wait`, `just`, `on`, `starts_on`, `continues_on`, environment queries, `task`, `run_loop`, `spawn`, `spawn_future`, `counting_scope`, `read_env`, `write_env`, `prop`, `inline_scheduler`, and more. | Future `std::execution` |
-| `exec` (`experimental::execution`) | `static_thread_pool`, `single_thread_context`, `async_scope`, `start_detached`, `split`, `ensure_started`, `when_any`, `finally`, `repeat_until`, `unless_stop_requested`, `reschedule`, extension `task`, timed facilities, `create`, and coroutine cleanup. | Extensions and proposals beyond the core. |
+| `stdexec` (`STDEXEC`) | Proposal APIs: `schedule`, `then`, `when_all`, `sync_wait`, `just`, `on`, `starts_on`, `continues_on`, environment queries, `task`, `run_loop`, `spawn`, `spawn_future`, `counting_scope`, `read_env`, `write_env`, `prop`, `inline_scheduler`, and more. | Snapshot of P2300 + P3149 + P3325 + P3552 and related proposals |
+| `exec` (`experimental::execution`) | Reference-implementation extensions: `static_thread_pool`, `single_thread_context`, `async_scope`, `start_detached`, `split`, `ensure_started`, `when_any`, `finally`, `repeat_until`, `unless_stop_requested`, `reschedule`, old extension `task`, timed facilities, `create`, and coroutine cleanup. | Non-standard extensions; some ideas have separate standard proposals |
 
 Common headers:
 
@@ -184,7 +218,7 @@ Common headers:
 #include <exec/single_thread_context.hpp>  // single-thread context
 #include <exec/start_detached.hpp>         // fire-and-forget
 #include <exec/async_scope.hpp>            // structured concurrency
-#include <exec/task.hpp>                   // exec::task/reschedule_coroutine_on
+#include <exec/task.hpp>                   // old exec::task; not used by this project
 #include <exec/reschedule.hpp>             // exec::reschedule
 #include <exec/when_any.hpp>               // races
 #include <exec/finally.hpp>                // cleanup sender
@@ -256,7 +290,12 @@ The return type is `std::optional<std::tuple<Ts...>>`. A stopped sender returns
 `std::nullopt`; an error is re-thrown. Internally, `sync_wait` provides a
 `stdexec::run_loop` environment answering `get_scheduler`,
 `get_start_scheduler`, and `get_delegation_scheduler`, all pointing to that
-loop. Completion therefore returns to the waiting thread:
+loop. This lets `on()`, scheduler-affine tasks, and senders that explicitly
+query the delegation scheduler return work to the waiting thread. **It does
+not guarantee that every sender's final completion callback runs on the
+waiting thread**: for example, `schedule(pool) | then(...)` may complete its
+receiver directly on a pool thread. `sync_wait` merely drives the run loop
+from the waiting thread and blocks until completion:
 
 ```cpp
 // Zero-argument get_scheduler() is a sender, equivalent to read_env(get_scheduler).
@@ -269,7 +308,11 @@ auto [sch2] = sync_wait(get_scheduler()).value();
 >   flattened `set_value(x, y)` from `when_all(a, b)` counts as one. Several
 >   successful value shapes require `sync_wait_with_variant()`.
 > - It is not cancellable; the environment supplies `never_stop_token`.
-> - It is for ordinary non-coroutine functions because it blocks.
+> - `sync_wait` is a blocking API. It can technically be written at any
+>   ordinary C++ call site, but **do not call it from a coroutine, a
+>   single-threaded event loop, or its scheduler thread**. If the awaited work
+>   needs that thread to make progress, the call self-deadlocks. In a
+>   coroutine, use `co_await` directly.
 
 ### 5.2 `start_detached`: fire-and-forget
 
@@ -429,22 +472,24 @@ built around it.
 
 ## 6. Starting in a coroutine
 
-### 6.1 Two coroutine types: `stdexec::task` and `exec::task`
+### 6.1 This project uses `stdexec::task` consistently
 
-| Type | Header | Characteristics |
-| --- | --- | --- |
-| `stdexec::task<T>` | `stdexec/execution.hpp` | P2300 coroutine; `co_await` any sender, with cancellation and scheduling propagated by the environment. |
-| `exec::task<T>` | `exec/task.hpp` | Extension coroutine with scheduler affinity and `co_await exec::reschedule_coroutine_on(sched)`. |
+`stdexec::task<T, TaskEnv = env<>>` is this checkout's implementation of the
+P3552 scheduler-affine task. It is lazy and is itself a sender; this project's
+business code, runtime, and code generator consistently return
+`stdexec::task<T>`. Do not switch to the old extension `exec::task<T>` for
+affinity: current `stdexec::task` automatically returns to its **home/start
+scheduler** after each `co_await`.
 
 ```cpp
 #include <stdexec/execution.hpp>
 #include <exec/static_thread_pool.hpp>
-#include <exec/task.hpp>
 
 using namespace stdexec;
 
-auto fetch_and_add(exec::static_thread_pool& pool) -> exec::task<int>
+auto fetch_and_add(exec::static_thread_pool& pool) -> stdexec::task<int>
 {
+  // The scheduled work completes on the pool; the task then returns to its home scheduler.
   int a = co_await (schedule(pool.get_scheduler())
                   | then([] { return 20; }));
   int b = co_await (schedule(pool.get_scheduler())
@@ -456,38 +501,50 @@ int main()
 {
   exec::static_thread_pool pool{2};
   auto [answer] = sync_wait(fetch_and_add(pool)).value();
-  std::cout << answer << '\n';
+  std::cout << answer << '\n';                       // 42
 }
 ```
 
-### 6.2 The semantics of `co_await`
+The task's home scheduler comes from `get_start_scheduler` in the receiver
+environment that starts it; `sync_wait` supplies its own run-loop scheduler.
+The task promise answers both `get_scheduler` and `get_start_scheduler` with
+that scheduler, and propagates the allocator and stop token to the sender it
+awaits.
+
+### 6.2 The value, error, and stopped semantics of `co_await`
+
+Inside `stdexec::task`, `co_await sndr` behaves as follows:
 
 | Upstream completion | `co_await` behavior |
 | --- | --- |
 | `set_value()` | `void` |
-| `set_value(v)` | Bare `v`, not a tuple. |
-| `set_value(v1, v2, ...)` | Decayed `std::tuple<...>`. |
-| `set_error(e)` | Throws `e`. |
-| `set_stopped()` | The coroutine is not resumed; see below. |
+| `set_value(v)` | **Bare `v`, not a tuple.** |
+| `set_value(v1, v2, ...)` | `std::tuple<...>` (decayed). |
+| `set_error(e)` | **Throws** `e`. |
+| `set_stopped()` | Does not resume the current statement; stopped propagates outward. |
 
 Unlike `sync_wait`, which always returns `optional<tuple<...>>`, `co_await` uses
-a bare value for one value. Also, `co_await` binds more tightly than `|`:
-`co_await a | then(f)` is parsed as `(co_await a) | then(f)`. Always write
-`co_await (a | then(f))`.
+a bare value for one value. Write `int a = co_await ...`; do not destructure a
+single value as though it were a tuple.
 
-For `set_stopped()`, the waiting coroutine is not resumed. The signal travels
-through the promise chain to `unhandled_stopped()`. Both task types provide it,
-so stopped propagates outward. When the coroutine is connected as a sender,
-the outermost handler calls `set_stopped()` on the receiver. A custom coroutine
-promise without `unhandled_stopped()` terminates by default.
+`co_await` binds more tightly than `|`: `co_await a | then(f)` is parsed as
+`(co_await a) | then(f)`. Always write `co_await (a | then(f))` for a pipeline.
 
-Both task types are senders with `set_value_t(T)` (or `set_value_t()` for
-`void`), `set_error_t(std::exception_ptr)`, and `set_stopped_t()` signatures.
+When the awaited operation completes with `set_stopped()`, the task does not
+execute the statements after the `co_await`. Stopped travels outward through
+the promise's `unhandled_stopped()`, and the task sender ultimately calls
+`set_stopped()` on its downstream receiver. The default completion signatures
+of `stdexec::task<T>` are `set_value_t(T)` (or no argument for `void`),
+`set_error_t(std::exception_ptr)`, and `set_stopped_t()`, so tasks can be used
+directly with `when_all`, `then`, and `sync_wait`.
 
 ### 6.3 Querying the environment in a coroutine
 
+Calling a query CPO with no arguments creates a `read_env(query)` sender that
+can be awaited directly:
+
 ```cpp
-auto query_env() -> exec::task<void>
+auto query_env() -> stdexec::task<void>
 {
   scheduler auto scheduler_value = co_await get_scheduler();
   auto token = co_await get_stop_token();
@@ -497,68 +554,112 @@ auto query_env() -> exec::task<void>
 }
 ```
 
-Zero-argument queries are senders, equivalent to `read_env(query)`, and work
-in ordinary functions as well (for example `sync_wait(get_scheduler())`).
-`get_start_scheduler()` queries where the operation was started. In this
-extension, `get_scheduler` falls back to `get_start_scheduler` when only the
-latter is present; this is how `exec::task`'s context remains usable.
+- `get_scheduler()` is the task's current home scheduler;
+  `get_start_scheduler()` returns the same scheduler here.
+- `get_stop_token()` is linked to the parent environment. When the parent
+  requests stop, the task and the sender it awaits share the cooperative
+  cancellation chain.
+- The zero-argument form also works in ordinary sender code, for example
+  `sync_wait(get_scheduler())`.
 
-### 6.4 Moving a coroutine between schedulers
+### 6.4 Do work on another scheduler, then return home
+
+`stdexec::task` has no need for `exec::reschedule_coroutine_on`. To run one
+piece of work on a worker scheduler, await a sender started there; after the
+await, the task's `affine` behavior restores the home scheduler:
 
 ```cpp
-#include <exec/task.hpp>
-
-auto worker(exec::single_thread_context& io,
-            exec::single_thread_context& ui) -> exec::task<void>
+auto handle_request(exec::static_thread_pool& workers) -> stdexec::task<result>
 {
-  co_await exec::reschedule_coroutine_on(io.get_scheduler());
-  do_heavy_work();
+  auto value = co_await stdexec::starts_on(
+    workers.get_scheduler(),
+    stdexec::just() | stdexec::then([] { return blocking_compute(); }));
 
-  co_await exec::reschedule_coroutine_on(ui.get_scheduler());
-  update_ui();
+  // We are back on the scheduler that started this task.
+  co_return finish_on_home(std::move(value));
 }
 ```
 
-`reschedule_coroutine_on` posts the continuation to the target scheduler,
-updates the task's home scheduler, and registers coroutine-exit cleanup. It is
-unavailable on Apple Clang. The scheduler is type-erased through
-`exec::any_sender_of.hpp`; in this checkout Clang cannot erase a
-`static_thread_pool` scheduler, while the `single_thread_context` scheduler
-used by the tests is safe.
+To change the **home scheduler for the entire task**, write
+`starts_on(home, task())` at the outermost launch. Do not expect
+`continues_on(target)` to permanently change the task's home; it only changes
+where the awaited sender completes, after which the task resumes with its
+affinity.
 
-After each `co_await`, `exec::task` returns to its home scheduler unless the
-awaited sender guarantees completion where it started. The initial home is the
-parent environment's `get_start_scheduler`.
+### 6.5 The hard `TaskEnv` and home-scheduler constraints
 
-### 6.5 Starting a coroutine task: summary
+The second template parameter `TaskEnv` can customize the task allocator,
+`start_scheduler_type`, `stop_source_type`, `error_types`, and extra
+environment properties. The defaults are a byte allocator,
+`stdexec::task_scheduler`, `inplace_stop_source`, `std::exception_ptr`, and
+an empty extra environment. Most business code should keep the defaults.
+
+The default `task_scheduler` type-erases the home scheduler and imposes two
+implementation constraints on custom schedulers:
+
+1. `schedule(home)` must be an **infallible** sender. Merely satisfying the
+   `stdexec::scheduler` concept is not enough; if its completion signatures
+   still include `set_error`, constructing the task home scheduler fails.
+2. The type-erased schedule operation state must fit in a fixed inline buffer.
+   The default `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE` is 72 bytes. If a custom
+   scheduler's opstate is larger, raise the macro consistently in every
+   translation unit involved (this project sets it to 256; see
+   12.6.2/12.6.6).
+
+These are implementation constraints of this checkout's `task_scheduler`, not
+general rules for deciding whether an ordinary scheduler is valid.
+
+### 6.6 Starting a task: choose its home first, then handle all fallbacks
 
 ```cpp
-// Block for a result.
+// 1) Block from an ordinary thread; sync_wait's run_loop is the home.
 auto [value] = sync_wait(my_task()).value();
 
-// Detached: handle both error and stopped first.
-exec::start_detached(my_task()
+// 2) Start on a specified event loop as home; handle non-value paths before detaching.
+exec::start_detached(
+  starts_on(io_scheduler, my_void_task())
   | upon_error([](std::exception_ptr error) noexcept { log_error(error); })
-  | upon_stopped([]() noexcept { /* stopped fallback */ }));
+  | upon_stopped([]() noexcept { log_stopped(); }));
 
-// Track in a scope.
+// 3) Track the lifetime in a scope.
 exec::async_scope scope;
-scope.spawn(my_task());
+scope.spawn(my_void_task()
+  | upon_error([](std::exception_ptr error) noexcept { log_error(error); }));
 
-// Track and obtain the result.
+// 4) Track it in a scope and keep its result.
 sender auto future = scope.spawn_future(my_task());
-
-// Manual control.
-auto op = connect(my_task(), my_receiver{});
-start(op);
 ```
 
-> `exec::task` requires a parent environment that answers
-> `get_start_scheduler`; otherwise the diagnostic says
-> `exec::task<T> cannot be co_await-ed in a coroutine that does not have an associated start scheduler.`
-> `sync_wait` supplies one. A root `start_detached` uses an
-> `inline_scheduler` fallback. `when_all` gives multiple tasks one shared
-> environment and start scheduler.
+The generated wire dispatch in this project uses a fixed launcher: it first
+sets the io scheduler as home with
+`starts_on(Runtime::io_scheduler(), task)`, adds `noexcept`
+`upon_error`/`upon_stopped` fallbacks, and finally calls `start_detached`. The
+launcher checks the actual io environment with `sender_in<S, spawn_env_t>` at
+compile time instead of checking only bare `sender<S>`.
+
+### 6.7 Lazy coroutine lambdas must not use captures as coroutine state
+
+This is a high-risk dangling-access trap that can surface in optimized builds:
+
+```cpp
+// Wrong: the lazy task outlives the temporary lambda; its captures dangle on first resume.
+auto bad = [session, request]() -> stdexec::task<void> {
+  co_await dispatch(session, request);
+}();
+
+// Correct: a captureless IIFE passes all state by value into the coroutine frame.
+auto good = [](std::shared_ptr<Session> session, Request request)
+              -> stdexec::task<void> {
+  co_await dispatch(session, request);
+}(std::move(session), std::move(request));
+```
+
+A coroutine lambda's captures belong to the closure object and are not
+automatically copied into the coroutine frame; the closure may be destroyed
+before the task starts. Coroutine **parameters** do enter the frame at call
+time and live until completion. Prefer a named coroutine function, or a
+captureless IIFE with explicit value parameters. Do not hide additional
+captures inside the IIFE; they recreate the same risk.
 
 ---
 
@@ -618,12 +719,21 @@ migration chains on hot paths.
 
 ### 7.2 `get_start_scheduler`: the home mechanism
 
-`on()`, `exec::reschedule`, and `exec::task` all rely on
-`get_start_scheduler(env)`. `sync_wait` answers the scheduler queries with its
-run-loop scheduler; `exec::task` stores its home scheduler there; and
-`exec::reschedule` reads it at connect time, reporting `_CANNOT_RESCHEDULE_`
-when it is absent. The fallback from `get_scheduler` to
-`get_start_scheduler` is an extension behavior.
+`on()`, `exec::reschedule`, and `stdexec::task` all use
+`get_start_scheduler(env)`, meaning “the scheduler where this operation was
+started”:
+
+- `sync_wait` answers `get_scheduler`, `get_start_scheduler`, and
+  `get_delegation_scheduler` with its run-loop scheduler, so
+  `sync_wait(on(pool, ...))` can return to the waiting thread.
+- `stdexec::task` constructs its home scheduler from the parent receiver
+  environment; its promise then answers both `get_scheduler` and
+  `get_start_scheduler` with that home (see 6.4).
+- `exec::reschedule` is `continues_on(sndr, special_scheduler)`, where the
+  special scheduler reads `get_start_scheduler` from the receiver environment
+  at connect time; without it, compilation fails with `_CANNOT_RESCHEDULE_`.
+- In this extension, `get_scheduler` can fall back to
+  `get_start_scheduler` when only the latter is present.
 
 ---
 
@@ -692,6 +802,11 @@ sender auto callback_result =
   upon_stopped(work, [] { std::cout << "cancelled\n"; });
 ```
 
+`stopped_as_optional` accepts only a sender with exactly one successful
+completion signature, and that signature must carry exactly one value.
+`set_value()`, multiple values, or multiple value shapes do not satisfy the
+constraint; use `into_variant` first for a multi-shape result.
+
 ### 8.5 Timeouts and races with `when_any`
 
 The early P2300 `stop_when(sndr, trigger)` was removed; stdexec has only an
@@ -703,19 +818,30 @@ exec::timed_thread_context timer;
 sender auto fetch_with_timeout()
 {
   auto timeout = exec::schedule_after(timer.get_scheduler(), 200ms)
-               | then([] -> int { throw timeout_error{}; });
+               | then([]() -> int { throw timeout_error{}; }); // C++20; throws -> set_error
   return exec::when_any(fetch_from_network(), std::move(timeout));
 }
 ```
 
-The first branch wins and the others receive a cooperative stop request. A
-loser that ignores its token may still run, but its result is discarded.
-Completion signatures are the union of branch signatures, not a variant.
+The first branch wins and the others receive a cooperative stop request. This
+is **not a hard timeout**: the current implementation selects a winner when
+the first result arrives but waits for all branches to finish before sending
+that result downstream. A loser that ignores its token, blocks in a
+non-cancellable I/O operation, or never calls back can keep `when_any` waiting;
+`200ms` does not mean the caller must return in 200 ms.
+
+A real deadline requires a cancellable underlying operation and a guarantee of
+post-cancellation **silence/drain**—for example, close the socket or cancel
+the Asio operation and wait for its completion handler. If the loser is
+detached instead, shared state must decouple its resources from the call stack
+and define how late callbacks are discarded; they must not keep referring to
+local variables. Completion signatures are the union of branch signatures,
+not a variant.
 
 ### 8.6 Cancellation in a coroutine
 
 ```cpp
-auto guarded() -> exec::task<int>
+auto guarded() -> stdexec::task<int>
 {
   std::optional<int> result =
     co_await stopped_as_optional(expensive_work());
@@ -723,7 +849,7 @@ auto guarded() -> exec::task<int>
 }
 ```
 
-Task environments propagate the parent token; stopped travels through the
+`stdexec::task` propagates the parent token; stopped travels through the
 promise chain when an outer operation requests cancellation.
 
 ### 8.7 Cooperative channel cancellation (`co::mpsc`, verified)
@@ -751,7 +877,7 @@ auto operation = stdexec::connect(
 
 Before a value is claimed it belongs to the sender operation state. Stop or
 destruction rolls it back, so it never enters the channel; a race is decided
-under the channel lock. When `exec::task` receives stopped, its coroutine is
+under the channel lock. When `stdexec::task` receives stopped, its coroutine is
 not resumed and statements after `co_await` do not execute. The stop source
 must outlive registered operation states. `co::oneshot` intentionally does not
 accept a stop token; DartFn replies use destruction as the fallback.
@@ -768,12 +894,12 @@ accept a stop token; DartFn replies use destruction as the fallback.
 | `let_value(sndr, f)` | Dynamically return a new sender after success. |
 | `upon_error(sndr, f)` | Recover from an error. |
 | `upon_stopped(sndr, f)` | Provide a stopped fallback. |
-| `when_all(sndrs...)` | Wait for all; failure/stop requests stop on siblings. |
-| `exec::when_any(sndrs...)` | First completion wins and cancels the rest. |
+| `when_all(sndrs...)` | Start all branches; complete only when all succeed; failure/stop requests stop on siblings and fails/stops the whole operation. |
+| `exec::when_any(sndrs...)` | First completion wins and requests stop on the rest, but completion waits for all branches to drain. |
 | `bulk(sndr, policy, shape, f)` | Parallel indexed work; domains choose chunks. |
 | `starts_on` / `continues_on` / `on` | Choose start, downstream, or temporary scheduler. |
-| `exec::split(sndr)` | Broadcast one sender to multiple subscribers. |
-| `exec::ensure_started(sndr)` | Start immediately and cache; connect once. |
+| `exec::split(sndr)` | Turn a single-consumer sender into a multi-subscriber sender; the first connect starts it and cached values are broadcast as `const T&`. |
+| `exec::ensure_started(sndr)` | Start immediately and cache; the returned sender connects once and passes its successful value as `T&&` to that consumer. Use `split` for multiple subscribers. |
 | `exec::finally(sndr, cleanup)` | Run a void cleanup sender on every path. |
 | `exec::repeat_until(sndr, pred)` | Repeat until a predicate succeeds. |
 | `exec::materialize` / `dematerialize` | Turn completion signals into values and back. |
@@ -796,6 +922,11 @@ sender auto download_and_parse(std::string url)
 `when_all` flattens successful values into one
 `set_value(vs1..., vs2..., ...)`, not a tuple of tuples. With one value per
 branch, `auto [a, b] = co_await when_all(x, y);` works directly.
+
+`when_all` starts all child senders, but “concurrent start” does not imply
+multi-core parallelism. If every branch uses the same single-threaded event
+loop, they still make progress serially; actual parallelism is determined by
+the schedulers used by the branches.
 
 ```cpp
 using namespace stdexec;
@@ -823,11 +954,17 @@ unchunked execution; the pool also supports `bulk_chunked` with
 finished; process shutdown can therefore leave operations dangling. Manual
 `connect + start` requires the caller to get every operation-state destruction
 order right. Structured concurrency binds concurrent child tasks to a **scope
-object** and guarantees that children have finished when the scope is joined or
-destroyed. It restores two invariants:
+object** and provides an explicit drain/join protocol. It restores two
+invariants:
 
 1. A child cannot outlive its parent scope.
 2. Failure and cancellation can propagate together through `request_stop()`.
+
+> A scope destructor does **not** block to drain children. `exec::async_scope`
+> only asserts that it is already empty; `counting_scope` calls
+> `std::terminate()` when destroyed in an invalid state. The “no child outlives
+> its parent” guarantee comes from calling `on_empty()` or `close() + join()`
+> before destruction, not from the destructor doing the work for you.
 
 ### 10.2 `exec::async_scope` (the common choice)
 
@@ -868,8 +1005,11 @@ struct server
 
   void start(exec::static_thread_pool& pool)
   {
-    scope.spawn(schedule(pool.get_scheduler())
-              | then([this] { accept_loop(); }));
+    // accept_loop_sender must read the stop token and cancel the underlying
+    // accept operation; a blocking while-loop inside then() will not stop
+    // automatically when request_stop() is called.
+    scope.spawn(accept_loop_sender(pool)
+              | upon_error([](std::exception_ptr error) noexcept { log_error(error); }));
   }
 
   void shutdown()
@@ -910,9 +1050,14 @@ scope.request_stop();                      // May be called before close.
 | `request_stop()` | Cancel associated operations on `counting_scope`. |
 
 `simple_counting_scope` has no stop source and its `wrap` does not forward
-cancellation. Both counting-scope types terminate if destroyed without having
-been joined (or without the special unused-and-closed state). Always perform
-`close()` and wait for `join()` before destruction.
+cancellation.
+
+> **Destruction rule:** an untouched `unused` scope may be destroyed directly;
+> `unused-and-closed` and `joined` are also valid terminal states. Once an
+> operation has actually been associated, call `close()` and wait for `join()`
+> (`sync_wait` or `co_await`) before destruction; every other state terminates
+> with `std::terminate()`. Do not incorrectly say that an entirely unused
+> scope must also be joined.
 
 ### 10.4 Nested scopes
 
@@ -954,15 +1099,20 @@ that can deadlock from such a callback (for example,
 1. **A sender is a value:** move it or capture it by value in a `then` lambda.
 2. **An operation state is not movable:** the result of `connect` must remain
    in stable storage until completion.
-3. **Do not touch state after completion:** the operation state, receiver, and
+3. **Lazy coroutine lambdas must not capture state:** a closure returning
+   `stdexec::task` may be destroyed before its first resume. Do not use
+   `[x] { co_await ...; }()` to store state. Use a named function, or a
+   captureless IIFE that passes state by value into the coroutine frame (see
+   6.7).
+4. **Do not touch state after completion:** the operation state, receiver, and
    all operation-owned captures are dead after a completion method returns.
-4. **The scope must outlive its children:** an active `async_scope` can assert
+5. **The scope must outlive its children:** an active `async_scope` can assert
    or have release UB; counting scopes terminate if not joined.
-5. **Stop callbacks have a source lifetime:** destroy callbacks before their
+6. **Stop callbacks have a source lifetime:** destroy callbacks before their
    source and never destroy the source from a callback.
-6. **Handle errors:** `stdexec::spawn` rejects failures at compile time;
+7. **Handle errors:** `stdexec::spawn` rejects failures at compile time;
    `start_detached` and `async_scope::spawn` terminate on unhandled errors.
-7. **Cancellation is cooperative:** `request_stop()` does not interrupt
+8. **Cancellation is cooperative:** `request_stop()` does not interrupt
    arbitrary C++ code; business code must inspect the token.
 
 ---
@@ -1029,8 +1179,15 @@ auto use_connection() -> exec::task<void>
 }
 ```
 
-`at_coroutine_exit` awaits asynchronous cleanup for value, error, or stopped
-exit. Apple Clang is unsupported; the header emits `#error` there.
+This is an extension paired with `exec::task`: `at_coroutine_exit` awaits
+asynchronous cleanup for value, error, or stopped exit. Apple Clang is
+unsupported; the header emits `#error` there.
+
+It is not a general facility of P3552 `stdexec::task`. This project uses
+`stdexec::task`, so do not assume the `exec::task` example can simply change
+its return type. Prefer organizing asynchronous cleanup as an
+`exec::finally(initial, cleanup)` sender chain, or explicitly await cleanup in
+the business protocol. Ordinary synchronous resources still use normal RAII.
 
 ### 12.4 Process-wide parallel scheduler
 
@@ -1099,7 +1256,11 @@ class io_context_scheduler
 
   stdexec::sender auto schedule() const noexcept
   {
-    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender);
+    // post itself cannot fail and is not cancellable; use_sender still
+    // conservatively declares error/stopped, so normalize both paths.
+    return exec::asio::asio_impl::post(*ioc_, exec::asio::use_sender)
+         | stdexec::upon_error([](std::exception_ptr) noexcept {})
+         | stdexec::upon_stopped([]() noexcept {});
   }
 
   bool operator==(const io_context_scheduler&) const noexcept = default;
@@ -1109,10 +1270,31 @@ class io_context_scheduler
 };
 ```
 
+The underlying “run once on the event loop” sender is
+`post(ioc, use_sender)`, but it cannot be used unchanged as a
+`stdexec::task` home scheduler: the Asio adapter conservatively declares
+error/stopped channels, while the default `task_scheduler` requires an
+**infallible** `schedule()`. The wrapper above normalizes the theoretically
+impossible error/stopped paths to `set_value()`.
+
 `asio_impl` is a generated namespace alias: standalone Asio maps to `::asio`
-and Boost.Asio to `::boost::asio`. The scheduler must not outlive its
-`io_context`. Use `asio::make_work_guard(ioc)` to keep a long-lived loop alive
-and reset the guard during shutdown.
+and Boost.Asio to `::boost::asio`. After this adaptation,
+`starts_on(sched, ...)`, `on(sched, ...)`, and `continues_on(sched)` can move a
+pipeline to the io thread; `starts_on(sched, stdexec_task())` also makes it the
+task's home, so the task returns to the io thread after awaiting other senders.
+
+Merely satisfying `stdexec::scheduler<io_context_scheduler>` does not verify
+the task constraints. Instantiate `starts_on(sched, task())` or check against
+the corresponding `sender_in` environment. The adapted schedule opstate may
+also exceed `task_scheduler`'s default 72-byte inline buffer; this project
+defines `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256`. If another compiler/Asio
+combination still hits the opstate-size `static_assert`, increase it based on
+the actual `sizeof` rather than moving a dangling object to the heap.
+
+The scheduler captures an `io_context&`, so it must not outlive that context
+(the project relies on Runtime member declaration order). Use
+`asio::make_work_guard(ioc)` to keep a long-lived loop alive and reset the
+guard during shutdown.
 
 #### 12.6.3 Cancellable timer sleep
 
@@ -1167,7 +1349,18 @@ set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
 # Use "boost" for Boost.Asio; standalone mode fetches asio-1.31.0.
 target_link_libraries(your_target PRIVATE STDEXEC::asioexec)
 # Compatibility alias: STDEXEC::asio_pool
+
+# Only when a custom scheduler is used as a stdexec::task home and 72 bytes
+# are actually insufficient. Propagate this to every downstream translation
+# unit that instantiates stdexec::task or the scheduler.
+target_compile_definitions(your_target PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
 ```
+
+`STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE` changes the object layout of header
+templates; inconsistent values across translation units create an ODR/ABI
+risk. Put it on a shared CMake target with `PUBLIC` visibility rather than as a
+private definition on one `.cpp`. This project propagates it through
+`dcb_runtime`.
 
 ---
 
@@ -1207,6 +1400,10 @@ The receiver must complete exactly once through value, error, or stopped.
 The function passed to `create` runs synchronously during `start`, so it should
 only register the callback, not perform expensive work; use `starts_on` or
 `continues_on` to migrate execution.
+When the start function returns `void`, `create` stores no additional state;
+when it returns an object, `exec::create` stores that object in the operation
+state until completion. Use this to hold registration handles and cancellation
+callbacks with RAII (see 13.3).
 
 The resulting sender behaves like any other sender:
 `sync_wait(fetch_async(1))`, `co_await fetch_async(1)`, and
@@ -1256,8 +1453,11 @@ needed.
 
 ### 13.3 Making a wrapper cancellable
 
-Read the stop token from the receiver environment and forward cancellation to
-the underlying API:
+Read the stop token from the receiver environment in the `exec::create` start
+function and forward stop requests to the underlying API. A key detail is that
+the start function's return value is stored by `exec::create` in the operation
+state until completion, so the cancellation handle and stop callback must be
+owned by that returned state rather than local variables:
 
 ```cpp
 sender auto fetch_cancellable(int id)
@@ -1265,22 +1465,70 @@ sender auto fetch_cancellable(int id)
   return exec::create<set_value_t(int), set_stopped_t()>(
     [id]<class Context>(Context& context) noexcept {
       auto token = get_stop_token(get_env(context.receiver));
-      if (!token.stop_possible())
-      {
-        register_completion(id, &context);
-        return;
-      }
 
-      // Register a stop callback that calls dcb_cancel(id), and make the
-      // cancellation path complete the receiver with set_stopped().
-      register_completion_with_cancel(id, &context, token);
+      // Assumed C API contract:
+      // 1) the callback is not invoked inline before dcb_fetch returns;
+      // 2) normal completion or cancellation eventually calls it exactly once;
+      // 3) cancelled=true means cancellation is drained and user is no longer accessed.
+      auto handle = dcb_fetch(
+        id,
+        [](void* user, int value, bool cancelled) noexcept {
+          auto& current = *static_cast<Context*>(user);
+          if (cancelled)
+            set_stopped(std::move(current.receiver));
+          else
+            set_value(std::move(current.receiver), value);
+          // After completion, current/the operation state may already be gone.
+        },
+        &context);
+
+      struct cancel_fn
+      {
+        fetch_handle handle;
+        void operator()() const noexcept { dcb_cancel(handle); }
+      };
+      using token_t = decltype(token);
+      using callback_t = stdexec::stop_callback_for_t<token_t, cancel_fn>;
+
+      struct state
+      {
+        fetch_handle handle;
+        callback_t callback;
+      };
+
+      // create owns the return value; constructing the callback may invoke
+      // cancel_fn synchronously when the token was already stopped.
+      return state{handle, callback_t{token, cancel_fn{handle}}};
     });
 }
 ```
 
-Check both `stop_possible()` and `stop_requested()` before registration. The
-cancellation path follows the same exactly-once rule; after completion, never
-touch the context again.
+The example is a contract sketch, not a universal template. Before adopting
+it, verify:
+
+- If `stop_possible()` is false, registration can be skipped. Generic code can
+  use `stop_callback_for_t<Token, F>` and let the token type select the
+  callback type. Also account for `stop_requested()` already being true:
+  callback construction may invoke the callback synchronously.
+- The safest model is for the stop callback to **only request cancellation**;
+  the underlying API's single completion callback sends `set_stopped()` after
+  the operation is truly quiet. Do not send `set_stopped()` immediately while
+  still allowing a late C callback to reference `context`; the downstream may
+  already have destroyed the operation state, causing UAF.
+- A stop callback may win completion itself only if the cancellation API
+  guarantees that, on return, callbacks are cancelled and none is running. It
+  still needs atomic arbitration between stop and normal completion so the
+  receiver is moved exactly once; no path may touch `context` afterwards.
+- If registration may call back **synchronously**, the `exec::create` shortcut
+  above is unsafe: the start function has not returned, its state is not yet in
+  the operation state, and completion may destroy that state. Hand-write a
+  sender/shared state, build the state first, then register the callback, and
+  arbitrate synchronous completion separately.
+- If the C API guarantees neither silence after cancellation nor a final
+  callback, do not pass a raw `context` pointer to it. Use independent shared
+  state with generation/atomic completion markers so late callbacks touch only
+  that shared state, and define when the underlying handle is released. A
+  hand-written sender is usually clearer than stacking more `exec::create`.
 
 ---
 
@@ -1293,13 +1541,15 @@ much easier to locate:
 
 | Diagnostic (excerpt) | Source | Cause and fix |
 | --- | --- | --- |
-| `exec::task<T> cannot be co_await-ed in a coroutine that does not have an associated start scheduler.` | `exec/task.hpp` | The parent coroutine/environment has no start scheduler. Start through `sync_wait`, `when_all`, or a scope, or provide `get_start_scheduler`. |
 | `_CANNOT_RESTORE_EXECUTION_CONTEXT_AFTER_ON_` together with `_THE_CURRENT_EXECUTION_ENVIRONMENT_DOESNT_HAVE_A_SCHEDULER_` | `__on.hpp` | `on()` cannot find the home scheduler. Use `sync_wait` or provide `get_start_scheduler` in the receiver environment. |
 | `_CANNOT_RESCHEDULE_` | `exec/reschedule.hpp` | `exec::reschedule` needs the environment's `get_start_scheduler`; solve it as above. |
 | `stdexec::sync_wait() ... cannot complete successfully ... exactly one ... set_value_t(...)` | `__sync_wait.hpp` | The sender has no successful value path, usually only stopped/error. |
 | `...can complete successfully in more than one way. Use stdexec::sync_wait_with_variant()` | `__sync_wait.hpp` | Several value shapes; use `sync_wait_with_variant()`. |
 | `spawn expects a sender that cannot fail` | `__spawn.hpp` | The sender has a `set_error` signature. Handle it with `upon_error` and make the final callback `noexcept`. |
 | `_INVALID_ARGUMENT_TO_THE_FINALLY_ALGORITHM_` / `_THE_FINAL_SENDER_MUST_BE_A_SENDER_OF_VOID_` | `__finally.hpp` | The cleanup sender is not a void sender; cleanup must only have `set_value_t()`. |
+| Cannot construct `task_scheduler` from a custom scheduler / constructor constraints not satisfied | `__task_scheduler.hpp` | `schedule(sched)` still declares an error channel and violates the infallible home-scheduler constraint; normalize impossible error/stopped paths or use another scheduler. |
+| `operation state ... too large to fit in the preallocated storage of task_scheduler` | `__task_scheduler.hpp` | The home scheduler's opstate exceeds the default 72 bytes; consistently raise `STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE` in all related translation units (see 12.6.6). |
+| `sender_in<S, Env>` / completion-signature query fails | Sender constraints | The sender's scheduler, stop token, or allocator is absent from the actual environment; check the real receiver environment rather than only `sender<S>`. |
 
 ---
 
@@ -1316,6 +1566,8 @@ scope.spawn_future(sndr);                     // Scope-owned result; connect onc
 connect(sndr, rcvr) -> start(op);             // Manual; op must live through completion.
 run_loop loop; loop.get_scheduler();          // Manually driven event loop.
 co_await sndr;                                // Bare value for one value, tuple for many.
+stdexec::task<T> task();                      // This project's only task type; task is a sender.
+starts_on(home, task());                      // Choose the task's home scheduler.
 ```
 
 ### Schedulers
@@ -1331,8 +1583,10 @@ exec::timed_thread_context timer;
 exec::trampoline_scheduler trampoline;
 stdexec::get_parallel_scheduler();
 exec::asio::asio_thread_pool asio_pool{N};
-// Existing asio::io_context: wrap
-// exec::asio::asio_impl::post(ioc, exec::asio::use_sender) as schedule().
+// Existing asio::io_context: schedule() returns
+//   post(ioc, use_sender) | upon_error(noexcept) | upon_stopped(noexcept)
+// For a large task-home opstate, define STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE
+// consistently (see 12.6.2/12.6.6).
 ```
 
 ### Migration
@@ -1343,7 +1597,7 @@ sndr | on(scheduler, closure);                  // Apply closure there, then ret
 stdexec::starts_on(scheduler, sndr);             // Start there.
 sndr | continues_on(scheduler);                 // Move downstream work there.
 sndr | exec::reschedule();                      // Return to env start scheduler.
-co_await exec::reschedule_coroutine_on(scheduler); // exec::task migration.
+co_await starts_on(worker, work);              // stdexec::task visits worker, then returns home.
 ```
 
 ### Cancellation
@@ -1359,7 +1613,7 @@ exec::unless_stop_requested(sndr);
 stopped_as_optional(sndr);
 stopped_as_error(sndr, error);
 upon_stopped(sndr, handler);
-exec::when_any(a, b);                             // Race and stop losers.
+exec::when_any(a, b);                             // Cooperative race; request stop and drain losers.
 scope.request_stop();
 ```
 
@@ -1391,6 +1645,7 @@ auto wrapped = token.wrap(s);
 counting.close();
 sync_wait(counting.join());
 counting.request_stop();
+// Once an operation has been associated, close()+join() must finish before destruction.
 ```
 
 ---
@@ -1408,5 +1663,11 @@ counting.request_stop();
   C++26 in 2025.
 - **P3325**, “A Utility for Creating Execution Environments”, the source of
   `prop`, `env`, and `write_env` environment utilities.
+- **P3552R3**, [“Add a Coroutine Task Type”](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2025/p3552r3.html),
+  the source direction for scheduler-affine `task` / `affine`; this checkout's
+  `stdexec::task` follows that direction.
+- [The current C++ working-draft execution/task section](https://eel.is/c++draft/exec.task),
+  useful for checking standard namespace and semantics. The vendored checkout
+  remains authoritative for the interfaces used by these examples.
 - `third_party/stdexec/README.md`, for compiler support and integration via
   CPM, `add_subdirectory`, Conan, or a manual include path.
