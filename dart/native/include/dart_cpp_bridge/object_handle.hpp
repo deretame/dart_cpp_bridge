@@ -39,8 +39,16 @@ class ObjectHandleRegistry {
   // invalid, dropped, or belongs to a different session.
   std::shared_ptr<void> get(Handle handle) const;
 
+  // Retrieve an object only when [handle] belongs to [session_id]. Generated
+  // dispatchers must use this overload so a handle copied from another
+  // isolate cannot be used to access that isolate's object.
+  std::shared_ptr<void> get(std::uint64_t session_id, Handle handle) const;
+
   // Drop the object for a full [handle]. Idempotent.
   void drop(Handle handle);
+
+  // Drop an object only when [handle] belongs to [session_id].
+  void drop(std::uint64_t session_id, Handle handle);
 
   // Drop all objects belonging to [session_id]. Called when the session closes.
   void drop_all(std::uint64_t session_id);

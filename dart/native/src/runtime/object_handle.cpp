@@ -37,6 +37,14 @@ std::shared_ptr<void> ObjectHandleRegistry::get(Handle handle) const {
   return it->second.first;
 }
 
+std::shared_ptr<void> ObjectHandleRegistry::get(std::uint64_t session_id,
+                                                Handle handle) const {
+  if (session_id == 0 || (handle >> kSessionShift) != session_id) {
+    return nullptr;
+  }
+  return get(handle);
+}
+
 void ObjectHandleRegistry::drop(Handle handle) {
   auto store = session_store_for_handle(handle);
   if (!store) {
@@ -63,6 +71,13 @@ void ObjectHandleRegistry::drop(Handle handle) {
   } catch (...) {
     std::cerr << "[dcb] ObjectHandleRegistry::drop() failed: unknown exception" << std::endl;
   }
+}
+
+void ObjectHandleRegistry::drop(std::uint64_t session_id, Handle handle) {
+  if (session_id == 0 || (handle >> kSessionShift) != session_id) {
+    return;
+  }
+  drop(handle);
 }
 
 void ObjectHandleRegistry::drop_all(std::uint64_t session_id) {

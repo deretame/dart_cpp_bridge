@@ -1,6 +1,7 @@
 #include "dart_cpp_bridge/channel.hpp"
 #include "dart_cpp_bridge/codec.hpp"
 #include "dart_cpp_bridge/dart_fn.hpp"
+#include "dart_cpp_bridge/object_handle.hpp"
 #include "dart_cpp_bridge/runtime.hpp"
 #include "dart_cpp_bridge/session.hpp"
 #include "dart_cpp_bridge/start_with_receiver.hpp"
@@ -53,6 +54,33 @@ std::shared_ptr<std::promise<int>> g_add_done;
 void fail(const char* msg) {
   std::fprintf(stderr, "FAIL: %s\n", msg);
   std::exit(1);
+}
+
+void test_object_handle_session_isolation() {
+  using namespace dcb;
+  auto object = std::make_shared<std::int32_t>(42);
+  auto& registry = ObjectHandleRegistry::instance();
+  constexpr std::uint64_t owner_session = 0x1001;
+  constexpr std::uint64_t foreign_session = 0x1002;
+  const auto handle = registry.insert(
+      owner_session, std::static_pointer_cast<void>(object),
+      [](std::shared_ptr<void>&) {});
+
+  if (!registry.get(owner_session, handle)) {
+    fail("owner session cannot read its object handle");
+  }
+  if (registry.get(foreign_session, handle)) {
+    fail("foreign session read an object handle");
+  }
+  registry.drop(foreign_session, handle);
+  if (!registry.get(owner_session, handle)) {
+    fail("foreign session drop affected the owner handle");
+  }
+  registry.drop(owner_session, handle);
+  if (registry.get(owner_session, handle)) {
+    fail("owner handle remained after drop");
+  }
+  std::printf("object handle session isolation ok\n");
 }
 
 // Error handler for exec::start_detached chains: errors must never reach the
@@ -1165,6 +1193,7 @@ int main() {
   using namespace dcb;
   setvbuf(stdout, nullptr, _IONBF, 0);
   std::printf("smoke start\n");
+  test_object_handle_session_isolation();
   test_oneshot_cross_thread_wake();
   test_io_not_blocked_while_awaiting();
   test_dartfn_async_e2e_simulated_reply();

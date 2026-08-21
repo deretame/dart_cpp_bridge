@@ -262,8 +262,10 @@ std::uint64_t counter_zero(std::uint64_t session_id) {
 
 namespace {
 
-std::shared_ptr<Counter> counter_checked_get(std::uint64_t handle, const char* operation) {
-  auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+std::shared_ptr<Counter> counter_checked_get(std::uint64_t session_id, std::uint64_t handle,
+                                             const char* operation) {
+  auto obj = std::static_pointer_cast<Counter>(
+      ObjectHandleRegistry::instance().get(session_id, handle));
   if (!obj) {
     throw std::runtime_error(std::string("Counter handle not found or already dropped while ") + operation);
   }
@@ -271,7 +273,7 @@ std::shared_ptr<Counter> counter_checked_get(std::uint64_t handle, const char* o
 }
 
 std::uint64_t counter_duplicate(std::uint64_t session_id, std::uint64_t handle) {
-  auto obj = counter_checked_get(handle, "duplicating");
+  auto obj = counter_checked_get(session_id, handle, "duplicating");
   return counter_create(session_id, obj->value());
 }
 
@@ -282,27 +284,30 @@ std::uint64_t counter_duplicate(std::uint64_t session_id, std::uint64_t handle) 
 
 /// Read two Counter objects and return the sum of their values.
 /// Borrow semantics: both handles remain valid after the call.
-std::int32_t counter_add_values(std::uint64_t handle_a, std::uint64_t handle_b) {
-  auto a = counter_checked_get(handle_a, "addValues(a)");
-  auto b = counter_checked_get(handle_b, "addValues(b)");
+std::int32_t counter_add_values(std::uint64_t session_id, std::uint64_t handle_a,
+                                std::uint64_t handle_b) {
+  auto a = counter_checked_get(session_id, handle_a, "addValues(a)");
+  auto b = counter_checked_get(session_id, handle_b, "addValues(b)");
   return a->value() + b->value();
 }
 
 /// Transfer value from src to dst: dst += src.value(). Returns dst's new value.
 /// Both handles remain valid (borrow semantics).
-std::int32_t counter_transfer_value(std::uint64_t handle_src, std::uint64_t handle_dst) {
-  auto src = counter_checked_get(handle_src, "transferValue(src)");
-  auto dst = counter_checked_get(handle_dst, "transferValue(dst)");
+std::int32_t counter_transfer_value(std::uint64_t session_id, std::uint64_t handle_src,
+                                    std::uint64_t handle_dst) {
+  auto src = counter_checked_get(session_id, handle_src, "transferValue(src)");
+  auto dst = counter_checked_get(session_id, handle_dst, "transferValue(dst)");
   dst->increment(src->value());
   return dst->value();
 }
 
 /// Sum the values of a list of Counter handles.
 /// All handles remain valid after the call (borrow semantics).
-std::int32_t counter_sum_handles(const std::vector<std::uint64_t>& handles) {
+std::int32_t counter_sum_handles(std::uint64_t session_id,
+                                 const std::vector<std::uint64_t>& handles) {
   std::int32_t sum = 0;
   for (std::size_t i = 0; i < handles.size(); ++i) {
-    auto obj = counter_checked_get(handles[i], "sumHandles");
+    auto obj = counter_checked_get(session_id, handles[i], "sumHandles");
     sum += obj->value();
   }
   return sum;
@@ -311,7 +316,7 @@ std::int32_t counter_sum_handles(const std::vector<std::uint64_t>& handles) {
 /// Create a new Counter with the same value as the source (clone semantics).
 /// Source handle remains valid.
 std::uint64_t counter_clone_from(std::uint64_t session_id, std::uint64_t handle) {
-  auto obj = counter_checked_get(handle, "cloneFrom");
+  auto obj = counter_checked_get(session_id, handle, "cloneFrom");
   return counter_create(session_id, obj->value());
 }
 
@@ -319,29 +324,30 @@ std::uint64_t counter_clone_from(std::uint64_t session_id, std::uint64_t handle)
 /// same value. Simulates FRB move/ownership-transfer semantics:
 /// after this call the original handle is invalid.
 std::uint64_t counter_consume_and_new(std::uint64_t session_id, std::uint64_t handle) {
-  auto obj = counter_checked_get(handle, "consumeAndNew");
+  auto obj = counter_checked_get(session_id, handle, "consumeAndNew");
   const auto value = obj->value();
   obj.reset();  // release our shared_ptr before dropping
-  ObjectHandleRegistry::instance().drop(handle);
+  ObjectHandleRegistry::instance().drop(session_id, handle);
   return counter_create(session_id, value);
 }
 
 }  // namespace
 
-std::int32_t counter_increment(std::uint64_t handle, std::int32_t delta) {
-  auto obj = counter_checked_get(handle, "incrementing");
+std::int32_t counter_increment(std::uint64_t session_id, std::uint64_t handle,
+                               std::int32_t delta) {
+  auto obj = counter_checked_get(session_id, handle, "incrementing");
   obj->increment(delta);
   return obj->value();
 }
 
-std::int32_t counter_get_value(std::uint64_t handle) {
-  auto obj = counter_checked_get(handle, "reading value");
+std::int32_t counter_get_value(std::uint64_t session_id, std::uint64_t handle) {
+  auto obj = counter_checked_get(session_id, handle, "reading value");
   return obj->value();
 }
 
-std::int32_t counter_value_sync(std::uint64_t handle) {
+std::int32_t counter_value_sync(std::uint64_t session_id, std::uint64_t handle) {
   // Sync instance method: read the current value directly on the calling thread.
-  auto obj = counter_checked_get(handle, "reading value (sync)");
+  auto obj = counter_checked_get(session_id, handle, "reading value (sync)");
   return obj->value();
 }
 
@@ -660,7 +666,8 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handle = r.u64();
         auto delta = r.i32();
-        run_async<std::int32_t>(session, gen, req, method, stdexec::just(counter_increment(handle, delta)),
+        run_async<std::int32_t>(session, gen, req, method,
+                                stdexec::just(counter_increment(session_id, handle, delta)),
                                 [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
                                 "Counter::increment");
         break;
@@ -668,7 +675,8 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case MethodId::kCounterGetValue: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handle = r.u64();
-        run_async<std::int32_t>(session, gen, req, method, stdexec::just(counter_get_value(handle)),
+        run_async<std::int32_t>(session, gen, req, method,
+                                stdexec::just(counter_get_value(session_id, handle)),
                                 [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
                                 "Counter::getValue");
         break;
@@ -677,7 +685,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         auto handle = r.u64();
         try {
-          ObjectHandleRegistry::instance().drop(handle);
+          ObjectHandleRegistry::instance().drop(session_id, handle);
           ByteWriter w;
           post_ok(session, gen, req, method, w.raw());
         } catch (const std::exception& e) {
@@ -692,7 +700,8 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
         const auto fn_id = r.u64();
-        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        auto obj = std::static_pointer_cast<Counter>(
+            ObjectHandleRegistry::instance().get(session_id, handle));
         if (!obj) {
           post_err(session, gen, req, method, "Counter::callDartFn", "Counter handle not found or already dropped");
           break;
@@ -708,7 +717,8 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
         const auto sleep_ms = r.i32();
-        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        auto obj = std::static_pointer_cast<Counter>(
+            ObjectHandleRegistry::instance().get(session_id, handle));
         if (!obj) {
           post_err(session, gen, req, method, "Counter::sleepAndGet", "Counter handle not found or already dropped");
           break;
@@ -731,7 +741,8 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto handle = r.u64();
         const auto count = r.i32();
         const auto interval_ms = r.i32();
-        auto obj = std::static_pointer_cast<Counter>(ObjectHandleRegistry::instance().get(handle));
+        auto obj = std::static_pointer_cast<Counter>(
+            ObjectHandleRegistry::instance().get(session_id, handle));
         if (!obj) {
           post_err(session, gen, req, method, "Counter::incrementStream", "Counter handle not found or already dropped");
           break;
@@ -772,7 +783,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto values = r.vec<std::int32_t>([&r]() { return r.i32(); });
         run_async<std::int32_t>(
             session, gen, req, method,
-            stdexec::just(counter_checked_get(handle, "addList")) | stdexec::then(
+            stdexec::just(counter_checked_get(session_id, handle, "addList")) | stdexec::then(
                 [values = std::move(values)](std::shared_ptr<Counter> obj) {
                   obj->add_list(values);
                   return obj->value();
@@ -787,7 +798,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto value = r.opt<std::int32_t>([&r]() { return r.i32(); });
         run_async<std::int32_t>(
             session, gen, req, method,
-            stdexec::just(counter_checked_get(handle, "setValue")) | stdexec::then(
+            stdexec::just(counter_checked_get(session_id, handle, "setValue")) | stdexec::then(
                 [value](std::shared_ptr<Counter> obj) {
                   obj->set_value(value);
                   return obj->value();
@@ -817,7 +828,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto handle_b = r.u64();
         run_async<std::int32_t>(
             session, gen, req, method,
-            stdexec::just(counter_add_values(handle_a, handle_b)),
+            stdexec::just(counter_add_values(session_id, handle_a, handle_b)),
             [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
             "counterAddValues");
         break;
@@ -828,7 +839,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         const auto handle_dst = r.u64();
         run_async<std::int32_t>(
             session, gen, req, method,
-            stdexec::just(counter_transfer_value(handle_src, handle_dst)),
+            stdexec::just(counter_transfer_value(session_id, handle_src, handle_dst)),
             [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
             "counterTransferValue");
         break;
@@ -838,7 +849,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         auto handles = r.vec<std::uint64_t>([&r]() { return r.u64(); });
         run_async<std::int32_t>(
             session, gen, req, method,
-            stdexec::just(counter_sum_handles(handles)),
+            stdexec::just(counter_sum_handles(session_id, handles)),
             [](ByteWriter& w, const std::int32_t& v) { w.i32(v); },
             "counterSumHandles");
         break;
@@ -930,7 +941,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
   }
 }
 
-std::vector<std::uint8_t> dispatch_sync(std::uint64_t /*session_id*/, const std::uint8_t* data, std::size_t len) {
+std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uint8_t* data, std::size_t len) {
   auto frame = parse_frame(data, len);
   const auto req = frame.request_id;
   const auto method = frame.method_id;
@@ -945,7 +956,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t /*session_id*/, const std:
       case MethodId::kCounterValueSync: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        const auto value = counter_value_sync(handle);
+        const auto value = counter_value_sync(session_id, handle);
         ByteWriter w;
         w.i32(value);
         return make_frame(MsgType::kResponseOk, req, method, w.raw());

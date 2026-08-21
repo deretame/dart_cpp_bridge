@@ -228,7 +228,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 36494560: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto sourceHandle = r.u64();
-        auto sourceObj = dcb::ObjectHandleRegistry::instance().get(sourceHandle);
+        auto sourceObj = dcb::ObjectHandleRegistry::instance().get(session_id, sourceHandle);
         if (!sourceObj) {
           post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
           break;
@@ -1371,14 +1371,14 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1533879238: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto aHandle = r.u64();
-        auto aObj = dcb::ObjectHandleRegistry::instance().get(aHandle);
+        auto aObj = dcb::ObjectHandleRegistry::instance().get(session_id, aHandle);
         if (!aObj) {
           post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
           break;
         }
         ::demo::api::Counter& a = *static_cast<::demo::api::Counter*>(aObj.get());
         const auto bHandle = r.u64();
-        auto bObj = dcb::ObjectHandleRegistry::instance().get(bHandle);
+        auto bObj = dcb::ObjectHandleRegistry::instance().get(session_id, bHandle);
         if (!bObj) {
           post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
           break;
@@ -1738,12 +1738,13 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
         return r.str();
     });
         const auto input = r.str();
-        ByteWriter w;
-        {
-          auto out = ::demo::api::sync_dart_fn_blocking_us(callback, input);
-          w.i64(out);
-        }
-        post_ok(session, gen, req, method, w.raw());
+        run_async<std::int64_t>(
+            session, gen, req, method,
+            dcb::spawn_blocking([callback, input = std::move(input)]() {
+              return ::demo::api::sync_dart_fn_blocking_us(callback, input);
+            }),
+            [](ByteWriter& w, const auto& out) { w.i64(out); },
+            "sync_dart_fn_blocking_us");
         break;
       }
 
@@ -1838,7 +1839,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1819503097: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::value", "Counter handle not found or already dropped");
           break;
@@ -1864,7 +1865,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 190346512: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::valueSync", "Counter handle not found or already dropped");
           break;
@@ -1882,7 +1883,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1826397364: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::toString", "Counter handle not found or already dropped");
           break;
@@ -1900,7 +1901,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1534254823: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::increment", "Counter handle not found or already dropped");
           break;
@@ -1926,7 +1927,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 809700219: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::sleepAndGet", "Counter handle not found or already dropped");
           break;
@@ -1947,7 +1948,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1623490793: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::addList", "Counter handle not found or already dropped");
           break;
@@ -1973,7 +1974,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1197060560: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::setValue", "Counter handle not found or already dropped");
           break;
@@ -1999,7 +2000,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1724183534: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::duplicate", "Counter handle not found or already dropped");
           break;
@@ -2025,13 +2026,13 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 479175197: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::addTo", "Counter handle not found or already dropped");
           break;
         }
         const auto otherHandle = r.u64();
-        auto otherObj = dcb::ObjectHandleRegistry::instance().get(otherHandle);
+        auto otherObj = dcb::ObjectHandleRegistry::instance().get(session_id, otherHandle);
         if (!otherObj) {
           post_err(session, gen, req, method, "dispatch", "Counter handle not found or already dropped");
           break;
@@ -2070,7 +2071,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 1190014947: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::greetDartFn", "Counter handle not found or already dropped");
           break;
@@ -2104,7 +2105,7 @@ void dispatch_request(std::shared_ptr<Session> session, std::uint64_t session_id
       case 550621099: {
         ByteReader r(frame.payload.data(), frame.payload.size());
         const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           post_err(session, gen, req, method, "Counter::tickStream", "Counter handle not found or already dropped");
           break;
@@ -2148,7 +2149,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
   if (frame.method_id == 36494560u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto sourceHandle = r.u64();
-    auto sourceObj = dcb::ObjectHandleRegistry::instance().get(sourceHandle);
+    auto sourceObj = dcb::ObjectHandleRegistry::instance().get(session_id, sourceHandle);
     if (!sourceObj) {
       ByteWriter ew; ew.i32(1); ew.str("Counter handle not found or already dropped");
       return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());
@@ -2489,7 +2490,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
   if (frame.method_id == 190346512u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           ByteWriter ew;
           ew.i32(1);
@@ -2520,7 +2521,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
   if (frame.method_id == 1826397364u) {
     ByteReader r(frame.payload.data(), frame.payload.size());
     const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {
           ByteWriter ew;
           ew.i32(1);

@@ -788,7 +788,10 @@ final class BridgeApiImpl {
       _w.str(_res);
       return _w.takeBytes();
     };
-    final _callbackId = bridge.registerDartFn(_callbackWrapper);
+    final _callbackId = bridge.registerPersistentDartFn(
+      'demo::api::register_dart_fn::callback',
+      _callbackWrapper,
+    );
     try {
       final _payload = ByteWriter();
       _payload.u64(_callbackId);
@@ -796,7 +799,7 @@ final class BridgeApiImpl {
       final _bytes = bridge.invokeSyncMethod(registerDartFnId, _payloadBytes);
       return ByteReader(_bytes).u8() != 0;
     } finally {
-      // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.
+      // BRIDGE_PERSIST: retained until the next registration for this key.
     }
   }
 
@@ -903,7 +906,7 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
-  int syncDartFnBlockingUs(Future<String> Function(String) callback, String input) {
+  Future<int> syncDartFnBlockingUs(Future<String> Function(String) callback, String input) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -918,7 +921,7 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = bridge.invokeSyncMethod(syncDartFnBlockingUsId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(syncDartFnBlockingUsId, _payloadBytes);
       return ByteReader(_bytes).i64();
     } finally {
       bridge.unregisterDartFn(_callbackId);

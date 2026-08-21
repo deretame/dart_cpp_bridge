@@ -59,6 +59,9 @@ typedef DartFnReplyD = void Function(
 typedef FreeC = Void Function(Pointer<Void>);
 typedef FreeD = void Function(Pointer<Void>);
 
+typedef ObjectFinalizerTokenC = Pointer<Void> Function(Uint64);
+typedef ObjectFinalizerTokenD = Pointer<Void> Function(int);
+
 typedef SetVerboseErrorsC = Void Function(Uint8);
 typedef SetVerboseErrorsD = void Function(int);
 typedef SetPoolThreadsC = Void Function(Uint32);
@@ -97,6 +100,8 @@ class NativeBindings {
     required this.setVerboseErrors,
     required this.setPoolThreads,
     required this.dropObject,
+    this.objectFinalizer,
+    this.objectFinalizerToken,
   });
 
   final InitDartApiD initDartApi;
@@ -111,5 +116,10 @@ class NativeBindings {
   final FreeD free;
   final SetVerboseErrorsD setVerboseErrors;
   final SetPoolThreadsD setPoolThreads;
+  /// Legacy uint64-handle finalizer pointer. Kept for source compatibility.
   final Pointer<FinalizerFn> dropObject;
+  /// ABI-safe opaque-object finalizer callback. New generated bindings fill
+  /// both this and [objectFinalizerToken].
+  final Pointer<FinalizerFn>? objectFinalizer;
+  final ObjectFinalizerTokenD? objectFinalizerToken;
 }

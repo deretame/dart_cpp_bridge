@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0
+
+- Generated opaque-object dispatch now passes the current session when looking
+  up handles, preventing cross-isolate handle access.
+- Generated bindings use the ABI-safe native opaque-object finalizer token on
+  32-bit targets.
+- Persistent DartFn registrations use stable keys so re-registration replaces
+  the previous Dart closure.
+- The parser now rejects `BRIDGE_SYNC` functions with DartFn callbacks, except
+  for explicitly persistent registration functions.
+- Version aligned with `dart_cpp_bridge` 2.1.0.
+
 ## 2.0.0
 
 - **Breaking (generated C++ API):** async functions now use

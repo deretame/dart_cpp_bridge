@@ -137,8 +137,10 @@ BRIDGE_NORMAL
 std::string concat_dart_fn(dcb::DartFn<std::string(std::string, std::string)> callback,
                            std::string a, std::string b);
 
-// EXPERIMENT: sync + syncAwait on pool thread — measures blocking duration in µs
-BRIDGE_SYNC
+// EXPERIMENT: normal (pool) + syncAwait — measures blocking duration in µs.
+// A DartFn call cannot be BRIDGE_SYNC: the Dart isolate is blocked during a
+// synchronous FFI call and cannot service the reverse callback.
+BRIDGE_NORMAL
 std::int64_t sync_dart_fn_blocking_us(dcb::DartFn<std::string(std::string)> callback,
                                       std::string input);
 

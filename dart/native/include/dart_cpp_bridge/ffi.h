@@ -51,6 +51,14 @@ DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t o
 // Safe to call with an invalid/expired handle (no-op).
 DCB_API void dcb_drop_object(uint64_t handle);
 
+// Allocate a native finalizer token containing the complete 64-bit object
+// handle. The token is opaque to Dart and is freed by dcb_object_finalizer.
+DCB_API void* dcb_object_finalizer_token(uint64_t handle);
+
+// NativeFinalizer callback for opaque objects. The token is a heap-allocated
+// uint64_t created by dcb_object_finalizer_token.
+DCB_API void dcb_object_finalizer(void* token);
+
 DCB_API void dcb_free(void* p);
 
 // Enable/disable verbose error messages (default: enabled).
@@ -68,6 +76,11 @@ DCB_API void* dcb_session_finalizer_ptr(void);
 
 // Return the address of dcb_drop_object (see dcb_session_finalizer_ptr).
 DCB_API void* dcb_drop_object_ptr(void);
+
+// Return the address of dcb_object_finalizer. Unlike dcb_drop_object, this
+// callback has the ABI-safe void* signature required by NativeFinalizer on
+// both 32-bit and 64-bit targets.
+DCB_API void* dcb_object_finalizer_ptr(void);
 
 #ifdef __cplusplus
 }

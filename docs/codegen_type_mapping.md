@@ -591,7 +591,7 @@ class Counter extends CppOpaqueInterface {
   - 参数/返回值类型必须是当前白名单支持的类型（基础类型、枚举、容器、`std::optional<T>`、`Int128` / `UInt128`、数据类等）。
   - 阻塞上下文（线程池 / 外部线程）中使用 `async_simple::coro::syncAwait(dcb::spawn(callback(args...)))` 同步等待结果。
   - **禁止**在 io 线程上 `syncAwait`：会自死锁（协程需要 io 线程恢复，但 io 线程被阻塞）。
-  - **禁止** `BRIDGE_SYNC` + DartFn 回调：`dispatch_sync` 跑在 Dart isolate 线程上，阻塞该线程等待 Dart 回复，形成永久死锁。
+  - **禁止** `BRIDGE_SYNC` + DartFn 回调：`dispatch_sync` 跑在 Dart isolate 线程上，阻塞该线程等待 Dart 回复，形成永久死锁。生成器会拒绝这种组合；仅用于注册并标记为 `BRIDGE_PERSIST` 的同步函数例外，注册函数本身不得调用回调。
   - Dart 闭包必须在 C++ 调用期间保持注册状态；生成代码通过 `try / finally` 保证生命周期正确。
 
 - 持久化回调（`BRIDGE_PERSIST`）：

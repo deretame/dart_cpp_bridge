@@ -1,3 +1,14 @@
+## 2.1.0
+
+- Fixed opaque-object finalization on 32-bit targets by using an ABI-safe
+  native token that preserves the complete 64-bit handle.
+- Opaque-object dispatch now validates that handles belong to the current
+  isolate session.
+- Async invocation failures now complete pending Dart `Future`s with an error
+  instead of leaving them pending forever.
+- Persistent DartFn registrations replace the previous closure for the same
+  generated key, preventing unbounded per-session callback retention.
+
 ## 2.0.0
 
 - **Breaking (C++ async API):** migrated the runtime and generated async

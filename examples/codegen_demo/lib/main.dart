@@ -54,6 +54,33 @@ class _MyAppState extends State<MyApp> {
         '${fnResult == "hello, Dart device" ? "PASS" : "FAIL"}',
       );
 
+      // A DartFn call that waits synchronously in native code must run on the
+      // native pool; otherwise the Dart isolate cannot service the callback.
+      final blockingUs = await syncDartFnBlockingUs(
+        callback: (input) async => 'echo:$input',
+        input: 'device',
+      );
+      results.add(
+        'syncDartFnBlockingUs: $blockingUs '
+        '${blockingUs >= 0 ? "PASS" : "FAIL"}',
+      );
+
+      // BRIDGE_PERSIST keeps the latest callback for this registration key;
+      // registering again must replace the old Dart closure rather than grow
+      // the per-session callback map without bound.
+      final registered1 = registerDartFn(
+        callback: (input) async => 'first:$input',
+      );
+      final registered1Result = await invokeRegistered(input: 'one');
+      final registered2 = registerDartFn(
+        callback: (input) async => 'second:$input',
+      );
+      final registered2Result = await invokeRegistered(input: 'two');
+      results.add(
+        'persistentDartFn: $registered1/$registered2 '
+        '${registered1Result == "registered:first:one" && registered2Result == "registered:second:two" ? "PASS" : "FAIL"}',
+      );
+
       // Opaque class
       final counter = Counter.int32T(initialValue: 100);
       await counter.increment(delta: 23);

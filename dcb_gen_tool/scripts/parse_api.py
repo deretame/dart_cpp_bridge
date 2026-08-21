@@ -29,6 +29,7 @@ ATTR_DESTRUCTOR = "bridge::destructor"
 ATTR_DATA_CLASS = "bridge::data_class"
 ATTR_OPAQUE = "bridge::opaque"
 ATTR_TO_STRING = "bridge::to_string"
+ATTR_PERSIST = "bridge::persist"
 
 
 def _stable_method_id(qualified: str) -> int:
@@ -361,6 +362,18 @@ def _collect_classes(
                         method_kind = "normal"
                     else:
                         method_kind = "sync"  # default for constructors
+
+                    if (
+                        method_kind == "sync"
+                        and _has_dart_fn(args)
+                        and ATTR_PERSIST not in method_attrs
+                    ):
+                        violations.append(
+                            f"method `{ch.spelling}` at {_cursor_loc(ch)}: "
+                            "BRIDGE_SYNC cannot accept a DartFn callback because "
+                            "the Dart isolate is blocked during the FFI call; "
+                            "use BRIDGE_ASYNC or BRIDGE_NORMAL"
+                        )
 
                     # Strip the task wrapper; wire payload carries the inner type.
                     was_lazy = ret.get("kind") == "lazy"
@@ -928,6 +941,10 @@ def _has_stream_sink(args: list[dict[str, Any]]) -> bool:
     return any(a["type"].get("kind") == "stream_sink" for a in args)
 
 
+def _has_dart_fn(args: list[dict[str, Any]]) -> bool:
+    return any(a["type"].get("kind") == "dart_fn" for a in args)
+
+
 def _classify(attrs: set[str], ret: dict[str, Any], args: list[dict[str, Any]]) -> str | None:
     if _has_stream_sink(args):
         if not (attrs & {ATTR_SYNC, ATTR_ASYNC, ATTR_NORMAL}):
@@ -1020,21 +1037,30 @@ def _collect_functions(
                         file=sys.stderr,
                     )
                 return
+            violations: list[str] = []
+            if kind == "sync" and _has_dart_fn(args) and ATTR_PERSIST not in attrs:
+                violations.append(
+                    f"function `{cursor.spelling}` at {_cursor_loc(cursor)}: "
+                    "BRIDGE_SYNC cannot accept a DartFn callback because the "
+                    "Dart isolate is blocked during the FFI call; use "
+                    "BRIDGE_ASYNC or BRIDGE_NORMAL"
+                )
             # unwrap the coroutine task wrapper for the return payload type
             ret_payload = ret["inner"] if ret.get("kind") == "lazy" else ret
             qname = "::".join([n for n in ns_stack if n] + [cursor.spelling])
-            out.append(
-                {
-                    "name": cursor.spelling,
-                    "qualified": qname,
-                    "kind": kind,
-                    "method_id": _stable_method_id(qname),
-                    "args": args,
-                    "return": ret_payload,
-                    "attrs": sorted(attrs),
-                    "header": header_s,
-                }
-            )
+            fn = {
+                "name": cursor.spelling,
+                "qualified": qname,
+                "kind": kind,
+                "method_id": _stable_method_id(qname),
+                "args": args,
+                "return": ret_payload,
+                "attrs": sorted(attrs),
+                "header": header_s,
+            }
+            if violations:
+                fn["violations"] = violations
+            out.append(fn)
             return
 
         for ch in cursor.get_children():
@@ -1154,6 +1180,8 @@ def _validate_ir(ir: dict[str, Any]) -> list[str]:
     # --- Check top-level functions ---
     for fn in ir.get("functions", []):
         fn_ctx = f"function `{fn.get('qualified', fn.get('name', '?'))}`"
+        for v in fn.get("violations", []):
+            errors.append(f"  {v}")
         for a in fn.get("args", []):
             _check_type(a["type"], f"{fn_ctx}, arg `{a['name']}`")
         _check_type(fn.get("return", {}), f"{fn_ctx}, return type")

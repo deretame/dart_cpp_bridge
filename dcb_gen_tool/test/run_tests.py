@@ -864,6 +864,26 @@ class BRIDGE_OPAQUE Widget {
         )
 
 
+def test_df01_sync_dart_fn_rejected() -> None:
+    header = HEADER_PREAMBLE + """
+#include <dart_cpp_bridge/dart_fn.hpp>
+
+BRIDGE_SYNC
+std::int32_t unsafe_sync_callback(
+    dcb::DartFn<std::string(std::string)> callback);
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "BRIDGE_SYNC cannot accept a DartFn" in combined
+        _record(
+            "DF01: BRIDGE_SYNC DartFn rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
 # ---------------------------------------------------------------------------
 # E: Enum validation tests
 # ---------------------------------------------------------------------------
@@ -1334,6 +1354,8 @@ def main() -> int:
         test_ts03_to_string_with_args,
         test_ts04_to_string_static,
         test_ts05_to_string_async,
+        # DartFn scheduling validation
+        test_df01_sync_dart_fn_rejected,
         # Enum validation
         test_e01_enum_without_export_not_in_ir,
         test_e02_enum_wrong_underlying_type,

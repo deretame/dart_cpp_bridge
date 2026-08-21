@@ -66,6 +66,18 @@ external Pointer<Void> _dcbSessionFinalizerPtr();
 )
 external Pointer<Void> _dcbDropObjectPtr();
 
+@Native<ObjectFinalizerTokenC>(
+  assetId: _kAssetId,
+  symbol: 'dcb_object_finalizer_token',
+)
+external Pointer<Void> _dcbObjectFinalizerToken(int handle);
+
+@Native<Pointer<Void> Function()>(
+  assetId: _kAssetId,
+  symbol: 'dcb_object_finalizer_ptr',
+)
+external Pointer<Void> _dcbObjectFinalizerPtr();
+
 /// Creates the [NativeBindings] for this package's native library.
 NativeBindings createDcbBindings() {
   return NativeBindings(
@@ -82,5 +94,7 @@ NativeBindings createDcbBindings() {
     setVerboseErrors: _dcbSetVerboseErrors,
     setPoolThreads: _dcbSetPoolThreads,
     dropObject: _dcbDropObjectPtr().cast<FinalizerFn>(),
+    objectFinalizer: _dcbObjectFinalizerPtr().cast<FinalizerFn>(),
+    objectFinalizerToken: _dcbObjectFinalizerToken,
   );
 }

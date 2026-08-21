@@ -684,14 +684,14 @@ def _cpp_class_method_cases(
                     call = f"{class_q}::{m['name']}({', '.join(arg_names)})"
             else:
                 handle_block = f"""const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {{
           post_err(session, gen, req, method, "{fn_label}", "{err_msg}");
           break;
         }}
         {arg_reads}"""
                 sync_handle_block = f"""const auto handle = r.u64();
-        auto obj = dcb::ObjectHandleRegistry::instance().get(handle);
+        auto obj = dcb::ObjectHandleRegistry::instance().get(session_id, handle);
         if (!obj) {{
           ByteWriter ew;
           ew.i32(1);
@@ -1049,7 +1049,7 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
         if sync:
             return (
                 f"const auto {name}Handle = r.u64();\n"
-                f"    auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
+                f"    auto {name}Obj = dcb::ObjectHandleRegistry::instance().get(session_id, {name}Handle);\n"
                 f"    if (!{name}Obj) {{\n"
                 f"      ByteWriter ew; ew.i32(1); ew.str(\"{err_msg}\");\n"
                 f"      return make_frame(MsgType::kResponseErr, frame.request_id, frame.method_id, ew.raw());\n"
@@ -1058,7 +1058,7 @@ def _cpp_read_arg(a: dict[str, Any], *, sync: bool = False) -> str:
             )
         return (
             f"const auto {name}Handle = r.u64();\n"
-            f"        auto {name}Obj = dcb::ObjectHandleRegistry::instance().get({name}Handle);\n"
+            f"        auto {name}Obj = dcb::ObjectHandleRegistry::instance().get(session_id, {name}Handle);\n"
             f"        if (!{name}Obj) {{\n"
             f"          post_err(session, gen, req, method, \"dispatch\", \"{err_msg}\");\n"
             f"          break;\n"
@@ -2232,7 +2232,9 @@ def _iter_dart_methods(ir: dict[str, Any]):
         }
 
 
-def _dart_fn_wrapper_lines(a: dict[str, Any]) -> list[str]:
+def _dart_fn_wrapper_lines(
+    a: dict[str, Any], *, persistent_key: str | None = None
+) -> list[str]:
     """Generate Dart code that wraps a typed user closure into a binary
     callback suitable for [DartCppBridge.registerDartFn]."""
     t = a["type"]
@@ -2259,7 +2261,13 @@ def _dart_fn_wrapper_lines(a: dict[str, Any]) -> list[str]:
             lines.append(stmt)
         lines.append("  return _w.takeBytes();")
     lines.append("};")
-    lines.append(f"final _{name}Id = bridge.registerDartFn({wrapper_name});")
+    if persistent_key is None:
+        lines.append(f"final _{name}Id = bridge.registerDartFn({wrapper_name});")
+    else:
+        lines.append(
+            f"final _{name}Id = bridge.registerPersistentDartFn("
+            f"'{persistent_key}', {wrapper_name});"
+        )
     return lines
 
 
@@ -2284,13 +2292,21 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
         # ensureAlive() checks for opaque params go first.
         body_lines.extend(ensure_alive_lines)
         dart_fn_try = bool(dart_fn_args)
+        is_persist = dart_fn_try and "bridge::persist" in m["fn"].get("attrs", [])
         if dart_fn_try:
             if m["is_stream"]:
                 raise ValueError(
                     f"DartFn callbacks inside stream methods are not supported: {fn['qualified']}"
                 )
             for a in dart_fn_args:
-                body_lines.extend(_dart_fn_wrapper_lines(a))
+                persistent_key = (
+                    f"{m['fn']['qualified']}::{a['dart_name']}"
+                    if is_persist
+                    else None
+                )
+                body_lines.extend(
+                    _dart_fn_wrapper_lines(a, persistent_key=persistent_key)
+                )
             body_lines.append("try {")
             indent = "  "
         else:
@@ -2360,10 +2376,9 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                     body_lines.append(f"{indent}return {read_ret};")
 
         if dart_fn_try:
-            is_persist = "bridge::persist" in m["fn"].get("attrs", [])
             if is_persist:
                 body_lines.append("} finally {")
-                body_lines.append("  // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.")
+                body_lines.append("  // BRIDGE_PERSIST: retained until the next registration for this key.")
                 body_lines.append("}")
             else:
                 body_lines.append("} finally {")
@@ -2483,13 +2498,21 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
             # ensureAlive() checks for self and opaque params go first.
             body_lines.extend(ensure_alive_lines_cls)
             dart_fn_try = bool(dart_fn_args)
+            is_persist = dart_fn_try and "bridge::persist" in method.get("attrs", [])
             if dart_fn_try:
                 if is_stream:
                     raise ValueError(
                         f"DartFn callbacks inside stream methods are not supported: {cls['qualified']}::{method['name']}"
                     )
                 for a in dart_fn_args:
-                    body_lines.extend(_dart_fn_wrapper_lines(a))
+                    persistent_key = (
+                        f"{method['qualified']}::{a['dart_name']}"
+                        if is_persist
+                        else None
+                    )
+                    body_lines.extend(
+                        _dart_fn_wrapper_lines(a, persistent_key=persistent_key)
+                    )
                 body_lines.append("try {")
                 indent = "  "
             else:
@@ -2544,10 +2567,9 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
                         body_lines.append(f"{indent}return {read_ret};")
 
             if dart_fn_try:
-                is_persist = "bridge::persist" in method.get("attrs", [])
                 if is_persist:
                     body_lines.append("} finally {")
-                    body_lines.append("  // BRIDGE_PERSIST: callback not unregistered; caller manages lifecycle.")
+                    body_lines.append("  // BRIDGE_PERSIST: retained until the next registration for this key.")
                     body_lines.append("}")
                 else:
                     body_lines.append("} finally {")
@@ -2711,6 +2733,18 @@ external Pointer<Void> _dcbSessionFinalizerPtr();
 )
 external Pointer<Void> _dcbDropObjectPtr();
 
+@Native<ObjectFinalizerTokenC>(
+  assetId: _kAssetId,
+  symbol: 'dcb_object_finalizer_token',
+)
+external Pointer<Void> _dcbObjectFinalizerToken(int handle);
+
+@Native<Pointer<Void> Function()>(
+  assetId: _kAssetId,
+  symbol: 'dcb_object_finalizer_ptr',
+)
+external Pointer<Void> _dcbObjectFinalizerPtr();
+
 /// Creates the [NativeBindings] for this package\'s native library.
 NativeBindings createDcbBindings() {{
   return NativeBindings(
@@ -2727,6 +2761,8 @@ NativeBindings createDcbBindings() {{
     setVerboseErrors: _dcbSetVerboseErrors,
     setPoolThreads: _dcbSetPoolThreads,
     dropObject: _dcbDropObjectPtr().cast<FinalizerFn>(),
+    objectFinalizer: _dcbObjectFinalizerPtr().cast<FinalizerFn>(),
+    objectFinalizerToken: _dcbObjectFinalizerToken,
   );
 }}
 '''

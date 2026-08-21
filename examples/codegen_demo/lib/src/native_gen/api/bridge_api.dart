@@ -164,7 +164,7 @@ Future<int> sumSet({required Set<int> values}) => BridgeApiImpl.instance.sumSet(
 
 Future<Rect> boundingBox({required List<Point> points}) => BridgeApiImpl.instance.boundingBox(points);
 
-int syncDartFnBlockingUs({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.syncDartFnBlockingUs(callback, input);
+Future<int> syncDartFnBlockingUs({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.syncDartFnBlockingUs(callback, input);
 
 Future<BigInt> echoI128({required BigInt value}) => BridgeApiImpl.instance.echoI128(value);
 

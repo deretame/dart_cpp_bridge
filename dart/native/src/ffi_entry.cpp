@@ -110,6 +110,27 @@ uint8_t* dup_bytes(const std::vector<std::uint8_t>& v, size_t* out_len) {
 
 void ensure_post_hook() { dcb::Runtime::instance().set_dart_post(&dart_post_impl, nullptr); }
 
+void post_async_error(const std::shared_ptr<dcb::Session>& session,
+                      const std::uint8_t* req, std::size_t req_len,
+                      const char* message) {
+  if (!session || req == nullptr) {
+    return;
+  }
+  try {
+    const auto frame = dcb::parse_frame(req, req_len);
+    dcb::ByteWriter w;
+    w.i32(1);
+    w.str(message);
+    session->try_post(
+        session->generation(),
+        dcb::make_frame(dcb::MsgType::kResponseErr, frame.request_id,
+                        frame.method_id, w.raw()));
+  } catch (...) {
+    // The request may itself be malformed or the runtime may already be
+    // stopping. There is no safe request id to answer with in that case.
+  }
+}
+
 }  // namespace
 
 extern "C" {
@@ -182,21 +203,39 @@ DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t
 
 DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t req_len) {
   auto session = dcb::SessionRegistry::instance().get(session_id);
-  if (!session || !dcb::Runtime::instance().running()) {
+  if (!session) {
     return;
   }
-  std::vector<std::uint8_t> copy(req, req + req_len);
-  // std::exec style: launch a dispatch chain on the io scheduler
-  // (starts-on io; dispatch runs on the io thread, errors are swallowed).
-  // noexcept: dispatch_request fully guards its body (see dispatch impls), so
-  // the chain never completes with set_error — the exec::start_detached
-  // contract (no error completion) holds.
-  auto sndr = stdexec::just() | stdexec::then(
-      [session = std::move(session), copy = std::move(copy), session_id]() noexcept {
-        dcb::dispatch_request_fn()(session, session_id, copy.data(), copy.size());
-      });
-  auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(), std::move(sndr));
-  exec::start_detached(std::move(chain));
+  if (!dcb::Runtime::instance().running()) {
+    post_async_error(session, req, req_len, "runtime stopped");
+    return;
+  }
+  try {
+    const auto dispatch = dcb::dispatch_request_fn();
+    std::vector<std::uint8_t> copy(req, req + req_len);
+    // std::exec style: launch a dispatch chain on the io scheduler
+    // (starts-on io; dispatch runs on the io thread). Dispatch implementations
+    // catch business exceptions at the wire boundary; this extra guard keeps a
+    // bad registration or third-party dispatcher from terminating the process.
+    auto sndr = stdexec::just() | stdexec::then(
+        [session = std::move(session), copy = std::move(copy), session_id,
+         dispatch]() noexcept {
+          try {
+            dispatch(session, session_id, copy.data(), copy.size());
+          } catch (const std::exception& e) {
+            post_async_error(session, copy.data(), copy.size(), e.what());
+          } catch (...) {
+            post_async_error(session, copy.data(), copy.size(), "async dispatch failed");
+          }
+        });
+    auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                                    std::move(sndr));
+    exec::start_detached(std::move(chain));
+  } catch (const std::exception& e) {
+    post_async_error(session, req, req_len, e.what());
+  } catch (...) {
+    post_async_error(session, req, req_len, "async invoke failed");
+  }
 }
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {
@@ -230,6 +269,28 @@ DCB_API void dcb_drop_object(uint64_t handle) {
   }
 }
 
+DCB_API void* dcb_object_finalizer_token(uint64_t handle) {
+  try {
+    return new uint64_t(handle);
+  } catch (...) {
+    return nullptr;
+  }
+}
+
+DCB_API void dcb_object_finalizer(void* token) {
+  try {
+    if (token == nullptr) {
+      return;
+    }
+    const std::unique_ptr<uint64_t> handle(static_cast<uint64_t*>(token));
+    dcb::ObjectHandleRegistry::instance().drop(*handle);
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_object_finalizer failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_object_finalizer failed: unknown exception" << std::endl;
+  }
+}
+
 DCB_API void dcb_free(void* p) { std::free(p); }
 
 DCB_API void dcb_set_verbose_errors(uint8_t enabled) {
@@ -246,6 +307,10 @@ DCB_API void* dcb_session_finalizer_ptr(void) {
 
 DCB_API void* dcb_drop_object_ptr(void) {
   return reinterpret_cast<void*>(&dcb_drop_object);
+}
+
+DCB_API void* dcb_object_finalizer_ptr(void) {
+  return reinterpret_cast<void*>(&dcb_object_finalizer);
 }
 
 }  // extern "C"

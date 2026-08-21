@@ -2450,7 +2450,7 @@
     {
       "name": "sync_dart_fn_blocking_us",
       "qualified": "demo::api::sync_dart_fn_blocking_us",
-      "kind": "sync",
+      "kind": "normal",
       "method_id": 2026522337,
       "args": [
         {

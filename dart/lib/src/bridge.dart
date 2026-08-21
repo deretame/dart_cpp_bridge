@@ -59,6 +59,7 @@ final class DartCppBridge implements Finalizable {
   /// Values are binary-level callbacks: C++ sends raw arg bytes, we send back
   /// raw result bytes. Codegen wraps typed user closures around this layer.
   final Map<int, Future<Uint8List> Function(Uint8List)> _dartFns = {};
+  final Map<String, int> _persistentDartFns = {};
   int _nextId = 1;
   int _nextFnId = 1;
   StreamSubscription<dynamic>? _sub;
@@ -67,6 +68,7 @@ final class DartCppBridge implements Finalizable {
 
   static DartCppBridge? _instance;
   static NativeFinalizer? _sharedFinalizer;
+  static NativeFinalizer? _sharedObjectFinalizer;
   static NativeFinalizer get _nativeFinalizer => _sharedFinalizer!;
 
   /// The bridge instance for this isolate, if [init] has been called.
@@ -85,6 +87,10 @@ final class DartCppBridge implements Finalizable {
 
     final b = bindings;
     _sharedFinalizer ??= NativeFinalizer(b.sessionFinalizer);
+    final objectFinalizer = b.objectFinalizer;
+    if (objectFinalizer != null) {
+      _sharedObjectFinalizer ??= NativeFinalizer(objectFinalizer);
+    }
 
     final rc = b.initDartApi(NativeApi.initializeApiDLData);
     if (rc != 0) {
@@ -138,6 +144,7 @@ final class DartCppBridge implements Finalizable {
     }
     _streams.clear();
     _dartFns.clear();
+    _persistentDartFns.clear();
 
     _detachFinalizer();
     _b.sessionClose(_sessionId);
@@ -271,9 +278,28 @@ final class DartCppBridge implements Finalizable {
     return id;
   }
 
+  /// Register a persistent callback under a stable generated key.
+  ///
+  /// Re-registering the same key replaces the Dart closure retained by this
+  /// isolate. The native side is expected to replace its corresponding
+  /// persistent callback as well.
+  int registerPersistentDartFn(
+    String key,
+    Future<Uint8List> Function(Uint8List) fn,
+  ) {
+    final previous = _persistentDartFns[key];
+    if (previous != null) {
+      _dartFns.remove(previous);
+    }
+    final id = registerDartFn(fn);
+    _persistentDartFns[key] = id;
+    return id;
+  }
+
   /// Unregister a callback previously registered with [registerDartFn].
   void unregisterDartFn(int id) {
     _dartFns.remove(id);
+    _persistentDartFns.removeWhere((_, value) => value == id);
   }
 
   /// Open a typed stream from C++.
@@ -296,12 +322,18 @@ final class DartCppBridge implements Finalizable {
       },
     );
     _streams[id] = _StreamSubscription<T>(controller, decodeItem);
-    _invokeAsyncRaw(makeFrame(
-      type: MsgType.request,
-      requestId: id,
-      methodId: methodId,
-      payload: payload,
-    ));
+    try {
+      _invokeAsyncRaw(makeFrame(
+        type: MsgType.request,
+        requestId: id,
+        methodId: methodId,
+        payload: payload,
+      ));
+    } catch (error, stackTrace) {
+      _streams.remove(id);
+      controller.addError(error, stackTrace);
+      controller.close();
+    }
     return controller.stream;
   }
 
@@ -328,16 +360,14 @@ final class DartCppBridge implements Finalizable {
     if (controller != null) {
       _streams[id] = _StreamSubscription<T>(controller, decodeItem);
     }
-    final c = Completer<Uint8List>();
-    _pending[id] = c;
-    _invokeAsyncRaw(makeFrame(
+    final future = _invokeAsyncRequest(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: methodId,
       payload: payload.takeBytes(),
-    ));
+    ), id);
     try {
-      return await c.future;
+      return await future;
     } finally {
       _streams.remove(id);
     }
@@ -452,16 +482,14 @@ final class DartCppBridge implements Finalizable {
   ///
   /// Completes with the response **payload** on ok, or errors with [StateError].
   Future<Uint8List> invokeAsyncMethod(int methodId, [Uint8List? payload]) async {
+    _ensureAlive();
     final id = _allocId();
-    final c = Completer<Uint8List>();
-    _pending[id] = c;
-    _invokeAsyncRaw(makeFrame(
+    return _invokeAsyncRequest(makeFrame(
       type: MsgType.request,
       requestId: id,
       methodId: methodId,
       payload: payload ?? Uint8List(0),
-    ));
-    return c.future;
+    ), id);
   }
 
   /// Send raw pre-encoded bytes to the native side and await a response.
@@ -470,10 +498,20 @@ final class DartCppBridge implements Finalizable {
   /// For malformed frames where C++ responds with `request_id = 0`, pass
   /// `responseId: 0`.
   Future<Uint8List> invokeRawAsync(Uint8List rawBytes, {int? responseId}) {
+    _ensureAlive();
     final id = responseId ?? _allocId();
+    return _invokeAsyncRequest(rawBytes, id);
+  }
+
+  Future<Uint8List> _invokeAsyncRequest(Uint8List req, int id) {
     final c = Completer<Uint8List>();
     _pending[id] = c;
-    _invokeAsyncRaw(rawBytes);
+    try {
+      _invokeAsyncRaw(req);
+    } catch (error, stackTrace) {
+      _pending.remove(id);
+      c.completeError(error, stackTrace);
+    }
     return c.future;
   }
 }
@@ -486,13 +524,12 @@ abstract base class CppOpaqueInterface implements Finalizable {
   CppOpaqueInterface({required DartCppBridge bridge, required int handle})
       : _bridge = bridge,
         _handle = handle {
-    _finalizer = NativeFinalizer(_bridge._b.dropObject);
     _attachFinalizer();
   }
 
   final DartCppBridge _bridge;
   final int _handle;
-  late final NativeFinalizer _finalizer;
+  late final Pointer<Void> _finalizerToken;
   bool _disposed = false;
 
   /// The native handle. Exposed so generated wrapper classes can pass handles
@@ -507,9 +544,24 @@ abstract base class CppOpaqueInterface implements Finalizable {
   void ensureAlive() => _ensureAlive();
 
   void _attachFinalizer() {
-    _finalizer.attach(
+    // Keep the complete uint64 handle in native memory. Passing the handle
+    // itself through Pointer<Void> truncates it on 32-bit targets and also
+    // mismatches dcb_drop_object's uint64_t callback ABI.
+    final tokenFactory = _bridge._b.objectFinalizerToken;
+    final objectFinalizer = DartCppBridge._sharedObjectFinalizer;
+    if (tokenFactory == null || objectFinalizer == null) {
+      throw StateError(
+        'native bindings do not provide the ABI-safe opaque-object finalizer',
+      );
+    }
+    _finalizerToken = tokenFactory(_handle);
+    if (_finalizerToken == nullptr) {
+      throw StateError('failed to allocate opaque-object finalizer token');
+    }
+    objectFinalizer.attach(
       this,
-      Pointer.fromAddress(_handle).cast<Void>(),
+      _finalizerToken,
+      detach: this,
       externalSize: 64,
     );
   }
@@ -525,10 +577,10 @@ abstract base class CppOpaqueInterface implements Finalizable {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    _finalizer.detach(this);
-    _bridge._b.dropObject
-        .asFunction<void Function(Pointer<Void>)>()(
-          Pointer.fromAddress(_handle).cast<Void>(),
-        );
+    final objectFinalizer = DartCppBridge._sharedObjectFinalizer!;
+    objectFinalizer.detach(this);
+    _bridge._b.objectFinalizer!.asFunction<void Function(Pointer<Void>)>()(
+      _finalizerToken,
+    );
   }
 }
