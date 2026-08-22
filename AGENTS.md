@@ -88,7 +88,7 @@ and both demo fixtures were migrated in the same sweep.
 `dart_cpp_bridge` is a released **Dart ↔ C++20** interoperability bridge inspired by [Flutter Rust Bridge](https://cjycode.com/flutter_rust_bridge/). It lets existing C/C++ code expose sync, async, stream, and reverse Dart-closure APIs to Dart/Flutter with a runtime that feels like FRB.
 
 - **Status**: Released / stable. `dart_cpp_bridge` (dart package) and
-  `dcb_gen_tool` are both published at **1.3.0**. Public APIs are stable;
+  `dcb_gen_tool` are both published at **2.1.0**. Public APIs are stable;
   avoid breaking changes (see [Compatibility policy](#compatibility-policy)).
 - **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines/senders and a single-threaded Asio event loop.
 - **Repository**: <https://github.com/deretame/dart_cpp_bridge>
@@ -110,7 +110,7 @@ Core principle: **business C++ code is written as normal functions or one corout
 
 ## Compatibility policy
 
-The project is in a **released / stable state** (1.3.0). Treat every public
+The project is in a **released / stable state** (2.1.0). Treat every public
 surface as part of the compatibility contract:
 
 - Dart package public API (`dart/lib/`) and generated code contracts;
@@ -161,7 +161,7 @@ internals and the documented coroutine-type switch.
 | Dart side    | Dart 3 + `package:ffi`                                       | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                              |
 | Dart SDK     | `>= 3.10.0` (dev: puro)                                       | `dart/pubspec.yaml` floor; develop with `puro dart` / `puro flutter`. Native Assets hooks need 3.10+; link hooks need 3.13+.               |
 | Codegen      | Pinned Python 3.13.13 + libclang-ng 22.1.4.2                 | Downloaded from remote, cached, hash-verified. No host Python/LLVM.                             |
-| Build        | CMake 3.24+                                                  | FetchContent pulls Asio + patches stdexec; both optional (`DCB_FETCH_ASIO=OFF` / `DCB_FETCH_STDEXEC=OFF` for upstream-provided deps) and standalone asio can be replaced by boost (`DCB_USE_BOOST_ASIO=ON`). Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
+| Build        | CMake 3.25+                                                  | FetchContent pulls Asio + patches stdexec; both optional (`DCB_FETCH_ASIO=OFF` / `DCB_FETCH_STDEXEC=OFF` for upstream-provided deps) and standalone asio can be replaced by boost (`DCB_USE_BOOST_ASIO=ON`). Native Assets hooks are wired (`hook/build.dart`, `hook/link.dart`). |
 
 ## Directory structure
 
@@ -253,7 +253,7 @@ Prefer **puro** for all Dart/Flutter tooling in this repo:
 
 ### Requirements
 
-- CMake >= 3.24
+- CMake >= 3.25
 - C++20 compiler (MSVC 2019+, GCC 10+, Clang 12+)
 - Dart SDK >= 3.10.0 (use `puro dart` / `puro flutter`, see [Development environment](#development-environment))
 - Git (for FetchContent)
@@ -416,7 +416,11 @@ cd dart
 dart test
 ```
 
-Covers sync/async/stream/DartFn, error paths, bad frames, multi-isolate sessions, and lifecycle. ~38 tests. Set `DCB_LIBRARY_PATH` if the auto-detection fails.
+Covers codec/error paths, hook configuration, and a runtime session smoke when
+`DCB_LIBRARY_PATH` points at a built native library (17 tests in the package
+suite). Full sync/async/stream/DartFn/integration coverage remains in the
+fixture integration tests; set `DCB_LIBRARY_PATH` when running the package
+runtime smoke.
 
 ### Codegen demo tests
 
@@ -456,7 +460,7 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
   `on()` returns to the *start* scheduler, it does not stay on the target;
   mark trailing lambdas `noexcept` before `stdexec::spawn`/`start_detached`;
   scopes must be drained (`on_empty()`/`join()`) before destruction.
-- **Stable API — no breaking changes**: packages are released (`1.3.0`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
+- **Stable API — no breaking changes**: packages are released (`2.1.0`). Do not change `method_id`s, wire format, public signatures, or generated-code contracts without a major version bump. Prefer additive extensions such as `_ex` variants and optional callbacks (see [Compatibility policy](#compatibility-policy)).
 
 ## Where to find more
 

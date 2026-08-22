@@ -3,7 +3,7 @@ title: Foreign Runtime Integration (v2)
 description: How a libuv or other external event loop provides a stdexec scheduler
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 v2 no longer has `ForeignExecutor` or `foreign_runtime.h`. External event
 loops integrate by exposing a normal stdexec scheduler. The old v1 registration
 API is kept only in the v1 source archive.

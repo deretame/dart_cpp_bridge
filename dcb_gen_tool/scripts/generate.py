@@ -12,7 +12,7 @@ if str(_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS))
 
 from config_util import resolve_config  # noqa: E402
-from parse_api import parse_project, _stable_method_id  # noqa: E402
+from parse_api import parse_project, _dart_identifier, _stable_method_id  # noqa: E402
 
 
 def _lower_first(s: str) -> str:
@@ -306,6 +306,48 @@ def _cpp_type(t: dict[str, Any]) -> str:
             q = "::" + q
         return q
     raise ValueError(f"unsupported C++ type: {t}")
+
+
+def _opaque_type_qualified(t: dict[str, Any]) -> str:
+    q = t["qualified"]
+    return q if q.startswith("::") else "::" + q
+
+
+def _is_opaque_arg(arg: dict[str, Any]) -> bool:
+    return arg["type"].get("kind") == "opaque_class"
+
+
+def _coroutine_param(arg: dict[str, Any]) -> str:
+    """Pass opaque arguments by owning handle, never by value.
+
+    Opaque instances are stored in the per-session object registry and may be
+    deliberately non-copyable.  A coroutine frame must own the shared handle;
+    passing a reference would also leave a dangling reference after dispatch
+    returns.
+    """
+    if _is_opaque_arg(arg):
+        return f"std::shared_ptr<void> {arg['name']}Obj"
+    return f"{_cpp_type(arg['type'])} {arg['name']}"
+
+
+def _coroutine_arg(arg: dict[str, Any]) -> str:
+    if _is_opaque_arg(arg):
+        return f"std::move({arg['name']}Obj)"
+    if arg["type"].get("kind") == "string":
+        return f"std::move({arg['name']})"
+    return arg["name"]
+
+
+def _opaque_aliases(args: list[dict[str, Any]], indent: str = "    ") -> str:
+    lines = []
+    for arg in args:
+        if not _is_opaque_arg(arg):
+            continue
+        q = _opaque_type_qualified(arg["type"])
+        lines.append(
+            f"{indent}auto& {arg['name']} = *static_cast<{q}*>({arg['name']}Obj.get());"
+        )
+    return "\n".join(lines)
 
 
 def _cpp_write_item(t: dict[str, Any], expr: str) -> str:
@@ -634,7 +676,7 @@ def _cpp_class_method_cases(
         {arg_reads}
         auto obj = {ctor_call};
         {counter_var}.increment(session_id);
-        const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {{
+        const auto handle = dcb::ObjectHandleRegistry::instance().insert_for_session(session_id, obj, [session_id](std::shared_ptr<void>&) {{
           {counter_var}.decrement(session_id);
         }});
         ByteWriter w;
@@ -649,7 +691,7 @@ def _cpp_class_method_cases(
     try {{
       auto obj = {ctor_call};
       {counter_var}.increment(session_id);
-      const auto handle = dcb::ObjectHandleRegistry::instance().insert(session_id, obj, [session_id](std::shared_ptr<void>&) {{
+      const auto handle = dcb::ObjectHandleRegistry::instance().insert_for_session(session_id, obj, [session_id](std::shared_ptr<void>&) {{
         {counter_var}.decrement(session_id);
       }});
       ByteWriter w;
@@ -759,12 +801,8 @@ def _cpp_class_method_cases(
                     fn_params.append("std::shared_ptr<void> obj")
                     fn_args.append("obj")
                 for a in non_sink_args:
-                    fn_params.append(f"{_cpp_type(a['type'])} {a['name']}")
-                    fn_args.append(
-                        f"std::move({a['name']})"
-                        if a["type"].get("kind") == "string"
-                        else a["name"]
-                    )
+                    fn_params.append(_coroutine_param(a))
+                    fn_args.append(_coroutine_arg(a))
                 # Optional sink setup (read stream_id, create sink if non-zero).
                 # Mirrors the free-function async branch.
                 sink_setup = ""
@@ -790,7 +828,9 @@ def _cpp_class_method_cases(
                     fn_args.append("std::move(sink)")
                 call_stmt = f"co_await {call};" if ret.get("kind") == "void" else f"auto out = co_await {call};"
                 fn_label = f"{class_name}::{m['name']}"
+                aliases = _opaque_aliases(non_sink_args)
                 iife = f"""[]( {', '.join(fn_params)}) -> stdexec::task<void> {{
+{aliases}
   try {{
     {call_stmt}
     ByteWriter w;
@@ -815,9 +855,15 @@ def _cpp_class_method_cases(
 
             elif kind == "normal":
                 move_caps = ", ".join(
-                    f"{a['name']} = std::move({a['name']})"
-                    if a["type"].get("kind") == "string"
-                    else a["name"]
+                    (
+                        f"{a['name']}Obj = std::move({a['name']}Obj)"
+                        if _is_opaque_arg(a)
+                        else (
+                            f"{a['name']} = std::move({a['name']})"
+                            if a["type"].get("kind") == "string"
+                            else a["name"]
+                        )
+                    )
                     for a in non_sink_args
                 )
                 obj_cap = "" if is_static else "handle, obj"
@@ -828,14 +874,16 @@ def _cpp_class_method_cases(
                 if ret_kind == "void":
                     ret_cpp = "dcb::Unit"
                     call_stmt = f"{call};"
-                    encode_lambda = "[](ByteWriter& w, const dcb::Unit&) { (void)w; }"
+                    encode_lambda = "[](ByteWriter& w, dcb::Unit&&) { (void)w; }"
                 else:
                     ret_cpp = _cpp_type(ret)
                     call_stmt = f"return {call};"
-                    encode_lambda = f"""[](ByteWriter& w, const auto& out) {{
+                    encode_capture = "[session_id]" if ret_kind == "opaque_class" else "[]"
+                    encode_lambda = f"""{encode_capture}(ByteWriter& w, auto&& out) {{
               {write}
             }}"""
                 fn_label = f"{class_name}::{m['name']}"
+                aliases = _opaque_aliases(non_sink_args, indent="              ")
                 body = f"""
       case {mid}: {{
         ByteReader r(frame.payload.data(), frame.payload.size());
@@ -843,6 +891,7 @@ def _cpp_class_method_cases(
         run_async<{ret_cpp}>(
             session, gen, req, method,
             dcb::spawn_blocking([{lambda_caps}]() {{
+              {aliases}
               {call_stmt}
             }}),
             {encode_lambda},
@@ -1146,7 +1195,7 @@ def _cpp_write_ret(t: dict[str, Any], expr: str) -> str:
         return (
             f"{{ auto __obj = std::make_shared<{q}>(std::move({expr})); "
             f"{counter_var}.increment(session_id); "
-            f"const auto __handle = dcb::ObjectHandleRegistry::instance().insert("
+            f"const auto __handle = dcb::ObjectHandleRegistry::instance().insert_for_session("
             f"session_id, __obj, [session_id](std::shared_ptr<void>&) {{ "
             f"{counter_var}.decrement(session_id); }}); "
             f"w.u64(__handle); }}"
@@ -1767,12 +1816,8 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             for a in fn["args"]:
                 if a["type"].get("kind") == "stream_sink" or _is_optional_sink_arg(a):
                     continue
-                fn_params.append(f"{_cpp_type(a['type'])} {a['name']}")
-                fn_args.append(
-                    f"std::move({a['name']})"
-                    if a["type"].get("kind") == "string"
-                    else a["name"]
-                )
+                fn_params.append(_coroutine_param(a))
+                fn_args.append(_coroutine_arg(a))
 
             # Optional sink setup (read stream_id, create sink if non-zero).
             sink_setup = ""
@@ -1798,7 +1843,16 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             else:
                 call_stmt = f"auto out = co_await {call};"
 
+            aliases = _opaque_aliases(
+                [
+                    a
+                    for a in fn["args"]
+                    if a["type"].get("kind") != "stream_sink"
+                    and not _is_optional_sink_arg(a)
+                ]
+            )
             iife = f"""[]( {', '.join(fn_params)}) -> stdexec::task<void> {{
+{aliases}
   try {{
     {call_stmt}
     ByteWriter w;
@@ -1824,9 +1878,15 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 
         elif kind == "normal":
             move_caps = ", ".join(
-                f"{a['name']} = std::move({a['name']})"
-                if a["type"].get("kind") == "string"
-                else a["name"]
+                (
+                    f"{a['name']}Obj = std::move({a['name']}Obj)"
+                    if _is_opaque_arg(a)
+                    else (
+                        f"{a['name']} = std::move({a['name']})"
+                        if a["type"].get("kind") == "string"
+                        else a["name"]
+                    )
+                )
                 for a in fn["args"]
                 if a["type"].get("kind") != "stream_sink" and not _is_optional_sink_arg(a)
             )
@@ -1857,13 +1917,24 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
             if ret_kind == "void":
                 ret_cpp = "dcb::Unit"
                 call_stmt = f"{call};"
-                encode_lambda = "[](ByteWriter& w, const dcb::Unit&) { (void)w; }"
+                encode_lambda = "[](ByteWriter& w, dcb::Unit&&) { (void)w; }"
             else:
                 ret_cpp = _cpp_type(fn["return"])
                 call_stmt = f"return {call};"
-                encode_lambda = f"""[](ByteWriter& w, const auto& out) {{
+                encode_capture = "[session_id]" if ret_kind == "opaque_class" else "[]"
+                encode_lambda = f"""{encode_capture}(ByteWriter& w, auto&& out) {{
               {write}
             }}"""
+
+            aliases = _opaque_aliases(
+                [
+                    a
+                    for a in fn["args"]
+                    if a["type"].get("kind") != "stream_sink"
+                    and not _is_optional_sink_arg(a)
+                ],
+                indent="              ",
+            )
 
             body = f"""
       case {mid}: {{
@@ -1872,6 +1943,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
         run_async<{ret_cpp}>(
             session, gen, req, method,
             dcb::spawn_blocking([{lambda_caps}]() {{
+              {aliases}
               {call_stmt}
             }}),
             {encode_lambda},
@@ -2026,12 +2098,12 @@ struct DispatchReceiver {{
   std::uint64_t req{{0}};
   std::uint32_t method{{0}};
   std::string name;
-  std::function<void(ByteWriter&, const T&)> encode;
+  std::function<void(ByteWriter&, T&&)> encode;
 
   void set_value(T v) && noexcept {{
     try {{
       ByteWriter w;
-      encode(w, v);
+      encode(w, std::move(v));
       post_ok(session, gen, req, method, w.raw());
     }} catch (const std::exception& e) {{
       post_err(session, gen, req, method, name.c_str(), e.what());
@@ -2069,7 +2141,7 @@ void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen,
                                     std::forward<S>(sndr));
     auto rcvr = DispatchReceiver<T>{{
         session, gen, req, method, name,
-        std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))}};
+        std::function<void(ByteWriter&, T&&)>(std::forward<Encode>(encode))}};
     dcb::start_with_receiver(std::move(chain), std::move(rcvr));
   }} catch (const std::exception& e) {{
     post_err(session, gen, req, method, name, e.what());
@@ -2137,17 +2209,11 @@ const bool _dcb_registered = [] {{
 
 def _dart_param_name(cpp_name: str) -> str:
     """Convert a C++ parameter/argument name to Dart camelCase."""
-    if "_" not in cpp_name:
-        return cpp_name
-    parts = cpp_name.split("_")
-    return parts[0] + "".join(p.title() for p in parts[1:])
+    return _dart_identifier(cpp_name)
 
 
 def _dart_fn_name(cpp_name: str) -> str:
-    if "_" not in cpp_name:
-        return cpp_name
-    parts = cpp_name.split("_")
-    return parts[0] + "".join(p.title() for p in parts[1:])
+    return _dart_identifier(cpp_name)
 
 
 def _iter_dart_methods(ir: dict[str, Any]):
@@ -2296,7 +2362,7 @@ def generate_dart_impl(ir: dict[str, Any], impl_class: str = "BridgeApiImpl", ap
         if dart_fn_try:
             if m["is_stream"]:
                 raise ValueError(
-                    f"DartFn callbacks inside stream methods are not supported: {fn['qualified']}"
+                    f"DartFn callbacks inside stream methods are not supported: {m['fn']['qualified']}"
                 )
             for a in dart_fn_args:
                 persistent_key = (

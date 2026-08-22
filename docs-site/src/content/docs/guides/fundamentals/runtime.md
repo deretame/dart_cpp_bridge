@@ -1,11 +1,11 @@
 ---
 title: Built-in Runtime (v2)
-description: The Asio and stdexec runtime used by the v2 development line
+description: The Asio and stdexec runtime used by the released v2.1.0 line
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 This page describes the current stdexec runtime. Published v1 applications use
-the [v1 async-simple archive](/dart_cpp_bridge/guides/fundamentals/async-simple/)
+the [v1 async-simple archive](/dart_cpp_bridge/v1/guides/fundamentals/async-simple/)
 instead.
 :::
 

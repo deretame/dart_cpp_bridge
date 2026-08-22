@@ -3,7 +3,7 @@ title: Lifecycle Management
 description: Lifecycle of Runtime, Session, Opaque objects, and NativeFinalizer
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 The runtime scheduler in this page is `IoContextScheduler`; `AsioExecutor` is a
 v1 name. Session, Dart, and finalizer lifecycle rules are shared by both versions.
 :::

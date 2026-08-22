@@ -11,14 +11,25 @@
 #define DCB_WRITER_INIT_CAP 64
 
 static void dcb_writer_ensure(dcb_writer* w, uint32_t extra) {
+  if (!w || w->len > UINT32_MAX - extra) return;
   uint32_t need = w->len + extra;
   if (need <= w->cap) return;
   uint32_t new_cap = w->cap ? w->cap : DCB_WRITER_INIT_CAP;
-  while (new_cap < need) new_cap *= 2;
+  while (new_cap < need) {
+    if (new_cap > UINT32_MAX / 2) {
+      new_cap = UINT32_MAX;
+      break;
+    }
+    new_cap *= 2;
+  }
   uint8_t* p = (uint8_t*)realloc(w->data, new_cap);
   if (!p) return;  // OOM: silently fail (write is lost, len is not updated)
   w->data = p;
   w->cap = new_cap;
+}
+
+static int dcb_writer_has_room(const dcb_writer* w, uint32_t extra) {
+  return w && w->len <= w->cap && extra <= w->cap - w->len;
 }
 
 void dcb_writer_init(dcb_writer* w) {
@@ -36,7 +47,7 @@ void dcb_writer_free(dcb_writer* w) {
 
 void dcb_write_u32(dcb_writer* w, uint32_t v) {
   dcb_writer_ensure(w, 4);
-  if (w->len + 4 > w->cap) return;
+  if (!dcb_writer_has_room(w, 4)) return;
   w->data[w->len + 0] = (uint8_t)(v);
   w->data[w->len + 1] = (uint8_t)(v >> 8);
   w->data[w->len + 2] = (uint8_t)(v >> 16);
@@ -46,7 +57,7 @@ void dcb_write_u32(dcb_writer* w, uint32_t v) {
 
 void dcb_write_u64(dcb_writer* w, uint64_t v) {
   dcb_writer_ensure(w, 8);
-  if (w->len + 8 > w->cap) return;
+  if (!dcb_writer_has_room(w, 8)) return;
   for (int i = 0; i < 8; ++i) {
     w->data[w->len + i] = (uint8_t)(v >> (8 * i));
   }
@@ -70,7 +81,7 @@ void dcb_write_f64(dcb_writer* w, double v) {
 static void dcb_write_raw(dcb_writer* w, const void* p, uint32_t n) {
   if (n == 0) return;
   dcb_writer_ensure(w, n);
-  if (w->len + n > w->cap) return;
+  if (!dcb_writer_has_room(w, n)) return;
   memcpy(w->data + w->len, p, n);
   w->len += n;
 }
@@ -94,7 +105,7 @@ int dcb_reader_valid(const dcb_reader* r) {
 }
 
 uint32_t dcb_read_u32(dcb_reader* r) {
-  if (r->error || r->pos + 4 > r->len) {
+  if (r->error || r->pos > r->len || 4 > r->len - r->pos) {
     r->error = 1;
     return 0;
   }
@@ -107,7 +118,7 @@ uint32_t dcb_read_u32(dcb_reader* r) {
 }
 
 uint64_t dcb_read_u64(dcb_reader* r) {
-  if (r->error || r->pos + 8 > r->len) {
+  if (r->error || r->pos > r->len || 8 > r->len - r->pos) {
     r->error = 1;
     return 0;
   }
@@ -136,7 +147,7 @@ double dcb_read_f64(dcb_reader* r) {
 
 const uint8_t* dcb_read_len_bytes(dcb_reader* r, uint32_t* out_len) {
   uint32_t n = dcb_read_u32(r);
-  if (r->error || r->pos + n > r->len) {
+  if (r->error || r->pos > r->len || n > r->len - r->pos) {
     r->error = 1;
     if (out_len) *out_len = 0;
     return NULL;

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 The async return type parsed by the current generator is `stdexec::task<T>`.
 The published v1 generator used async-simple; keep the generator and runtime
 revision matched.

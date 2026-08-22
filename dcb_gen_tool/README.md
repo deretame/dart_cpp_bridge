@@ -13,19 +13,20 @@ sync, async, stream, and DartFn reverse calls, plus data classes and opaque clas
 - Generates the Dart API (`lib/src/native_gen/`) and C++ wire dispatch (`native/generated/`)
 - Downloads a pinned, hash-verified Python + libclang toolchain on first run — no host Python or LLVM needed
 
-## v2.0.0 migration notice
+## Runtime migration notice
 
-Version 2.0.0 targets the stdexec-based runtime and includes a broad migration
-from the v1 async-simple model. The generated Dart API, wire format, file layout,
+This tool targets the stdexec-based runtime and includes a broad migration from
+the legacy async-simple model. The generated Dart API, wire format, file layout,
 and method-ID contracts remain stable, but generated C++ async code is not
-source-compatible with v1.
+source-compatible with the legacy runtime.
 
-When upgrading a project:
+When migrating a project:
 
-- Keep `dcb_gen_tool` and `dart_cpp_bridge` on the same `2.0.0` version line.
+- Keep `dcb_gen_tool` and `dart_cpp_bridge` on the same release line.
 - Change async C++ declarations to return `stdexec::task<T>` or another
   stdexec sender, then regenerate all bindings.
-- Do not mix v1 generated files or async-simple headers with v2 runtime headers.
+- Do not mix legacy generated files or async-simple headers with current runtime
+  headers.
 - Generated async dispatch uses a zero-capture coroutine IIFE; pass state as
   parameters rather than capturing local variables in lazy coroutines.
 - Run generation through the Dart CLI (`dart run bin/dcb_gen_tool.dart generate`)

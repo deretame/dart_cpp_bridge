@@ -274,7 +274,7 @@
             "kind": "opaque_class",
             "name": "Counter",
             "qualified": "demo::api::Counter",
-            "loc": "counter.h:42"
+            "loc": "counter.h:47"
           }
         },
         {
@@ -295,7 +295,7 @@
                 "kind": "opaque_class",
                 "name": "Counter",
                 "qualified": "demo::api::Counter",
-                "loc": "counter.h:45"
+                "loc": "counter.h:50"
               },
               "default_value": null,
               "dart_name": "other"
@@ -1781,6 +1781,30 @@
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },
     {
+      "name": "makeCounter",
+      "qualified": "demo::api::makeCounter",
+      "kind": "normal",
+      "method_id": 1270341715,
+      "args": [
+        {
+          "name": "initialValue",
+          "type": {
+            "kind": "i32"
+          },
+          "default_value": null
+        }
+      ],
+      "return": {
+        "kind": "opaque_class",
+        "name": "Counter",
+        "qualified": "demo::api::Counter"
+      },
+      "attrs": [
+        "bridge::normal"
+      ],
+      "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\counter.h"
+    },
+    {
       "name": "echo_bytes",
       "qualified": "demo::api::echo_bytes",
       "kind": "sync",
@@ -2481,7 +2505,7 @@
         "kind": "i64"
       },
       "attrs": [
-        "bridge::sync"
+        "bridge::normal"
       ],
       "header": "D:\\Project\\flutter\\dart_cpp_bridge\\examples\\codegen_demo\\native\\api\\bridge_api.h"
     },

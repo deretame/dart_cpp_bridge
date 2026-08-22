@@ -1,10 +1,10 @@
 ---
 title: Versioned Documentation
-description: Choose the v1 released documentation or the v2 stdexec development documentation
+description: Choose the v1 released documentation or the v2.1.0 stdexec documentation
 ---
 
 `dart_cpp_bridge` currently has two C++ async generations. This site uses the
-Starlight Versions plugin to keep the current v2 documentation at the root and
+Starlight Versions plugin to keep the current v2.1.0 documentation at the root and
 the released v1 documentation under `/v1/`.
 
 ## Choose a version
@@ -12,7 +12,7 @@ the released v1 documentation under `/v1/`.
 | Version | Status | Async C++ model | URL |
 | --- | --- | --- | --- |
 | [v1 — released 1.x](/dart_cpp_bridge/v1/) | Published; current package line is 1.3.0 | async-simple `Lazy` / `Executor` | `/v1/` |
-| v2 — development | Next major version; not published yet | stdexec senders / schedulers / `stdexec::task` | `/` (current) |
+| v2.1.0 — released | Published current line | stdexec senders / schedulers / `stdexec::task` | `/` (current) |
 
 Use the version selector in the site header to switch versions. The unmarked
 guides at the site root describe v2. The archived v1 pages remain available for

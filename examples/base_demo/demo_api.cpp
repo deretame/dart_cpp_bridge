@@ -242,7 +242,7 @@ class Counter {
 
 std::uint64_t counter_create(std::uint64_t session_id, std::int32_t initial_value) {
   auto obj = std::make_shared<Counter>(initial_value);
-  return ObjectHandleRegistry::instance().insert(
+  return ObjectHandleRegistry::instance().insert_for_session(
       session_id,
       std::static_pointer_cast<void>(obj),
       [](std::shared_ptr<void>&) {
@@ -393,12 +393,12 @@ struct DispatchReceiver {
   std::uint64_t req{0};
   std::uint32_t method{0};
   std::string name;
-  std::function<void(ByteWriter&, const T&)> encode;
+  std::function<void(ByteWriter&, T&&)> encode;
 
   void set_value(T v) && noexcept {
     try {
       ByteWriter w;
-      encode(w, v);
+      encode(w, std::move(v));
       post_ok(session, gen, req, method, w.raw());
     } catch (const std::exception& e) {
       post_err(session, gen, req, method, name.c_str(), e.what());
@@ -434,7 +434,7 @@ void run_async(const std::shared_ptr<Session>& session, std::uint64_t gen, std::
                                     std::forward<S>(sndr));
     auto rcvr = DispatchReceiver<T>{
         session, gen, req, method, name,
-        std::function<void(ByteWriter&, const T&)>(std::forward<Encode>(encode))};
+        std::function<void(ByteWriter&, T&&)>(std::forward<Encode>(encode))};
     dcb::start_with_receiver(std::move(chain), std::move(rcvr));
   } catch (const std::exception& e) {
     post_err(session, gen, req, method, name, e.what());
@@ -989,9 +989,7 @@ std::vector<std::uint8_t> dispatch_sync(std::uint64_t session_id, const std::uin
 // C bridge (cbridge.h / cbridge_wait.hpp) hand-written tests.
 //
 // These exercise the pure C ABI directly — not the wire dispatch above — and
-// are invoked from dcb_smoke (smoke_main.cpp, `test_cbridge_api()`). The C
-// side of each op completes on a worker thread after the awaiting coroutine
-// has parked, mimicking real "C library calls dcb_async_complete later" usage.
+// are invoked from dcb_smoke (smoke_main.cpp, `test_cbridge_api()`).
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -1059,11 +1057,8 @@ void test_cbridge_api() {
   Runtime::instance().start();
 
   // 1) dcb_async_complete from another thread -> payload delivered to async_wait.
-  //    Timing contract: the awaiting coroutine must take the receiver (park) BEFORE
-  //    the C side completes — dcb_async_complete moves the sender out of the registry,
-  //    so a complete-before-await loses the value (async_wait -> "invalid op_id").
-  //    The 50ms sleep is a smoke-test heuristic (io-thread coroutine startup is
-  //    sub-millisecond on an idle runtime), not a handshake.
+  //    The 50ms sleep only makes this test exercise the parked-receiver path;
+  //    completion before async_wait() is covered by the next test.
   {
     const auto op = dcb_async_create();
     std::thread([op] {
@@ -1085,7 +1080,28 @@ void test_cbridge_api() {
     std::printf("cbridge complete ok\n");
   }
 
-  // 2) dcb_async_fail -> async_wait throws the given error message.
+  // 2) A legal C API may complete synchronously before the coroutine reaches
+  // async_wait(). The result must remain available until the receiver is
+  // taken, rather than being erased with the sender.
+  {
+    const auto op = dcb_async_create();
+    const std::uint8_t payload[] = {0x44, 0x55};
+    dcb_async_complete(op, payload, sizeof(payload));
+    auto res = sync_wait(
+        stdexec::starts_on(*Runtime::instance().io_scheduler(), async_wait(op)));
+    if (!res) {
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge synchronous complete: async_wait returned nullopt");
+    }
+    const auto& data = std::get<0>(*res);
+    if (data.size() != 2 || data[0] != 0x44 || data[1] != 0x55) {
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge synchronous complete: wrong payload");
+    }
+    std::printf("cbridge synchronous complete ok\n");
+  }
+
+  // 3) dcb_async_fail -> async_wait throws the given error message.
   {
     const auto op = dcb_async_create();
     std::thread([op] {
@@ -1106,7 +1122,25 @@ void test_cbridge_api() {
     std::printf("cbridge fail ok\n");
   }
 
-  // 3) dcb_async_cancel -> async_wait throws "operation cancelled".
+  // 4) Failure can also arrive before async_wait() starts.
+  {
+    const auto op = dcb_async_create();
+    dcb_async_fail(op, "sync boom");
+    try {
+      (void)sync_wait(
+          stdexec::starts_on(*Runtime::instance().io_scheduler(), async_wait(op)));
+      Runtime::instance().stop();
+      cbridge_test_fail("cbridge synchronous fail: expected exception");
+    } catch (const std::runtime_error& e) {
+      if (std::string(e.what()) != "sync boom") {
+        Runtime::instance().stop();
+        cbridge_test_fail("cbridge synchronous fail: wrong error message");
+      }
+    }
+    std::printf("cbridge synchronous fail ok\n");
+  }
+
+  // 5) dcb_async_cancel -> async_wait throws "operation cancelled".
   {
     const auto op = dcb_async_create();
     std::thread([op] {
@@ -1127,7 +1161,7 @@ void test_cbridge_api() {
     std::printf("cbridge cancel ok\n");
   }
 
-  // 4) invalid op id -> async_wait throws "invalid op_id".
+  // 6) invalid op id -> async_wait throws "invalid op_id".
   {
     try {
       (void)sync_wait(stdexec::starts_on(*Runtime::instance().io_scheduler(),
@@ -1143,7 +1177,7 @@ void test_cbridge_api() {
     std::printf("cbridge invalid op ok\n");
   }
 
-  // 5) dcb_invoke_dart_fn: success and failure, callback fires on the io thread
+  // 7) dcb_invoke_dart_fn: success and failure, callback fires on the io thread
   //    with the reply payload (fn_id 42 -> success, 43 -> failure).
   {
     const auto sid = SessionRegistry::instance().open(/*reply_port=*/77);

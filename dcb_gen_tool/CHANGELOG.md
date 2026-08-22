@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.1
+
+- Added fail-fast validation for Dart name collisions and stable method-ID
+  collisions.
+- Opaque arguments in generated async and normal dispatch now preserve
+  move-only C++ types through session-owned handles.
+- Version aligned with `dart_cpp_bridge` 2.1.1.
+
 ## 2.1.0
 
 - Generated opaque-object dispatch now passes the current session when looking

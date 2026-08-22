@@ -9,6 +9,10 @@
 
 namespace dcb {
 
+// Implemented by cbridge.cpp. Runtime stop must cancel DartFn calls that were
+// accepted but whose io scheduler operation has not started yet.
+void cancel_pending_dart_fn_calls() noexcept;
+
 Runtime& Runtime::instance() {
   static Runtime rt;
   return rt;
@@ -19,44 +23,90 @@ Runtime::~Runtime() { stop(); }
 
 void Runtime::start() {
   std::lock_guard<std::mutex> lock(start_stop_mu_);
-  bool expected = false;
-  if (!started_.compare_exchange_strong(expected, true)) {
+  if (lifecycle_ == Lifecycle::kRunning) {
     return;
   }
+  if (lifecycle_ == Lifecycle::kStopping) {
+    throw std::logic_error("runtime is stopping");
+  }
+  lifecycle_ = Lifecycle::kStarting;
   io_.restart();
-  pool_ = std::make_unique<exec::asio::asio_thread_pool>(pool_threads_);
-  guard_ = std::make_unique<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>>(
-      DCB_ASIO_NS::make_work_guard(io_));
-  io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
+  try {
+    pool_ = std::make_unique<exec::asio::asio_thread_pool>(pool_threads_);
+    guard_ = std::make_unique<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>>(
+        DCB_ASIO_NS::make_work_guard(io_));
+    io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
+    // Publish running only after every required resource exists. A failed
+    // start therefore cannot leave later callers in a fake running state.
+    started_.store(true, std::memory_order_release);
+    lifecycle_ = Lifecycle::kRunning;
+  } catch (...) {
+    if (guard_) {
+      guard_->reset();
+      guard_.reset();
+    }
+    io_.stop();
+    if (io_thread_ && io_thread_->joinable()) {
+      io_thread_->join();
+    }
+    io_thread_.reset();
+    pool_.reset();
+    started_.store(false, std::memory_order_release);
+    lifecycle_ = Lifecycle::kStopped;
+    throw;
+  }
   // current_thread_is_io() (used by sync_wait's deadlock guard) queries
   // asio's running_in_this_thread() and needs no bookkeeping here.
 }
 
 void Runtime::stop() {
-  std::lock_guard<std::mutex> lock(start_stop_mu_);
-  if (!started_.exchange(false)) {
+  std::unique_lock<std::mutex> lock(start_stop_mu_);
+  if (lifecycle_ == Lifecycle::kStopped || lifecycle_ == Lifecycle::kStopping) {
     return;
   }
-  if (guard_) {
-    guard_->reset();
-    guard_.reset();
+  if (io_thread_ && io_thread_->get_id() == std::this_thread::get_id()) {
+    // Reject self-stop before changing lifecycle state or taking ownership of
+    // resources. The public shutdown contract requires the main isolate.
+    throw std::logic_error("Runtime::stop() cannot run on the io thread");
+  }
+  lifecycle_ = Lifecycle::kStopping;
+  started_.store(false, std::memory_order_release);
+
+  // Take ownership of runtime resources while protected by the gate.
+  // Everything below can run user code or block and must not hold the gate:
+  // shutdown callbacks may re-enter the public API.
+  auto guard = std::move(guard_);
+  auto io_thread = std::move(io_thread_);
+  auto pool = std::move(pool_);
+  lock.unlock();
+
+  cancel_pending_dart_fn_calls();
+  if (guard) {
+    guard->reset();
   }
   io_.stop();
-  if (io_thread_ && io_thread_->joinable()) {
-    io_thread_->join();
+  if (io_thread && io_thread->joinable()) {
+    io_thread->join();
   }
-  io_thread_.reset();
-  if (pool_) {
-    // asio_thread_pool's destructor stops and joins the pool threads.
-    pool_.reset();
-  }
+  // asio_thread_pool's destructor stops and joins the pool threads.
+  pool.reset();
+
+  lock.lock();
+  lifecycle_ = Lifecycle::kStopped;
 }
 
 void Session::dispose() {
-  generation_.fetch_add(1, std::memory_order_acq_rel);
   std::vector<CompleteFn> abandoned;
   {
     std::lock_guard lock(dart_fn_mu_);
+    if (disposed_.exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    // Invalidate the generation and detach pending callbacks in the same
+    // critical section as DartFn registration. Otherwise a caller can pass
+    // the alive() check, be pre-empted by dispose(), and insert a callback
+    // after the pending map has been cleared.
+    generation_.fetch_add(1, std::memory_order_acq_rel);
     for (auto& kv : dart_fn_pending_) {
       abandoned.push_back(std::move(kv.second));
     }
@@ -106,6 +156,9 @@ co::oneshot::Receiver<DartFnReply> Session::invoke_dart_fn_async(
   const auto reply_id = next_dart_fn_reply_.fetch_add(1, std::memory_order_relaxed);
   {
     std::lock_guard lock(dart_fn_mu_);
+    if (!alive(generation)) {
+      throw std::runtime_error("DartFn: session generation expired");
+    }
     dart_fn_pending_.emplace(reply_id, [tx_holder](DartFnReply r) {
       // Any thread (typically Dart FFI). The reply is moved back onto the io
       // thread by the continues_on in dartfn_sender (see dart_fn.hpp).

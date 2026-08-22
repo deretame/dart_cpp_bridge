@@ -3,7 +3,7 @@ title: Known Issues
 description: Known limitations and common pitfalls in the current version
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 This list follows the current stdexec implementation. Historical async-simple
 issues are kept in the v1 archive and are not current API guidance.
 :::

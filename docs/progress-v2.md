@@ -1,8 +1,8 @@
 # v2 当前实现进度
 
-> 更新日期：2026-08-14  
-> 当前开发线：`feat/stdexec-migration`  
-> 发布状态：v2 尚未发布；Dart 包和 `dcb_gen_tool` 的发布版本仍为 1.3.0
+> 更新日期：2026-08-22
+> 当前版本线：`v2.1.0`
+> 发布状态：v2.1.0 已发布；Dart 包和 `dcb_gen_tool` 版本保持同步
 
 ## 总览
 
@@ -16,7 +16,7 @@
 | Generated dispatch | ✅ | 零捕获 coroutine IIFE，参数进入 coroutine frame |
 | Foreign runtime | ✅ | 外部 loop 通过普通 stdexec scheduler 接入 |
 | Dart API / C ABI / wire | ✅ | 继续遵守 v1 稳定兼容性契约 |
-| v2 package release | ⏳ | 等待迁移验证、文档和发布准备完成 |
+| v2 package release | ✅ | `dart_cpp_bridge` 与 `dcb_gen_tool` 2.1.0 已发布 |
 
 ## v1 → v2 迁移边界
 
@@ -61,9 +61,9 @@ pnpm build
 
 ## 发布前清单
 
-1. 保持 `dart/pubspec.yaml` 与 `dcb_gen_tool/pubspec.yaml` 版本同步，并为
-   v2 编写对应 changelog。
+1. 保持 `dart/pubspec.yaml` 与 `dcb_gen_tool/pubspec.yaml` 版本同步，并继续
+   为每个版本编写对应 changelog。
 2. 用 v2 工具重新生成两个 fixture，确认生成物不再包含 v1 async-simple 类型。
 3. 在 Windows、Linux、macOS、Android、iOS 上验证 Native Assets hook。
 4. 复核 C ABI、wire protocol、method ID 和生成文件名没有破坏性变化。
-5. 将文档站默认版本从“v2 development”切换为正式 v2 release。
+5. 文档站默认版本已经切换为正式 v2 release；后续版本更新时继续同步版本说明。

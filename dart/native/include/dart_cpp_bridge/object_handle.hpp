@@ -9,6 +9,8 @@
 
 namespace dcb {
 
+class Session;
+
 // Per-Session object handle registry for exported C++ classes.
 // Used by generated code to keep opaque C++ objects alive across Dart FFI calls.
 //
@@ -34,6 +36,12 @@ class ObjectHandleRegistry {
   // function is invoked when the handle is explicitly dropped (usually from
   // Dart NativeFinalizer) or when the session is closed.
   Handle insert(std::uint64_t session_id, std::shared_ptr<void> obj, DropFn drop);
+
+  // Insert only while the current Session is alive. The registration is
+  // serialized with Session::dispose(), so a late async result cannot create
+  // a new store after drop_all() has run.
+  Handle insert_for_session(std::uint64_t session_id, std::shared_ptr<void> obj,
+                            DropFn drop);
 
   // Retrieve the object for a full [handle], or nullptr if the handle is
   // invalid, dropped, or belongs to a different session.

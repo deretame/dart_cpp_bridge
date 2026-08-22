@@ -3,7 +3,7 @@ title: 外部运行时集成（v2）
 description: 让 libuv 或其他外部事件循环提供 stdexec scheduler
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 v2 不再提供 `ForeignExecutor` 或 `foreign_runtime.h`。外部事件循环应
 通过普通 stdexec scheduler 接入。旧 v1 注册 API 只保留在 v1 源码归档中。
 :::

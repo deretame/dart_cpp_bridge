@@ -3,7 +3,7 @@ title: 异常与错误处理
 description: C++ 异常如何透传到 Dart，以及 Dart 闭包异常如何回到 C++
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 异步示例使用 `stdexec::task`。wire 错误帧和 Dart `StateError` 行为与 v1 共用。
 :::
 

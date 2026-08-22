@@ -1,4 +1,4 @@
-# Foreign Runtime Demo — 把 libuv 封装为 stdexec scheduler（v2）
+# Foreign Runtime Demo — 把 libuv 封装为 stdexec scheduler
 
 演示非 asio 事件循环（libuv）如何以 **stdexec scheduler** 的身份接入 bridge 的
 sender 世界。这是旧 `ForeignExecutor` + `foreign_runtime.h` C 注册 API

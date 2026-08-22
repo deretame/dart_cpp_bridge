@@ -8,6 +8,8 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import unquote
+from urllib.request import url2pathname
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,107 @@ ATTR_DATA_CLASS = "bridge::data_class"
 ATTR_OPAQUE = "bridge::opaque"
 ATTR_TO_STRING = "bridge::to_string"
 ATTR_PERSIST = "bridge::persist"
+
+# Dart language keywords plus the contextual keywords that cannot be used
+# safely as generated named parameters or declarations. A trailing underscore
+# keeps the generated API legal while the collision validator below catches a
+# C++ declaration that already maps to the same escaped name.
+_DART_KEYWORDS = {
+    "abstract",
+    "as",
+    "assert",
+    "async",
+    "await",
+    "base",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "continue",
+    "covariant",
+    "default",
+    "deferred",
+    "do",
+    "dynamic",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "extension",
+    "external",
+    "factory",
+    "false",
+    "final",
+    "finally",
+    "for",
+    "Function",
+    "get",
+    "hide",
+    "if",
+    "implements",
+    "import",
+    "in",
+    "interface",
+    "is",
+    "late",
+    "library",
+    "macro",
+    "mixin",
+    "new",
+    "null",
+    "on",
+    "operator",
+    "part",
+    "required",
+    "rethrow",
+    "return",
+    "sealed",
+    "set",
+    "show",
+    "static",
+    "super",
+    "switch",
+    "sync",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "typedef",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield",
+}
+
+
+def _dart_identifier(cpp_name: str) -> str:
+    """Convert an exported C++ identifier to a legal Dart identifier."""
+    parts = cpp_name.split("_")
+    if not parts:
+        return cpp_name
+    name = parts[0] + "".join(p.title() for p in parts[1:])
+    return f"{name}_" if name in _DART_KEYWORDS else name
+
+
+def _lower_first(name: str) -> str:
+    return name[:1].lower() + name[1:] if name else name
+
+
+def _cap_first(name: str) -> str:
+    return name[:1].upper() + name[1:] if name else name
+
+
+def _class_impl_method_name(cls: dict[str, Any], method: dict[str, Any]) -> str:
+    """Mirror the generated BridgeApiImpl name for an opaque-class method."""
+    prefix = _lower_first(cls["name"])
+    if method["kind"] == "constructor":
+        if not method["args"]:
+            return f"{prefix}New"
+        first = _dart_identifier(method["args"][0]["name"])
+        return f"{prefix}NewWith{_cap_first(first)}"
+    return f"{prefix}{_cap_first(_dart_identifier(method["name"]))}"
 
 
 def _stable_method_id(qualified: str) -> int:
@@ -79,7 +182,9 @@ def _enum_constant_name_to_dart(name: str) -> str:
     parts = name.split("_")
     if not parts:
         return name
-    return parts[0][0].lower() + parts[0][1:] + "".join(p.title() for p in parts[1:])
+    return _dart_identifier(
+        parts[0][0].lower() + parts[0][1:] + "".join(p.title() for p in parts[1:])
+    )
 
 
 def _collect_enums(tu, header_path: Path) -> list[dict[str, Any]]:
@@ -1245,11 +1350,11 @@ def _auto_include_dcb_native(cfg: dict[str, Any], project_root: Path) -> None:
             continue
         root_uri = pkg.get("rootUri", "")
         if root_uri.startswith("file://"):
-            # file:///C:/... or file:///home/...
-            if sys.platform == "win32":
-                pkg_path = Path(root_uri[len("file:///"):])
-            else:
-                pkg_path = Path(root_uri[len("file://"):])
+            # Decode file:///C:/... and file:///home/... with the platform
+            # URL-to-path conversion instead of treating the URI as a raw
+            # filesystem string. This preserves spaces, '#', and non-ASCII
+            # package roots emitted by package_config.json.
+            pkg_path = Path(url2pathname(unquote(root_uri)))
         else:
             # Relative to .dart_tool/
             pkg_path = (pkg_config.parent / root_uri).resolve()
@@ -1270,6 +1375,146 @@ def _auto_include_dcb_native(cfg: dict[str, Any], project_root: Path) -> None:
             if resolved not in existing:
                 cfg["include_paths"].append(native_inc)
         break
+
+
+def _validate_dart_names(ir: dict[str, Any]) -> None:
+    """Reject declarations that would collapse to the same Dart name.
+
+    C++ permits spelling pairs such as ``foo_bar`` and ``fooBar`` in one API;
+    the generated Dart surface does not. Detect the collision before writing
+    any generated files so a successful codegen run always produces a usable
+    Dart API.
+    """
+
+    errors: list[str] = []
+
+    def add(scope: str, dart_name: str, cpp_name: str, loc: str | None = None) -> None:
+        entry = (scope, dart_name)
+        previous = seen.get(entry)
+        where = f" at {loc}" if loc else ""
+        if previous is not None:
+            previous_name, previous_loc = previous
+            previous_where = f" at {previous_loc}" if previous_loc else ""
+            errors.append(
+                f"  scope `{scope}`: C++ `{cpp_name}`{where} and "
+                f"`{previous_name}`{previous_where} both generate Dart `{dart_name}`"
+            )
+        else:
+            seen[entry] = (cpp_name, loc)
+
+    seen: dict[tuple[str, str], tuple[str, str | None]] = {}
+
+    # These members are emitted by the generated singleton implementation.
+    generated_impl_members = {
+        "bridge",
+        "instance",
+        "initSingleton",
+        "disposeSingleton",
+    }
+    for name in generated_impl_members:
+        seen[("BridgeApiImpl members", name)] = ("<generated>", None)
+
+    for enum in ir.get("enums", []):
+        add("Dart types", enum["name"], enum["qualified"], enum.get("loc"))
+        value_scope = f"enum {enum['name']}"
+        for value in enum.get("values", []):
+            add(value_scope, value["dart_name"], value["name"], enum.get("loc"))
+
+    for cls in ir.get("classes", []):
+        add("Dart types", cls["name"], cls["qualified"], cls.get("loc"))
+        class_name = cls["name"]
+        field_scope = f"class {class_name} fields"
+        for field in cls.get("fields", []):
+            add(field_scope, _dart_identifier(field["name"]), field["name"], field.get("loc"))
+
+        wrapper_scope = f"class {class_name} wrapper members"
+        for method in cls.get("methods", []):
+            method_loc = method.get("loc")
+            if method["kind"] == "constructor":
+                args = [a for a in method.get("args", []) if a["type"].get("kind") != "stream_sink"]
+                if not args:
+                    factory_name = class_name
+                else:
+                    first = _dart_identifier(args[0]["name"])
+                    factory_name = f"{class_name}.with{_cap_first(first)}"
+                add(wrapper_scope, factory_name, method["name"], method_loc)
+            else:
+                add(wrapper_scope, _dart_identifier(method["name"]), method["name"], method_loc)
+
+            arg_scope = f"{class_name}.{method['name']} parameters"
+            for arg in method.get("args", []):
+                add(arg_scope, _dart_identifier(arg["name"]), arg["name"], arg.get("loc"))
+
+            add(
+                "BridgeApiImpl members",
+                _class_impl_method_name(cls, method),
+                f"{class_name}::{method['name']}",
+                method_loc,
+            )
+
+    for fn in ir.get("functions", []):
+        fn_name = _dart_identifier(fn["name"])
+        add("top-level functions", fn_name, fn["qualified"], fn.get("loc"))
+        add("BridgeApiImpl members", fn_name, fn["qualified"], fn.get("loc"))
+        arg_scope = f"{fn['qualified']} parameters"
+        for arg in fn.get("args", []):
+            add(arg_scope, _dart_identifier(arg["name"]), arg["name"], arg.get("loc"))
+
+    if errors:
+        msg_lines = [
+            "",
+            "=" * 60,
+            "CODEGEN DART NAME ERROR: generated names are not unique",
+            "=" * 60,
+            "",
+            *errors,
+            "",
+            "Rename the C++ declarations or adjust the generated-name policy, then re-run codegen.",
+            "=" * 60,
+        ]
+        raise SystemExit("\n".join(msg_lines))
+
+
+def _validate_method_id_collisions(ir: dict[str, Any]) -> None:
+    """Reject distinct wire methods that hash to the same stable ID."""
+    by_id: dict[int, list[str]] = {}
+
+    for fn in ir.get("functions", []):
+        by_id.setdefault(fn["method_id"], []).append(fn["qualified"])
+
+    for cls in ir.get("classes", []):
+        for method in cls.get("methods", []):
+            display = method.get("displayname") or method.get("name", "?")
+            source = f"{cls['qualified']}::{display}"
+            if method.get("generated"):
+                source += " (generated)"
+            by_id.setdefault(method["method_id"], []).append(source)
+
+    collisions = [
+        (method_id, sources) for method_id, sources in by_id.items() if len(sources) > 1
+    ]
+    if not collisions:
+        return
+
+    msg_lines = [
+        "",
+        "=" * 60,
+        "CODEGEN METHOD ID ERROR: stable method ID collision",
+        "=" * 60,
+        "",
+    ]
+    for method_id, sources in sorted(collisions):
+        msg_lines.append(f"  method_id {method_id} is shared by:")
+        msg_lines.extend(f"    - {source}" for source in sources)
+    msg_lines.extend(
+        [
+            "",
+            "Rename one declaration (or provide a future explicit stable ID) and re-run codegen.",
+            "Automatic re-numbering is intentionally not used because method IDs are a wire contract.",
+            "=" * 60,
+        ]
+    )
+    raise SystemExit("\n".join(msg_lines))
 
 
 def parse_project(config_path: Path) -> dict[str, Any]:
@@ -1475,6 +1720,9 @@ def parse_project(config_path: Path) -> dict[str, Any]:
         "functions": sorted(by_q.values(), key=lambda f: f["method_id"]),
         "diagnostics": diags_out,
     }
+
+    _validate_method_id_collisions(ir)
+    _validate_dart_names(ir)
 
     # --- Type whitelist validation ---
     type_errors = _validate_ir(ir)

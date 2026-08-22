@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 `BRIDGE_ASYNC` 在 v2 头文件中返回 `stdexec::task<T>` 或其他受支持的
 stdexec sender。已发布的 v1 项目复制异步声明前，请先查看[版本说明](/dart_cpp_bridge/zh-cn/versions/)。
 :::

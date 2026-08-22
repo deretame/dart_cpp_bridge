@@ -33,7 +33,22 @@ class Session {
   void dispose();
 
   bool alive(std::uint64_t gen) const {
-    return generation_.load(std::memory_order_acquire) == gen;
+    return !disposed_.load(std::memory_order_acquire) &&
+           generation_.load(std::memory_order_acquire) == gen;
+  }
+
+  // Run a short registration/dispatch critical section only while this
+  // Session is still alive. Session::dispose() takes the same mutex before
+  // invalidating the generation, so callers can atomically register a late
+  // result or reject it after disposal.
+  template <typename Fn>
+  bool with_alive(Fn&& fn) {
+    std::lock_guard lock(dart_fn_mu_);
+    if (disposed_.load(std::memory_order_relaxed)) {
+      return false;
+    }
+    std::forward<Fn>(fn)();
+    return true;
   }
 
   void try_post(std::uint64_t gen, const std::vector<std::uint8_t>& frame) {
@@ -63,6 +78,7 @@ class Session {
 
   std::int64_t reply_port_{0};
   std::atomic<std::uint64_t> generation_{1};
+  std::atomic<bool> disposed_{false};
   mutable std::mutex streams_mu_;
   std::unordered_map<std::uint64_t, bool> streams_open_;
 

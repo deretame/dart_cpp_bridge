@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 当前生成器解析的异步返回类型是 `stdexec::task<T>`。已发布的 v1 生成器使用
 async-simple；请让生成器和 Runtime 使用同一 revision。
 :::

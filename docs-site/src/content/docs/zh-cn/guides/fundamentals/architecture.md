@@ -3,7 +3,7 @@ title: 架构（v2）
 description: dart_cpp_bridge 分层、调用流程和 v2 stdexec 运行时
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 以下架构描述当前 stdexec 实现。Dart API、C ABI、wire 协议和生成文件布局
 仍与 v1 保持兼容。
 :::

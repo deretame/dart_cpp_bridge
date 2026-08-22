@@ -1,7 +1,7 @@
-# base_demo — Hand-written Wire Dispatch (v2)
+# base_demo — Hand-written Wire Dispatch (stdexec)
 
-This demo follows the current stdexec-based v2 development line. The Dart
-wire-facing API is compatible with the released v1 package.
+This demo follows the current stdexec-based runtime. The Dart wire-facing API
+is kept compatible with the legacy package contract.
 
 The most basic demo showing how to use `dart_cpp_bridge` with **hand-written** wire dispatch and Dart bindings. No codegen involved.
 

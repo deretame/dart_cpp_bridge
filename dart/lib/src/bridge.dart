@@ -172,47 +172,81 @@ final class DartCppBridge implements Finalizable {
   int _allocId() => _nextId++;
 
   void _onMessage(dynamic msg) {
-    late final Uint8List bytes;
-    if (msg is Uint8List) {
-      bytes = msg;
-    } else if (msg is TransferableTypedData) {
-      bytes = msg.materialize().asUint8List();
-    } else if (msg is List<int>) {
-      bytes = Uint8List.fromList(msg);
-    } else {
-      return;
-    }
+    Uint8List? bytes;
+    Frame? frame;
+    try {
+      if (msg is Uint8List) {
+        bytes = msg;
+      } else if (msg is TransferableTypedData) {
+        bytes = msg.materialize().asUint8List();
+      } else if (msg is List<int>) {
+        bytes = Uint8List.fromList(msg);
+      } else {
+        return;
+      }
 
-    final frame = parseFrame(bytes);
-    switch (frame.type) {
-      case MsgType.responseOk:
-        _pending.remove(frame.requestId)?.complete(frame.payload);
-      case MsgType.responseErr:
-        final c = _pending.remove(frame.requestId);
-        final r = ByteReader(frame.payload);
-        r.i32();
-        c?.completeError(StateError(r.str()));
-      case MsgType.streamData:
-        final s = _streams[frame.requestId];
-        if (s != null && !s.controller.isClosed) {
-          s.controller.add(s.decodeItem(ByteReader(frame.payload)));
-        }
-      case MsgType.streamEnd:
-        _streams.remove(frame.requestId)?.controller.close();
-      case MsgType.streamErr:
-        final s = _streams.remove(frame.requestId);
-        if (s != null) {
+      frame = parseFrame(bytes);
+      switch (frame.type) {
+        case MsgType.responseOk:
+          _pending.remove(frame.requestId)?.complete(frame.payload);
+        case MsgType.responseErr:
           final r = ByteReader(frame.payload);
           r.i32();
-          s.controller.addError(StateError(r.str()));
-          s.controller.close();
+          final error = StateError(r.str());
+          final s = _streams.remove(frame.requestId);
+          if (s != null) {
+            if (!s.controller.isClosed) {
+              s.controller.addError(error);
+              s.controller.close();
+            }
+          }
+          _pending.remove(frame.requestId)?.completeError(error);
+        case MsgType.streamData:
+          final s = _streams[frame.requestId];
+          if (s != null && !s.controller.isClosed) {
+            s.controller.add(s.decodeItem(ByteReader(frame.payload)));
+          }
+        case MsgType.streamEnd:
+          _streams.remove(frame.requestId)?.controller.close();
+        case MsgType.streamErr:
+          final s = _streams.remove(frame.requestId);
+          if (s != null) {
+            final r = ByteReader(frame.payload);
+            r.i32();
+            s.controller.addError(StateError(r.str()));
+            s.controller.close();
+          }
+        case MsgType.dartFnCall:
+          // fire-and-forget async handle; reply goes back via FFI.
+          unawaited(_handleDartFnCall(frame));
+        case MsgType.request:
+          break;
+      }
+    } catch (error, stackTrace) {
+      // A malformed internal frame or generated payload must not escape the
+      // ReceivePort listener and leave its request pending forever. If the
+      // fixed request-id field is readable, fail the matching request/stream;
+      // otherwise there is no safe owner to notify.
+      final requestId = frame?.requestId ?? _readRequestId(bytes);
+      if (requestId != null) {
+        final completer = _pending.remove(requestId);
+        if (completer != null && !completer.isCompleted) {
+          completer.completeError(error, stackTrace);
         }
-      case MsgType.dartFnCall:
-        // fire-and-forget async handle; reply goes back via FFI.
-        unawaited(_handleDartFnCall(frame));
-      case MsgType.request:
-        break;
+        final stream = _streams.remove(requestId);
+        if (stream != null && !stream.controller.isClosed) {
+          stream.controller.addError(error, stackTrace);
+          stream.controller.close();
+        }
+      }
     }
+  }
+
+  /// Reads the request_id field from a frame header without validating the
+  /// remainder of the frame. The wire layout places it at offset 8.
+  int? _readRequestId(Uint8List? bytes) {
+    if (bytes == null || bytes.length < 16) return null;
+    return ByteData.sublistView(bytes).getUint64(8, Endian.little);
   }
 
   Future<void> _handleDartFnCall(Frame frame) async {
@@ -504,6 +538,9 @@ final class DartCppBridge implements Finalizable {
   }
 
   Future<Uint8List> _invokeAsyncRequest(Uint8List req, int id) {
+    if (_pending.containsKey(id)) {
+      return Future.error(StateError('duplicate async response id $id'));
+    }
     final c = Completer<Uint8List>();
     _pending[id] = c;
     try {
@@ -530,6 +567,7 @@ abstract base class CppOpaqueInterface implements Finalizable {
   final DartCppBridge _bridge;
   final int _handle;
   late final Pointer<Void> _finalizerToken;
+  NativeFinalizer? _legacyFinalizer;
   bool _disposed = false;
 
   /// The native handle. Exposed so generated wrapper classes can pass handles
@@ -550,9 +588,19 @@ abstract base class CppOpaqueInterface implements Finalizable {
     final tokenFactory = _bridge._b.objectFinalizerToken;
     final objectFinalizer = DartCppBridge._sharedObjectFinalizer;
     if (tokenFactory == null || objectFinalizer == null) {
-      throw StateError(
-        'native bindings do not provide the ABI-safe opaque-object finalizer',
+      // Bindings generated before the ABI-safe token callback was added remain
+      // usable on the targets where the legacy pointer-sized handle ABI was
+      // valid. New bindings take the branch below and preserve the full u64
+      // handle on 32-bit targets as well.
+      _legacyFinalizer = NativeFinalizer(_bridge._b.dropObject);
+      final token = Pointer.fromAddress(_handle).cast<Void>();
+      _legacyFinalizer!.attach(
+        this,
+        token,
+        detach: this,
+        externalSize: 64,
       );
+      return;
     }
     _finalizerToken = tokenFactory(_handle);
     if (_finalizerToken == nullptr) {
@@ -577,6 +625,13 @@ abstract base class CppOpaqueInterface implements Finalizable {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    final legacyFinalizer = _legacyFinalizer;
+    if (legacyFinalizer != null) {
+      final token = Pointer.fromAddress(_handle).cast<Void>();
+      legacyFinalizer.detach(this);
+      _bridge._b.dropObject.asFunction<void Function(Pointer<Void>)>()(token);
+      return;
+    }
     final objectFinalizer = DartCppBridge._sharedObjectFinalizer!;
     objectFinalizer.detach(this);
     _bridge._b.objectFinalizer!.asFunction<void Function(Pointer<Void>)>()(

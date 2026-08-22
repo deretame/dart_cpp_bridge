@@ -457,7 +457,7 @@ hook 失败时，Native Assets runner 会打印日志目录路径。查看：
 
 | 现象 | 可能原因 | 解决 |
 |---|---|---|
-| `cmake not found` | PATH 上没有 CMake | 安装 CMake >= 3.24 并加到 PATH。 |
+| `cmake not found` | PATH 上没有 CMake | 安装 CMake >= 3.25 并加到 PATH。 |
 | `vcvarsall.bat not found` | Windows 上用 Ninja 但没配 MSVC 环境 | 安装 VS Build Tools，设置 `vsInstallPath`，或改用 `CmakeGenerator.msbuild`。 |
 | `libc++_shared.so not found` | Android NDK 路径或 ABI 不对 | 检查 `ndkPath`。如果省略 `abi`，检查 `input.config.code.targetArchitecture` 是否受支持。 |
 | `Could not locate built library` | CMake 输出名不一致 | 确保 `libName` 与 CMakeLists.txt 里的 `add_library()` 一致。 |

@@ -134,7 +134,7 @@ void main() {
       await stopWorkers();
     });
 
-    test('call Dart callback from Worker A (independent AsioExecutor)', () async {
+    test('call Dart callback from Worker A (independent scheduler)', () async {
       final result = await callDartFromWorkerA(
         callback: (s) async => 'dart-echo:$s',
         input: 'hello',
@@ -142,7 +142,7 @@ void main() {
       expect(result, 'dart-echo:hello');
     });
 
-    test('call Dart callback from Worker B (independent AsioExecutor)', () async {
+    test('call Dart callback from Worker B (independent scheduler)', () async {
       final result = await callDartFromWorkerB(
         callback: (s) async => 'B:$s',
         input: 'world',

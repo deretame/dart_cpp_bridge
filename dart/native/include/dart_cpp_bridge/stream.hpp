@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <deque>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -80,20 +81,40 @@ struct MergeQueue {
   std::deque<co::oneshot::Sender<std::optional<T>>> waiters;
   std::size_t total = 0;
   std::size_t done = 0;
+  std::exception_ptr error;
 
   void push(T v) {
-    co::oneshot::Sender<std::optional<T>> tx;
-    {
-      std::lock_guard lock(mu);
-      if (!waiters.empty()) {
-        tx = std::move(waiters.front());
-        waiters.pop_front();
-      } else {
-        q.push_back(std::move(v));
+    // Keep ownership of the value until a parked receiver accepts it. A
+    // receiver operation may be cancelled after its sender is removed from
+    // the queue; oneshot::Sender::send(optional<T>&) reports that case and
+    // leaves the value engaged so we can try the next waiter or enqueue it.
+    std::optional<T> pending(std::move(v));
+    while (pending) {
+      co::oneshot::Sender<std::optional<T>> tx;
+      {
+        std::lock_guard lock(mu);
+        if (error) {
+          return;
+        }
+        while (!waiters.empty()) {
+          tx = std::move(waiters.front());
+          waiters.pop_front();
+          if (!tx.receiver_detached()) {
+            break;
+          }
+          tx = {};
+        }
+        if (!tx) {
+          q.push_back(std::move(*pending));
+          return;
+        }
+      }
+      if (tx.send(pending)) {
         return;
       }
+      // The receiver detached between the check above and send(). Retry with
+      // the still-engaged value instead of silently dropping the source item.
     }
-    tx.send(std::optional<T>{std::move(v)});
   }
 
   // One source ended. Wake one parked consumer so it re-checks (other
@@ -102,6 +123,9 @@ struct MergeQueue {
     co::oneshot::Sender<std::optional<T>> tx;
     {
       std::lock_guard lock(mu);
+      if (error) {
+        return;
+      }
       ++done;
       if (!waiters.empty()) {
         tx = std::move(waiters.front());
@@ -113,10 +137,42 @@ struct MergeQueue {
     }
   }
 
+  void fail(std::exception_ptr e) {
+    co::oneshot::Sender<std::optional<T>> tx;
+    {
+      std::lock_guard lock(mu);
+      if (error) {
+        return;
+      }
+      error = std::move(e);
+      done = total;
+      q.clear();
+      if (!waiters.empty()) {
+        tx = std::move(waiters.front());
+        waiters.pop_front();
+      }
+      // Stream consumption is single-reader by contract. Close any
+      // accidental additional waiters; the authoritative error is observed
+      // by the next call to pop().
+      waiters.clear();
+    }
+    if (tx) {
+      try {
+        tx.send(std::nullopt);
+      } catch (...) {
+        // The consumer may already have been destroyed; the stored error is
+        // still available to a later next() call.
+      }
+    }
+  }
+
   stdexec::task<std::optional<T>> pop() {
     while (true) {
       {
         std::lock_guard lock(mu);
+        if (error) {
+          std::rethrow_exception(error);
+        }
         if (!q.empty()) {
           auto v = std::move(q.front());
           q.pop_front();
@@ -131,6 +187,9 @@ struct MergeQueue {
       auto [tx, rx] = co::oneshot::channel<std::optional<T>>();
       {
         std::lock_guard lock(mu);
+        if (error) {
+          std::rethrow_exception(error);
+        }
         if (!q.empty()) {
           auto v = std::move(q.front());
           q.pop_front();
@@ -155,8 +214,13 @@ struct MergeQueue {
 
 template <typename T>
 stdexec::task<void> merge_driver(Stream<T> src, std::shared_ptr<MergeQueue<T>> st) {
-  while (auto v = co_await src.next()) {
-    st->push(std::move(*v));
+  try {
+    while (auto v = co_await src.next()) {
+      st->push(std::move(*v));
+    }
+  } catch (...) {
+    st->fail(std::current_exception());
+    co_return;
   }
   st->one_done();
   co_return;
@@ -168,12 +232,20 @@ template <typename T>
 Stream<T> Stream<T>::merge_concurrent(std::vector<Stream<T>> sources)
 {
   auto st = std::make_shared<detail::MergeQueue<T>>();
+  std::vector<Stream<T>> active;
+  active.reserve(sources.size());
+  st->total = sources.size();
   for (auto& src : sources) {
-    ++st->total;
     if (!src) {
-      st->one_done();
+      ++st->done;
       continue;
     }
+    active.push_back(std::move(src));
+  }
+  // Publish the complete source count before any driver can run. Otherwise
+  // an eager source may observe a partial total and finish the merged stream
+  // while later source drivers are still being registered.
+  for (auto& src : active) {
     // Each source is pulled by its own driver on the dcb runtime io thread;
     // while a driver awaits (timer, channel, ...) the others advance, which
     // is what makes the merge concurrent.

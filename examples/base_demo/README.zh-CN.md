@@ -1,6 +1,6 @@
-# base_demo — 手写 Wire Dispatch 示例（v2）
+# base_demo — 手写 Wire Dispatch 示例（stdexec）
 
-本 demo 按当前 stdexec v2 开发线编写，Dart wire-facing API 与已发布的 v1 包兼容。
+本 demo 按当前 stdexec 运行时编写，Dart wire-facing API 保持与旧版包契约兼容。
 
 最基础的示例，展示如何使用 `dart_cpp_bridge` 的**手写** wire dispatch 和 Dart 绑定。不涉及 codegen。
 

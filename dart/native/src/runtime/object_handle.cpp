@@ -1,4 +1,5 @@
 #include "dart_cpp_bridge/object_handle.hpp"
+#include "dart_cpp_bridge/session.hpp"
 
 #include <cassert>
 #include <iostream>
@@ -21,6 +22,22 @@ ObjectHandleRegistry::Handle ObjectHandleRegistry::insert(
     store->objects.emplace(local, std::make_pair(std::move(obj), std::move(drop)));
   }
   return (session_id << kSessionShift) | local;
+}
+
+ObjectHandleRegistry::Handle ObjectHandleRegistry::insert_for_session(
+    std::uint64_t session_id, std::shared_ptr<void> obj, DropFn drop) {
+  auto session = SessionRegistry::instance().get(session_id);
+  if (!session) {
+    throw std::runtime_error("session closed while registering object");
+  }
+
+  Handle handle = 0;
+  if (!session->with_alive([&] {
+        handle = insert(session_id, std::move(obj), std::move(drop));
+      })) {
+    throw std::runtime_error("session closed while registering object");
+  }
+  return handle;
 }
 
 std::shared_ptr<void> ObjectHandleRegistry::get(Handle handle) const {

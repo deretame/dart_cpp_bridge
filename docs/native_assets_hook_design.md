@@ -6,7 +6,7 @@
 
 > 对应阶段：**Phase 3**（见 [progress.md](./progress.md)）
 > 状态：**已实现**（随 `dart_cpp_bridge` 1.1.0+ 发布，`hook/build.dart` + `hook/link.dart`；1.2.0 已验证）
-> 关联决策：hook 直接驱动 CMake、CMakeLists 为构建单点真相、平台配置用密封类（非 YAML `user_defines`）、Android 用系统 CMake(≥3.24) + NDK toolchain、`cc_builder`/`CBuilder` 不适用
+> 关联决策：hook 直接驱动 CMake、CMakeLists 为构建单点真相、平台配置用密封类（非 YAML `user_defines`）、Android 用系统 CMake(≥3.25) + NDK toolchain、`cc_builder`/`CBuilder` 不适用
 > 平台优先级：**Windows > Linux > Android > macOS**（iOS 暂缓）
 > 更新日期：2026-07-26
 
@@ -150,7 +150,7 @@ hook 经 `input.userDefines['key']` / `input.userDefines.path('key')` 读取。�
 `CBuilder` 直接调编译器、不走构建系统，无法表达本项目的构建复杂度：
 
 - **FetchContent** 拉取 asio / async-simple（header-only，但需其 INTERFACE 目标的 include 与编译定义）。
-- **`$<LINK_LIBRARY:WHOLE_ARCHIVE,...>`**（CMake 3.24+ genex）：`ffi_entry.cpp` 的 `dcb_*` 导出
+- **`$<LINK_LIBRARY:WHOLE_ARCHIVE,...>`**：`ffi_entry.cpp` 的 `dcb_*` 导出（运行时整体最低要求为 CMake 3.25）
   只被 Dart FFI 引用、C++ 侧零引用，普通 STATIC 链接会被丢弃，必须 WHOLE_ARCHIVE 强制全量链入。
 - **C++20 协程**（async-simple `Lazy`）+ 跨平台编译定义（`ASIO_STANDALONE`、`_WIN32_WINNT` 等）。
 
@@ -351,7 +351,7 @@ output.dependencies.add(Uri.file('native/generated/wire_dispatch.cpp'));
 
 ### 4.4 Android 交叉编译
 
-依据既有决策：**系统 CMake(≥3.24) + NDK 的 android.toolchain.cmake**，无需 SDK 自带 CMake。
+依据既有决策：**系统 CMake(≥3.25) + NDK 的 android.toolchain.cmake**，无需 SDK 自带 CMake。
 
 ```text
 NDK 定位：AndroidConfig.ndkPath > $ANDROID_NDK_HOME > $ANDROID_HOME/ndk/<ver>

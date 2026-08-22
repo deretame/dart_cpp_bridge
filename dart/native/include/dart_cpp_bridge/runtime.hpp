@@ -134,8 +134,28 @@ class Runtime {
   void stop();
   bool running() const { return started_.load(std::memory_order_acquire); }
 
+  /// Run [fn] while the runtime's start/stop gate is held. This is the
+  /// acceptance boundary for external callers that need to submit work
+  /// without racing Runtime::stop() between the running check and submission.
+  /// Returns false when the runtime is already stopped.
+  template <typename Fn>
+  bool try_accept(Fn&& fn) {
+    std::lock_guard lock(start_stop_mu_);
+    if (!started_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    std::forward<Fn>(fn)();
+    return true;
+  }
+
   /// Set thread pool size (must be called before start; default 4).
-  void set_pool_threads(std::uint32_t n) { pool_threads_ = n ? n : 1; }
+  void set_pool_threads(std::uint32_t n) {
+    std::lock_guard lock(start_stop_mu_);
+    if (lifecycle_ != Lifecycle::kStopped) {
+      return;
+    }
+    pool_threads_ = n ? n : 1;
+  }
 
   void ensure_running() {
     if (!running()) {
@@ -158,6 +178,7 @@ class Runtime {
   auto blocking_scheduler() { return pool_->get_scheduler(); }
 
   void set_dart_post(DartPostFn fn, void* userdata) {
+    std::lock_guard lock(post_mu_);
     post_fn_ = fn;
     post_userdata_ = userdata;
   }
@@ -166,13 +187,21 @@ class Runtime {
     if (!running()) {
       return;
     }
-    auto fn = post_fn_;
+    DartPostFn fn = nullptr;
+    void* userdata = nullptr;
+    {
+      std::lock_guard lock(post_mu_);
+      fn = post_fn_;
+      userdata = post_userdata_;
+    }
     if (fn) {
-      fn(port, data, len, post_userdata_);
+      fn(port, data, len, userdata);
     }
   }
 
  private:
+  enum class Lifecycle { kStopped, kStarting, kRunning, kStopping };
+
   Runtime();
   ~Runtime();
 
@@ -182,9 +211,11 @@ class Runtime {
   std::unique_ptr<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>> guard_;
   std::unique_ptr<std::thread> io_thread_;
   std::atomic<bool> started_{false};
+  Lifecycle lifecycle_{Lifecycle::kStopped};
   std::uint32_t pool_threads_{4};
   DartPostFn post_fn_{nullptr};
   void* post_userdata_{nullptr};
+  mutable std::mutex post_mu_;
   std::mutex start_stop_mu_;
 };
 

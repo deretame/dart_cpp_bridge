@@ -18,6 +18,11 @@ class BRIDGE_OPAQUE Counter {
   BRIDGE_CONSTRUCTOR Counter(std::int32_t initialValue);
   BRIDGE_CONSTRUCTOR Counter();
 
+  Counter(const Counter&) = delete;
+  Counter& operator=(const Counter&) = delete;
+  Counter(Counter&&) noexcept = default;
+  Counter& operator=(Counter&&) noexcept = default;
+
   /// Destructor: marked with BRIDGE_DESTRUCTOR to document intent.
   /// Codegen does not generate a wire method for it — destruction is
   /// triggered by dcb_drop_object (Dart dispose / NativeFinalizer /
@@ -64,5 +69,8 @@ BRIDGE_ASYNC stdexec::task<std::int32_t> addCounters(
 /// Free function: create a new Counter with source's value + offset
 /// (opaque param → new opaque return, clone semantics).
 BRIDGE_SYNC Counter cloneWithOffset(const Counter& source, std::int32_t offset);
+
+/// Normal dispatch must preserve a move-only opaque return value.
+BRIDGE_NORMAL Counter makeCounter(std::int32_t initialValue);
 
 }  // namespace demo::api

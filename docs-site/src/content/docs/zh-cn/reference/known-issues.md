@@ -3,7 +3,7 @@ title: 已知问题
 description: 当前版本已知限制与常见陷阱
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本列表按当前 stdexec 实现编写。历史 async-simple 问题保留在 v1 归档中，不是
 当前 API 的使用指导。
 :::

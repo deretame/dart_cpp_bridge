@@ -3,7 +3,7 @@ title: Caveats & Gotchas (v2)
 description: Common v2 codegen, threading, cancellation, lifecycle, and scheduler pitfalls
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 This page follows the stdexec implementation. For published v1 applications,
 use [Versioned Documentation](/dart_cpp_bridge/versions/) and the v1 archive.
 :::

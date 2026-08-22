@@ -95,7 +95,7 @@ packages:
       path: "../../dart"
       relative: true
     source: path
-    version: "1.3.0"
+    version: "2.1.0"
   ffi:
     dependency: "direct main"
     description:

@@ -3,7 +3,7 @@ title: 注意事项与常见坑（v2）
 description: v2 codegen、线程、取消、生命周期和 scheduler 的常见问题
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本页按 stdexec 实现编写。已发布的 v1 项目请使用[版本文档](/dart_cpp_bridge/zh-cn/versions/)
 和 v1 归档页面。
 :::

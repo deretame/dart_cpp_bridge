@@ -35,7 +35,7 @@ description: 当前 stdexec 版 dart_cpp_bridge 的核心概念
 | 阻塞工作 | Asio thread pool |
 | 取消 | stop token |
 | Codegen | Python 3.13 + libclang-ng，固定版本并校验 hash |
-| 构建 | CMake 3.24+ 和 Native Assets hook |
+| 构建 | CMake 3.25+ 和 Native Assets hook |
 
 ## 下一步阅读
 

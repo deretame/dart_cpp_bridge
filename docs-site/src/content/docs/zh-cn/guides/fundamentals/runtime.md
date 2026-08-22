@@ -1,11 +1,11 @@
 ---
 title: 内置运行时（v2）
-description: v2 开发线使用的 Asio 与 stdexec 运行时
+description: 已发布 v2.1.0 使用的 Asio 与 stdexec 运行时
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本页描述当前 stdexec 运行时。已发布的 v1 项目请查看
-[v1 async-simple 归档](/dart_cpp_bridge/zh-cn/guides/fundamentals/async-simple/)。
+[v1 async-simple 归档](/dart_cpp_bridge/zh-cn/v1/guides/fundamentals/async-simple/)。
 :::
 
 `dart_cpp_bridge` 内置一个由 Asio 和 stdexec 组成的进程级 Runtime。

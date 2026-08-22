@@ -3,7 +3,7 @@ title: Streams
 description: Expose C++ data streams to Dart with StreamSink, including optional streams
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 Async stream examples use `stdexec::task` and `dcb::sleep`. The stream wire
 contract is shared with v1; only the C++ async signature changes.
 :::

@@ -99,4 +99,8 @@ Counter cloneWithOffset(const Counter& source, std::int32_t offset) {
   return Counter(source.valueSync() + offset);
 }
 
+Counter makeCounter(std::int32_t initialValue) {
+  return Counter(initialValue);
+}
+
 }  // namespace demo::api

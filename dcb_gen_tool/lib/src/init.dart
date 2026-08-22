@@ -225,7 +225,7 @@ defines:
 }
 
 String _cmakeTemplate(String libName) => '''
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 project($libName LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -259,31 +259,34 @@ endif()
 ''';
 
 String _cmakeHelperTemplate() => '''
-# --- Find dart_cpp_bridge (reads .dart_tool/package_config.json) ---
-file(READ "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/package_config.json" _j)
-string(JSON _c LENGTH "\${_j}" "packages")
-math(EXPR _e "\${_c} - 1")
-foreach(_i RANGE \${_e})
-  string(JSON _n GET "\${_j}" "packages" \${_i} "name")
-  if(_n STREQUAL "dart_cpp_bridge")
-    string(JSON _u GET "\${_j}" "packages" \${_i} "rootUri")
-    break()
+# --- Find dart_cpp_bridge ---
+# The Native Assets hook passes a decoded absolute DCB_PKG_PATH. Keep the
+# package_config fallback for direct CMake invocation, but do not overwrite the
+# URI-safe value supplied by the hook.
+if(NOT DEFINED DCB_PKG_PATH OR DCB_PKG_PATH STREQUAL "")
+  file(READ "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/package_config.json" _j)
+  string(JSON _c LENGTH "\${_j}" "packages")
+  math(EXPR _e "\${_c} - 1")
+  foreach(_i RANGE \${_e})
+    string(JSON _n GET "\${_j}" "packages" \${_i} "name")
+    if(_n STREQUAL "dart_cpp_bridge")
+      string(JSON _u GET "\${_j}" "packages" \${_i} "rootUri")
+      break()
+    endif()
+  endforeach()
+  if(NOT DEFINED _u)
+    message(FATAL_ERROR "dart_cpp_bridge not in package_config.json")
   endif()
-endforeach()
-if(NOT DEFINED _u)
-  message(FATAL_ERROR "dart_cpp_bridge not in package_config.json")
-endif()
-if(_u MATCHES "^file://")
-  if(WIN32)
-    # file:///C:/... -> C:/... (drive letter keeps the path absolute)
-    string(REGEX REPLACE "^file:///" "" DCB_PKG_PATH "\${_u}")
+  if(_u MATCHES "^file://")
+    if(WIN32)
+      string(REGEX REPLACE "^file:///" "" DCB_PKG_PATH "\${_u}")
+    else()
+      string(REGEX REPLACE "^file://" "" DCB_PKG_PATH "\${_u}")
+    endif()
   else()
-    # file:///home/... -> /home/... (keep the leading root slash)
-    string(REGEX REPLACE "^file://" "" DCB_PKG_PATH "\${_u}")
+    get_filename_component(DCB_PKG_PATH
+      "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/\${_u}" ABSOLUTE)
   endif()
-else()
-  get_filename_component(DCB_PKG_PATH
-    "\${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/\${_u}" ABSOLUTE)
 endif()
 include("\${DCB_PKG_PATH}/native/cmake/dcb_find_package.cmake")
 add_subdirectory(\${DCB_ROOT} \${CMAKE_CURRENT_BINARY_DIR}/dcb_runtime)
@@ -310,7 +313,16 @@ void main(List<String> args) async {
     }
     final cmake = Platform.environment['NIX_DCB_CMAKE'] ?? 'cmake';
     final config = switch (input.config.code.targetOS) {
-      OS.windows => WindowsConfig(cmake: cmake),
+      OS.windows => WindowsConfig(
+        cmake: cmake,
+        architecture: switch (input.config.code.targetArchitecture) {
+          Architecture.x64 => 'x64',
+          Architecture.arm64 => 'arm64',
+          final arch => throw UnsupportedError(
+            '$packageName does not support Windows architecture: \$arch',
+          ),
+        },
+      ),
       OS.linux => LinuxConfig(cmake: cmake),
       OS.macOS => MacosConfig(cmake: cmake),
       final os => throw UnsupportedError('$packageName does not support: \$os'),

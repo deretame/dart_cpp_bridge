@@ -13,7 +13,7 @@
 # asio / async-simple versions are pinned and propagated by the base library; no need to declare them here.
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 project(dcb_base_demo LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)

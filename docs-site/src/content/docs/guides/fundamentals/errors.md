@@ -3,7 +3,7 @@ title: Exceptions and Error Handling
 description: How C++ exceptions propagate to Dart and how Dart closure exceptions return to C++
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 Async examples use `stdexec::task`. Wire error frames and Dart `StateError`
 behavior are shared with v1.
 :::

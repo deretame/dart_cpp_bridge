@@ -16,29 +16,23 @@ Dart/Flutter ↔ C++20 绑定生成器，灵感来自 [flutter_rust_bridge](http
 - 内置基于 Asio + stdexec sender / 协程的运行时
 - 支持 Android、iOS、Windows、Linux、macOS
 
-## 文档版本
+## 运行时模型与兼容性
 
-- **v1** — 已发布的 1.x，当前发布版本为 1.3.0，基于 async-simple；维护
-  现有 v1 项目时请使用这套文档。
-- **v2.0.0** — 当前仓库的主版本线，基于 stdexec。它包含大范围的 C++
-  异步/并发模型迁移，从 v1 升级前请先阅读下面的迁移提示。
+当前运行时基于 stdexec。使用旧版 async-simple 运行时的项目，在复制 C++
+异步示例或迁移现有代码前，请先阅读[版本说明](docs/versioning.zh-CN.md)。
 
-复制 C++ 异步示例前，请先阅读[版本说明](docs/versioning.zh-CN.md)。
-
-## v2.0.0 迁移提示
-
-v2 是一次从 async-simple 迁移到 stdexec 的大版本更新。Dart API、C ABI、
+从 async-simple 迁移到 stdexec 是一个重要的兼容性边界。Dart API、C ABI、
 wire protocol、生成文件布局和 method ID 契约保持稳定，但 C++ 异步业务代码
-与 v1 不保持源码兼容。
+与当前运行时不保持源码兼容。
 
-从 v1 升级时请注意：
+迁移时请注意：
 
-- C++ 异步 API 应返回 `stdexec::task<T>` 或其他 stdexec sender；v2 不再以
-  `async_simple::coro::Lazy<T>` 作为异步模型。
+- C++ 异步 API 应返回 `stdexec::task<T>` 或其他 stdexec sender，不要再使用
+  `async_simple::coro::Lazy<T>`。
 - 使用 stdexec scheduler 以及当前的 `starts_on`、`on`、`continues_on`、
   `sync_wait`；取消机制从 `Signal` / `Slot` 改为 stop token。
-- 使用匹配的 `dcb_gen_tool` 2.0.0 重新生成绑定，不要混用 v1 生成的 native
-  代码、运行时头文件和 v2 工具链。
+- 使用匹配的 `dcb_gen_tool` 重新生成绑定，不要混用旧版生成的 native 代码、
+  运行时头文件和当前工具链。
 - native CMake 集成需要 C++20 和 vendored stdexec target
   （`STDEXEC::stdexec`）；阻塞工作不要放在单线程 I/O scheduler 上执行。
 
@@ -89,7 +83,7 @@ void main() async {
 
 - [Flutter Rust Bridge](https://github.com/fzyzcjy/flutter_rust_bridge) — 架构与产品形态参考
 - [Asio](https://think-async.com/Asio/) — 事件循环与异步 I/O
-- [stdexec](https://github.com/NVIDIA/stdexec) — v2 的 sender/receiver 与 scheduler 基础设施
+- [stdexec](https://github.com/NVIDIA/stdexec) — sender/receiver 与 scheduler 基础设施
 - [concurrentqueue](https://github.com/cameron314/concurrentqueue) — 无锁并发队列
 - Dart / Flutter 团队 — FFI、Isolate、NativeFinalizer 等 Dart 原生能力
 

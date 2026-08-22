@@ -9,20 +9,31 @@ import '../dcb_generated.dart';
 // Functions
 // ═════════════════════════════════════════════
 
-Future<String> callDartFromWorkerA({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.callDartFromWorkerA(callback, input);
+Future<String> callDartFromWorkerA({
+  required Future<String> Function(String) callback,
+  required String input,
+}) => BridgeApiImpl.instance.callDartFromWorkerA(callback, input);
 
-Future<(String, String)> fanOut({required String message}) => BridgeApiImpl.instance.fanOut(message);
+Future<(String, String)> fanOut({required String message}) =>
+    BridgeApiImpl.instance.fanOut(message);
 
 Future<String> stopWorkers() => BridgeApiImpl.instance.stopWorkers();
 
-Future<String> pingWorker({required String payload}) => BridgeApiImpl.instance.pingWorker(payload);
+Future<String> pingWorker({required String payload}) =>
+    BridgeApiImpl.instance.pingWorker(payload);
 
-Future<String> pipeline({required String message}) => BridgeApiImpl.instance.pipeline(message);
+Future<String> pipeline({required String message}) =>
+    BridgeApiImpl.instance.pipeline(message);
 
 Future<String> startWorkers() => BridgeApiImpl.instance.startWorkers();
 
-Future<String> callDartFromWorkerB({required Future<String> Function(String) callback, required String input}) => BridgeApiImpl.instance.callDartFromWorkerB(callback, input);
+Future<String> callDartFromWorkerB({
+  required Future<String> Function(String) callback,
+  required String input,
+}) => BridgeApiImpl.instance.callDartFromWorkerB(callback, input);
 
-Stream<String> workerStream({int count = 5, int intervalMs = 50}) => BridgeApiImpl.instance.workerStream(count, intervalMs);
+Stream<String> workerStream({int count = 5, int intervalMs = 50}) =>
+    BridgeApiImpl.instance.workerStream(count, intervalMs);
 
-Future<String> processMessage({required String message}) => BridgeApiImpl.instance.processMessage(message);
+Future<String> processMessage({required String message}) =>
+    BridgeApiImpl.instance.processMessage(message);

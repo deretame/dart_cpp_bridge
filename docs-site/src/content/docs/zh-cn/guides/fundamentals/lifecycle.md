@@ -3,7 +3,7 @@ title: 生命周期管理
 description: Runtime、Session、Opaque 对象与 NativeFinalizer 的生命周期
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本页使用 `IoContextScheduler`；`AsioExecutor` 是 v1 名称。Session、Dart 和
 finalizer 生命周期规则在两代中共用。
 :::

@@ -1,3 +1,9 @@
+## 2.1.1
+
+- Hardened runtime lifecycle, C bridge completion, Native Assets target
+  selection, and stdexec fixture integration.
+- Added fail-fast codegen validation for Dart names and method-ID collisions.
+
 ## 2.1.0
 
 - Fixed opaque-object finalization on 32-bit targets by using an ABI-safe

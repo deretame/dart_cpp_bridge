@@ -4,7 +4,7 @@ description: Sender、task、scheduler、取消和阻塞任务的实际使用方
 ---
 
 :::caution[v2 专用]
-当前开发线使用 stdexec。已发布的 v1 项目使用 async-simple，API 保留在
+当前 v2.1.0 使用 stdexec。已发布的 v1 项目使用 async-simple，API 保留在
 [v1 文档](/dart_cpp_bridge/zh-cn/v1/) 中。v2 头文件不要再混入
 `async_simple::coro::Lazy` 示例。
 :::

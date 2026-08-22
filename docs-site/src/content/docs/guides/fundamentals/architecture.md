@@ -3,7 +3,7 @@ title: Architecture (v2)
 description: dart_cpp_bridge layers, call flow, and the v2 stdexec runtime
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 The architecture below is the current stdexec implementation. The public Dart API,
 C ABI, wire protocol, and generated file layout remain compatible with v1.
 :::

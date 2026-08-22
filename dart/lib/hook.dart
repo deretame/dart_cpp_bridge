@@ -13,6 +13,7 @@
 /// `package:code_assets`, which are only needed inside a build hook.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -164,10 +165,16 @@ final class WindowsConfig extends DcbPlatformConfig {
   /// then falls back to well-known installation paths.
   final String? vsInstallPath;
 
-  /// Target architecture passed to CMake (`-A`).
+  /// Optional target architecture override passed to CMake (`-A`).
   ///
-  /// Supported values: `'x64'`, `'arm64'`. Defaults to `'x64'`.
-  final String architecture;
+  /// Supported values: `'x64'`, `'arm64'`. When omitted, the builder follows
+  /// `input.config.code.targetArchitecture` instead of silently defaulting an
+  /// ARM64 hook request to x64. Reading [architecture] still returns the
+  /// effective value for compatibility.
+  final String? _architectureOverride;
+
+  /// Effective Windows architecture (`'x64'` or `'arm64'`).
+  String get architecture => _architectureOverride ?? 'x64';
 
   /// CMake generator selection.
   ///
@@ -237,7 +244,7 @@ final class WindowsConfig extends DcbPlatformConfig {
     this.dynamicCrt = true,
     this.bundleCrt = true,
     this.vsInstallPath,
-    this.architecture = 'x64',
+    String? architecture,
     this.generator,
     this.generatorPath,
     this.extraDefines = const [],
@@ -245,7 +252,7 @@ final class WindowsConfig extends DcbPlatformConfig {
     this.clangClPath,
     this.msys2Path,
     this.staticRuntime = true,
-  });
+  }) : _architectureOverride = architecture;
 }
 
 /// Linux configuration for [DcbCMakeBuilder].
@@ -601,10 +608,12 @@ final class _WindowsResolved {
   final String cmakePath;
   final List<String> configureArgs;
   final Map<String, String>? environment;
+  final String architecture;
 
   const _WindowsResolved({
     required this.cmakePath,
     required this.configureArgs,
+    required this.architecture,
     this.environment,
   });
 }
@@ -722,13 +731,19 @@ final class DcbCMakeBuilder {
     final String cmake;
     final configureArgs = <String>[];
     Map<String, String>? processEnvironment;
+    String? windowsArchitecture;
 
     switch (config) {
       case WindowsConfig cfg:
-        final resolved = _resolveWindows(cfg, buildType);
+        final resolved = _resolveWindows(
+          cfg,
+          buildType,
+          input.config.code.targetArchitecture,
+        );
         cmake = resolved.cmakePath;
         configureArgs.addAll(resolved.configureArgs);
         processEnvironment = resolved.environment;
+        windowsArchitecture = resolved.architecture;
 
       case LinuxConfig cfg:
         cmake = cfg.cmake;
@@ -765,6 +780,15 @@ final class DcbCMakeBuilder {
         }
     }
 
+    // Resolve package_config rootUri with Dart's URI implementation. CMake's
+    // string slicing leaves percent escapes in filesystem paths, which breaks
+    // projects installed under spaces or non-ASCII directories. Passing the
+    // decoded absolute path also lets dcb_find_package.cmake use its fast path.
+    final dcbPackagePath = _resolveDartCppBridgePackagePath(input.packageRoot);
+    final dcbPackageDefine = dcbPackagePath == null
+        ? const <String>[]
+        : ['-DDCB_PKG_PATH=$dcbPackagePath'];
+
     // 1. Configure.
     // Invalidate the build directory when configure arguments change
     // (e.g. switching between c++_static and c++_shared on Android).
@@ -777,6 +801,7 @@ final class DcbCMakeBuilder {
       ] else ...[
         ..._platformExtraDefines(config),
       ],
+      ...dcbPackageDefine,
       ...extraDefines,
     ];
     _invalidateBuildOnConfigChange(buildDir, allConfigureArgs);
@@ -816,16 +841,19 @@ final class DcbCMakeBuilder {
     //    - MSYS2 toolchains with staticRuntime=false: the MSYS2 runtime DLLs
     //      (libgcc_s_seh-1.dll etc.). With staticRuntime=true (default) the
     //      runtime is statically linked, so nothing needs bundling.
+    final bundledWindowsRuntime = <File>[];
     if (config case WindowsConfig cfg) {
       final isMsys2 =
           cfg.compiler == WindowsCompiler.msys2Clang ||
           cfg.compiler == WindowsCompiler.msys2Gcc;
       if (isMsys2) {
         if (isDynamic && !cfg.staticRuntime && cfg.bundleCrt) {
-          _bundleMsys2Runtime(cfg, libFile);
+          bundledWindowsRuntime.addAll(_bundleMsys2Runtime(cfg, libFile));
         }
       } else if (isDynamic && cfg.dynamicCrt && cfg.bundleCrt) {
-        _bundleWindowsCrt(cfg, libFile);
+        bundledWindowsRuntime.addAll(
+          _bundleWindowsCrt(cfg, libFile, windowsArchitecture!),
+        );
       }
     }
 
@@ -841,6 +869,20 @@ final class DcbCMakeBuilder {
         file: libFile.uri,
       ),
     );
+
+    // A DLL copied next to the main library is not discovered by the Native
+    // Assets toolchain automatically. Register every bundled runtime DLL as
+    // its own code asset so Flutter includes it in the final application.
+    for (final runtimeDll in bundledWindowsRuntime) {
+      output.assets.code.add(
+        CodeAsset(
+          package: effectiveAssetPackage,
+          name: runtimeDll.uri.pathSegments.last,
+          linkMode: DynamicLoadingBundled(),
+          file: runtimeDll.uri,
+        ),
+      );
+    }
 
     // 7. Bundle libc++_shared.so when using dynamic STL on Android.
     //    Without this, dlopen fails at runtime because the shared C++ runtime
@@ -873,6 +915,42 @@ final class DcbCMakeBuilder {
                   cfg.compiler == WindowsCompiler.msys2Gcc));
     }
     return true;
+  }
+
+  /// Returns the decoded local path of the dart_cpp_bridge dependency from
+  /// [packageRoot]'s package_config.json, or null when this package does not
+  /// use the bridge's CMake integration.
+  static String? _resolveDartCppBridgePackagePath(Uri packageRoot) {
+    final packageConfig = File.fromUri(
+      packageRoot.resolve('.dart_tool/package_config.json'),
+    );
+    if (!packageConfig.existsSync()) return null;
+    try {
+      final json = jsonDecode(packageConfig.readAsStringSync());
+      if (json is! Map<String, dynamic>) return null;
+      final packages = json['packages'];
+      if (packages is! List) return null;
+      for (final entry in packages) {
+        if (entry is! Map<String, dynamic> ||
+            entry['name'] != 'dart_cpp_bridge') {
+          continue;
+        }
+        final rawRootUri = entry['rootUri'];
+        if (rawRootUri is! String) return null;
+        final rootUri = Uri.parse(rawRootUri);
+        final resolved = rootUri.scheme == 'file'
+            ? rootUri
+            : packageConfig.uri.resolveUri(rootUri);
+        if (resolved.scheme != 'file') return null;
+        final path = resolved.toFilePath(windows: Platform.isWindows);
+        return Directory(path).existsSync() ? path : null;
+      }
+    } on FormatException {
+      return null;
+    } on FileSystemException {
+      return null;
+    }
+    return null;
   }
 
   /// Returns only the explicit platform-level definitions.
@@ -1009,7 +1087,7 @@ final class DcbCMakeBuilder {
     args.add('-DCMAKE_OSX_ARCHITECTURES=$arch');
 
     // Deployment target: explicit override > hooks-provided version.
-    // Floor at 14.0: async_simple uses C++20 std::atomic::wait/notify
+    // Floor at 14.0: the runtime uses C++20 std::atomic::wait/notify
     // which requires iOS 14.0+ (simulator) / iOS 14.0+ (device).
     final rawVersion = cfg.deploymentTarget ??
         '${iosConfig.targetVersion}.0';
@@ -1124,7 +1202,7 @@ final class DcbCMakeBuilder {
   ///
   /// On Windows, when cmake is not explicitly configured and not on PATH,
   /// probes Visual Studio installation directories for a bundled CMake with
-  /// version >= 3.24 (required for `WHOLE_ARCHIVE` link expressions).
+  /// version >= 3.25 (required by the vendored stdexec runtime).
   String _resolveAndroidCmake(AndroidConfig cfg) {
     if (cfg.cmake != 'cmake') {
       return cfg.cmake; // Explicitly configured by the caller.
@@ -1132,8 +1210,9 @@ final class DcbCMakeBuilder {
     if (!Platform.isWindows) {
       return cfg.cmake; // Non-Windows: rely on PATH.
     }
-    if (_isOnPath('cmake.exe')) {
-      return cfg.cmake; // Already available on PATH.
+    final pathCmake = _whichOnPath('cmake.exe');
+    if (pathCmake != null && _cmakeVersionOk(pathCmake)) {
+      return pathCmake;
     }
 
     // Probe Visual Studio installations for a bundled CMake.
@@ -1149,7 +1228,7 @@ final class DcbCMakeBuilder {
     return cfg.cmake;
   }
 
-  /// Checks that [cmakePath] reports a version >= 3.24.
+  /// Checks that [cmakePath] reports a version >= 3.25.
   bool _cmakeVersionOk(String cmakePath) {
     try {
       final result = Process.runSync(cmakePath, ['--version']);
@@ -1160,9 +1239,9 @@ final class DcbCMakeBuilder {
       if (match == null) return false;
       final major = int.parse(match.group(1)!);
       final minor = int.parse(match.group(2)!);
-      final ok = major > 3 || (major == 3 && minor >= 24);
+      final ok = major > 3 || (major == 3 && minor >= 25);
       if (!ok) {
-        _log('skipping $cmakePath (version ${match.group(0)} < 3.24)');
+        _log('skipping $cmakePath (version ${match.group(0)} < 3.25)');
       }
       return ok;
     } on ProcessException {
@@ -1209,15 +1288,51 @@ final class DcbCMakeBuilder {
   /// Resolves the Android ABI from an explicit override or the hooks-provided
   /// target architecture.
   static String _resolveAndroidAbi(Architecture? arch, String? override) {
-    if (override != null) return override;
-    return switch (arch) {
+    final derived = switch (arch) {
       Architecture.arm64 => 'arm64-v8a',
       Architecture.arm => 'armeabi-v7a',
       Architecture.x64 => 'x86_64',
       Architecture.ia32 => 'x86',
-      _ => 'arm64-v8a',
+      _ => null,
     };
+    if (override != null) {
+      const supported = {'arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'};
+      if (!supported.contains(override)) {
+        throw DcbCMakeException(
+          'Unsupported Android ABI override "$override". Supported ABIs: '
+          '${supported.join(', ')}.',
+        );
+      }
+      if (derived != null && derived != override) {
+        throw DcbCMakeException(
+          'Android ABI override "$override" does not match target '
+          'architecture ${arch!.name} (expected "$derived").',
+        );
+      }
+      if (arch != null && derived == null) {
+        throw DcbCMakeException(
+          'Android target architecture ${arch.name} is not supported by '
+          'this builder.',
+        );
+      }
+      return override;
+    }
+    if (derived == null) {
+      final target = arch?.name ?? 'unknown';
+      throw DcbCMakeException(
+        'Android target architecture $target is unsupported. Supported '
+        'architectures: arm64, arm, x64, ia32.',
+      );
+    }
+    return derived;
   }
+
+  /// Resolve an Android ABI using the same target/override rules as [run].
+  ///
+  /// Exposed for downstream hooks that need to validate a target before
+  /// invoking their own build step.
+  static String resolveAndroidAbi(Architecture? arch, [String? override]) =>
+      _resolveAndroidAbi(arch, override);
 
   /// Resolves Android-specific configure arguments using the NDK toolchain.
   List<String> _resolveAndroidArgs(
@@ -1330,7 +1445,15 @@ final class DcbCMakeBuilder {
   // -------------------------------------------------------------------------
 
   /// Resolves all Windows-specific paths and arguments.
-  _WindowsResolved _resolveWindows(WindowsConfig cfg, String buildType) {
+  _WindowsResolved _resolveWindows(
+    WindowsConfig cfg,
+    String buildType,
+    Architecture? targetArchitecture,
+  ) {
+    final architecture = _resolveWindowsArchitecture(
+      targetArchitecture,
+      cfg._architectureOverride,
+    );
     // Resolve VS installation root.
     final vsRoot = cfg.vsInstallPath ?? _detectVsInstallPath();
 
@@ -1367,7 +1490,7 @@ final class DcbCMakeBuilder {
         }
         final vsVersion = _vsGeneratorName(vsRoot);
         args.addAll(['-G', vsVersion]);
-        args.addAll(['-A', cfg.architecture]);
+        args.addAll(['-A', architecture]);
         if (useClangCl) {
           // Visual Studio generator + clang-cl toolset (requires the
           // "C++ Clang tools for Windows" VS component or a standalone LLVM
@@ -1382,11 +1505,11 @@ final class DcbCMakeBuilder {
           // GNU-style MSYS2 toolchains (clang / gcc): self-contained
           // (headers + libraries shipped with MSYS2), no vcvars environment
           // needed. Only x64 is supported: ucrt64 is an x86_64 environment.
-          if (cfg.architecture != 'x64') {
+          if (architecture != 'x64') {
             throw DcbCMakeException(
               '${cfg.compiler.name} only supports architecture x64 '
               '(MSYS2 ucrt64 is an x86_64 environment); got '
-              '"${cfg.architecture}".',
+              '"$architecture".',
             );
           }
           final isGcc = cfg.compiler == WindowsCompiler.msys2Gcc;
@@ -1445,7 +1568,7 @@ final class DcbCMakeBuilder {
         } else {
           // MSVC-based toolchains (cl.exe / clang-cl) need the MSVC
           // environment (cl.exe / link.exe on PATH, INCLUDE/LIB set).
-          final vcEnv = _initVcEnvironment(cfg, vsRoot);
+          final vcEnv = _initVcEnvironment(cfg, vsRoot, architecture);
           env = Map<String, String>.from(vcEnv);
           final ninjaDir = _findNinjaDir(cmakePath);
           if (ninjaDir != null) {
@@ -1478,8 +1601,8 @@ final class DcbCMakeBuilder {
 
       case null:
         // Let CMake auto-select (typically Visual Studio multi-config).
-        // Still pass architecture for the VS generator.
-        args.addAll(['-A', cfg.architecture]);
+         // Still pass architecture for the VS generator.
+         args.addAll(['-A', architecture]);
     }
 
     // CRT linkage: MSVC-style toolchains only. clang-cl accepts
@@ -1496,9 +1619,55 @@ final class DcbCMakeBuilder {
     return _WindowsResolved(
       cmakePath: cmakePath,
       configureArgs: args,
+      architecture: architecture,
       environment: env,
     );
   }
+
+  static String _resolveWindowsArchitecture(
+    Architecture? targetArchitecture,
+    String? override,
+  ) {
+    final derived = switch (targetArchitecture) {
+      Architecture.x64 => 'x64',
+      Architecture.arm64 => 'arm64',
+      _ => null,
+    };
+    if (override != null) {
+      if (override != 'x64' && override != 'arm64') {
+        throw DcbCMakeException(
+          'Unsupported Windows architecture override "$override". '
+          'Supported architectures: x64, arm64.',
+        );
+      }
+      if (derived != null && derived != override) {
+        throw DcbCMakeException(
+          'Windows architecture override "$override" does not match target '
+          'architecture ${targetArchitecture!.name} (expected "$derived").',
+        );
+      }
+      if (targetArchitecture != null && derived == null) {
+        throw DcbCMakeException(
+          'Windows target architecture ${targetArchitecture.name} is not '
+          'supported by this builder.',
+        );
+      }
+      return override;
+    }
+    if (derived == null && targetArchitecture != null) {
+      throw DcbCMakeException(
+        'Windows target architecture ${targetArchitecture.name} is '
+        'unsupported. Supported architectures: x64, arm64.',
+      );
+    }
+    return derived ?? 'x64';
+  }
+
+  /// Resolve a Windows CMake architecture using the same target/override
+  /// rules as [run].
+  static String resolveWindowsArchitecture(
+    Architecture? targetArchitecture, [String? override]
+  ) => _resolveWindowsArchitecture(targetArchitecture, override);
 
   /// Computes the `CMAKE_MSVC_RUNTIME_LIBRARY` value.
   static String _msvcRuntimeLibrary(bool dynamic, String buildType) {
@@ -1607,7 +1776,11 @@ final class DcbCMakeBuilder {
   /// via `LIB`/`PATH` containing Windows SDK / MSVC paths), the existing
   /// environment is used as-is. This is useful in CI pipelines that set the
   /// environment once and do not want the hook to re-select a VS installation.
-  Map<String, String> _initVcEnvironment(WindowsConfig cfg, String? vsRoot) {
+  Map<String, String> _initVcEnvironment(
+    WindowsConfig cfg,
+    String? vsRoot,
+    String architecture,
+  ) {
     if (_hasVcEnvironment()) {
       _log('MSVC environment already present; skipping vcvarsall.bat');
       return Platform.environment;
@@ -1619,7 +1792,7 @@ final class DcbCMakeBuilder {
       return Platform.environment;
     }
 
-    final arch = cfg.architecture == 'arm64' ? 'x64_arm64' : 'x64';
+    final arch = architecture == 'arm64' ? 'x64_arm64' : 'x64';
     _log('initializing MSVC env: $vcvarsall $arch');
 
     // Run vcvarsall.bat from its own directory to avoid the cmd.exe /C quote-
@@ -1680,17 +1853,21 @@ final class DcbCMakeBuilder {
   ///
   /// This ensures the built DLL loads the matching MSVCP140.dll version
   /// regardless of what the end-user's system has in System32.
-  void _bundleWindowsCrt(WindowsConfig cfg, File outputDll) {
+  List<File> _bundleWindowsCrt(
+    WindowsConfig cfg,
+    File outputDll,
+    String architecture,
+  ) {
     final vsRoot = cfg.vsInstallPath ?? _detectVsInstallPath();
     if (vsRoot == null) {
       _log('WARNING: cannot bundle CRT — VS installation not found');
-      return;
+      return const [];
     }
 
     final redistBase = Directory('$vsRoot\\VC\\Redist\\MSVC');
     if (!redistBase.existsSync()) {
       _log('WARNING: cannot bundle CRT — Redist directory not found');
-      return;
+      return const [];
     }
 
     // Pick the latest version directory (e.g. "14.51.36231").
@@ -1708,10 +1885,10 @@ final class DcbCMakeBuilder {
 
     if (versionDirs.isEmpty) {
       _log('WARNING: cannot bundle CRT — no version directories found');
-      return;
+      return const [];
     }
 
-    final arch = cfg.architecture == 'arm64' ? 'arm64' : 'x64';
+    final arch = architecture == 'arm64' ? 'arm64' : 'x64';
     final crtDir = Directory(
       '${versionDirs.last.path}\\$arch\\Microsoft.VC145.CRT',
     );
@@ -1733,21 +1910,25 @@ final class DcbCMakeBuilder {
         'WARNING: cannot bundle CRT — CRT directory not found under '
         '${versionDirs.last.path}\\$arch\\',
       );
-      return;
+      return const [];
     }
 
     const dllNames = ['MSVCP140.dll', 'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll'];
 
     final outDir = outputDll.parent;
+    final bundled = <File>[];
     var copied = 0;
     for (final name in dllNames) {
       final src = File('${sourceDir.path}\\$name');
       if (src.existsSync()) {
-        src.copySync('${outDir.path}\\$name');
+        final destination = File('${outDir.path}\\$name');
+        src.copySync(destination.path);
+        bundled.add(destination);
         copied++;
       }
     }
     _log('bundled $copied CRT DLL(s) from ${sourceDir.path}');
+    return bundled;
   }
 
   /// Copies the MSYS2 runtime DLLs next to [outputDll].
@@ -1757,7 +1938,7 @@ final class DcbCMakeBuilder {
   /// depends on `libgcc_s_seh-1.dll`, `libstdc++-6.dll`, and
   /// `libwinpthread-1.dll` from `<msys2>\ucrt64\bin`. Only the DLLs that
   /// actually exist in the toolchain are copied.
-  void _bundleMsys2Runtime(WindowsConfig cfg, File outputDll) {
+  List<File> _bundleMsys2Runtime(WindowsConfig cfg, File outputDll) {
     final root = _resolveMsys2Root(
       cfg.msys2Path,
       needGcc: cfg.compiler == WindowsCompiler.msys2Gcc,
@@ -1771,15 +1952,19 @@ final class DcbCMakeBuilder {
     ];
 
     final outDir = outputDll.parent;
+    final bundled = <File>[];
     var copied = 0;
     for (final name in dllNames) {
       final src = File('$sourceDir\\$name');
       if (src.existsSync()) {
-        src.copySync('${outDir.path}\\$name');
+        final destination = File('${outDir.path}\\$name');
+        src.copySync(destination.path);
+        bundled.add(destination);
         copied++;
       }
     }
     _log('bundled $copied MSYS2 runtime DLL(s) from $sourceDir');
+    return bundled;
   }
 
   // -------------------------------------------------------------------------
@@ -1847,10 +2032,6 @@ final class DcbCMakeBuilder {
       // MinGW-style shared libraries: lib<name>.dll instead of <name>.dll.
       buildDir.resolve('$buildType/').resolve('lib$fileName'),
       buildDir.resolve('lib$fileName'),
-      // Fallback: check the other config in case of stale builds.
-      buildDir
-          .resolve(buildType == 'Debug' ? 'Release/' : 'Debug/')
-          .resolve(fileName),
     ];
     for (final candidate in candidates) {
       final file = File.fromUri(candidate);
@@ -1919,22 +2100,46 @@ final class DcbCMakeBuilder {
       '.mm',
       '.cmake',
     };
-    for (final entity in rootDir.listSync(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (entity is! File) {
-        continue;
-      }
-      // Skip nested build/output directories.
-      if (entity.path.contains('dcb_build')) {
-        continue;
-      }
-      final name = entity.uri.pathSegments.last;
-      final dot = name.lastIndexOf('.');
-      final ext = dot < 0 ? '' : name.substring(dot).toLowerCase();
-      if (name == 'CMakeLists.txt' || sourceExtensions.contains(ext)) {
-        output.dependencies.add(entity.uri);
+    // Use an explicit directory stack so generated/build trees are pruned
+    // before traversal. Directory.listSync(recursive: true) enumerates every
+    // descendant first, which makes a package-root CMake project repeatedly
+    // walk .dart_tool/hooks_runner, CMake _deps, and prior build outputs.
+    const skippedDirectories = {
+      '.dart_tool',
+      '.git',
+      '.idea',
+      '.vscode',
+      '_deps',
+      'build',
+      'dist',
+      'out',
+      'cmake-build-debug',
+      'cmake-build-release',
+      'dcb_build',
+      'node_modules',
+    };
+    final pending = <Directory>[rootDir];
+    while (pending.isNotEmpty) {
+      final directory = pending.removeLast();
+      for (final entity in directory.listSync(followLinks: false)) {
+        if (entity is Directory) {
+          final name = entity.uri.pathSegments.last.toLowerCase();
+          if (skippedDirectories.contains(name) ||
+              name.startsWith('build_')) {
+            continue;
+          }
+          pending.add(entity);
+          continue;
+        }
+        if (entity is! File) {
+          continue;
+        }
+        final name = entity.uri.pathSegments.last;
+        final dot = name.lastIndexOf('.');
+        final ext = dot < 0 ? '' : name.substring(dot).toLowerCase();
+        if (name == 'CMakeLists.txt' || sourceExtensions.contains(ext)) {
+          output.dependencies.add(entity.uri);
+        }
       }
     }
   }
@@ -1952,8 +2157,9 @@ final class DcbCMakeBuilder {
     if (configured != 'cmake') {
       return configured;
     }
-    if (_isOnPath('cmake.exe')) {
-      return configured;
+    final pathCmake = _whichOnPath('cmake.exe');
+    if (pathCmake != null && _cmakeVersionOk(pathCmake)) {
+      return pathCmake;
     }
 
     // Try the resolved VS root first.
@@ -1961,7 +2167,7 @@ final class DcbCMakeBuilder {
       const cmakeRelative =
           r'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe';
       final candidate = '$vsRoot\\$cmakeRelative';
-      if (File(candidate).existsSync()) {
+      if (File(candidate).existsSync() && _cmakeVersionOk(candidate)) {
         _log('resolved CMake: $candidate');
         return candidate;
       }
@@ -1969,7 +2175,7 @@ final class DcbCMakeBuilder {
 
     // Fallback: standalone installs and vswhere discovery.
     for (final candidate in _windowsCmakeCandidates()) {
-      if (File(candidate).existsSync()) {
+      if (File(candidate).existsSync() && _cmakeVersionOk(candidate)) {
         _log('resolved CMake: $candidate');
         return candidate;
       }

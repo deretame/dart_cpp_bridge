@@ -504,8 +504,12 @@ NodeA get_node_a();
         cfg = _write_test_project(Path(td), header)
         r = _run_codegen(cfg)
         combined = r.stdout + r.stderr
-        # This should either work (no actual circular ref) or fail gracefully
-        passed = r.returncode == 0 or "circular" in combined.lower() or r.returncode != 0
+        # This should either work (there is no actual circular value here) or
+        # fail with a clear type/recursion diagnostic.
+        passed = r.returncode == 0 or any(
+            marker in combined.lower()
+            for marker in ("circular", "unsupported", "type error", "nodea")
+        )
         _record(
             "P08: circular reference detection",
             passed,
@@ -528,8 +532,12 @@ std::vector<std::vector<std::vector<std::vector<std::vector<
         cfg = _write_test_project(Path(td), header)
         r = _run_codegen(cfg)
         combined = r.stdout + r.stderr
-        # Either succeeds or fails with clear depth error
-        passed = r.returncode == 0 or "nest" in combined.lower() or "depth" in combined.lower() or r.returncode != 0
+        # Either succeeds or fails with a diagnostic that explains the type
+        # limitation. A bare non-zero exit is not a passing result.
+        passed = r.returncode == 0 or any(
+            marker in combined.lower()
+            for marker in ("nest", "depth", "unsupported", "type error")
+        )
         _record(
             "P09: deep container nesting",
             passed,
@@ -603,6 +611,57 @@ scan:
             "Y04: invalid YAML syntax",
             passed,
             f"exit={r.returncode}\n{combined[:500]}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# N01: C++ names that collapse to one generated Dart identifier
+# ---------------------------------------------------------------------------
+def test_n01_dart_name_collision() -> None:
+    header = HEADER_PREAMBLE + """
+BRIDGE_SYNC
+std::int32_t foo_bar();
+
+BRIDGE_SYNC
+std::int32_t fooBar();
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = r.returncode != 0 and "DART NAME ERROR" in combined and "fooBar" in combined
+        _record(
+            "N01: Dart name collision rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:700]}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# N02: Deterministic stable method-ID collision
+# ---------------------------------------------------------------------------
+def test_n02_method_id_collision() -> None:
+    header = HEADER_PREAMBLE + """
+BRIDGE_SYNC
+std::int32_t f29738();
+
+BRIDGE_SYNC
+std::int32_t f52122();
+"""
+    with tempfile.TemporaryDirectory() as td:
+        cfg = _write_test_project(Path(td), header)
+        r = _run_codegen(cfg)
+        combined = r.stdout + r.stderr
+        passed = (
+            r.returncode != 0
+            and "METHOD ID ERROR" in combined
+            and "f29738" in combined
+            and "f52122" in combined
+        )
+        _record(
+            "N02: method ID collision rejected",
+            passed,
+            f"exit={r.returncode}\n{combined[:700]}",
         )
 
 
@@ -1347,6 +1406,8 @@ def main() -> int:
         test_p09_deep_nesting,
         test_y03_missing_include_paths,
         test_y04_invalid_yaml,
+        test_n01_dart_name_collision,
+        test_n02_method_id_collision,
         test_s03_order_independence,
         # BRIDGE_TO_STRING validation
         test_ts01_valid_to_string,

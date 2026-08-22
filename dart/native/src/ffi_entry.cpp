@@ -151,7 +151,13 @@ DCB_API uint64_t dcb_session_open(int64_t reply_native_port) {
 }
 
 DCB_API void dcb_session_close(uint64_t session_id) {
-  dcb::SessionRegistry::instance().close(session_id);
+  try {
+    dcb::SessionRegistry::instance().close(session_id);
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_session_close failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_session_close failed: unknown exception" << std::endl;
+  }
 }
 
 DCB_API void dcb_session_finalizer(void* token) {
@@ -171,9 +177,21 @@ DCB_API void dcb_session_finalizer(void* token) {
 }
 
 DCB_API void dcb_shutdown(void) {
-  dcb::SessionRegistry::instance().close_all();
-  dcb::Runtime::instance().set_dart_post(nullptr, nullptr);
-  dcb::Runtime::instance().stop();
+  try {
+    dcb::SessionRegistry::instance().close_all();
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_shutdown session cleanup failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_shutdown session cleanup failed: unknown exception" << std::endl;
+  }
+  try {
+    dcb::Runtime::instance().set_dart_post(nullptr, nullptr);
+    dcb::Runtime::instance().stop();
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_shutdown runtime stop failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_shutdown runtime stop failed: unknown exception" << std::endl;
+  }
 }
 
 DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t req_len,
@@ -202,15 +220,18 @@ DCB_API uint8_t* dcb_invoke_sync(uint64_t session_id, const uint8_t* req, size_t
 }
 
 DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t req_len) {
-  auto session = dcb::SessionRegistry::instance().get(session_id);
+  std::shared_ptr<dcb::Session> session;
+  try {
+    session = dcb::SessionRegistry::instance().get(session_id);
+  } catch (...) {
+    return;
+  }
   if (!session) {
     return;
   }
-  if (!dcb::Runtime::instance().running()) {
-    post_async_error(session, req, req_len, "runtime stopped");
-    return;
-  }
+  const auto error_session = session;
   try {
+    const auto generation = session->generation();
     const auto dispatch = dcb::dispatch_request_fn();
     std::vector<std::uint8_t> copy(req, req + req_len);
     // std::exec style: launch a dispatch chain on the io scheduler
@@ -218,45 +239,78 @@ DCB_API void dcb_invoke_async(uint64_t session_id, const uint8_t* req, size_t re
     // catch business exceptions at the wire boundary; this extra guard keeps a
     // bad registration or third-party dispatcher from terminating the process.
     auto sndr = stdexec::just() | stdexec::then(
-        [session = std::move(session), copy = std::move(copy), session_id,
+        [session, copy = std::move(copy), session_id, generation,
          dispatch]() noexcept {
           try {
-            dispatch(session, session_id, copy.data(), copy.size());
+            if (!session->alive(generation)) {
+              return;
+            }
+            session->with_alive([&] {
+              dispatch(session, session_id, copy.data(), copy.size());
+            });
           } catch (const std::exception& e) {
             post_async_error(session, copy.data(), copy.size(), e.what());
           } catch (...) {
             post_async_error(session, copy.data(), copy.size(), "async dispatch failed");
           }
         });
-    auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
-                                    std::move(sndr));
-    exec::start_detached(std::move(chain));
+    const bool accepted = dcb::Runtime::instance().try_accept([&] {
+      auto chain = stdexec::starts_on(*dcb::Runtime::instance().io_scheduler(),
+                                      std::move(sndr));
+      exec::start_detached(std::move(chain));
+    });
+    if (!accepted) {
+      return;
+    }
   } catch (const std::exception& e) {
-    post_async_error(session, req, req_len, e.what());
+    post_async_error(error_session, req, req_len, e.what());
   } catch (...) {
-    post_async_error(session, req, req_len, "async invoke failed");
+    post_async_error(error_session, req, req_len, "async invoke failed");
   }
 }
 
 DCB_API void dcb_stream_close(uint64_t session_id, uint64_t stream_id) {
-  auto session = dcb::SessionRegistry::instance().get(session_id);
-  if (session) {
-    session->set_stream_open(stream_id, false);
+  try {
+    auto session = dcb::SessionRegistry::instance().get(session_id);
+    if (session) {
+      session->set_stream_open(stream_id, false);
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "[dcb] dcb_stream_close failed: " << e.what() << std::endl;
+  } catch (...) {
+    std::cerr << "[dcb] dcb_stream_close failed: unknown exception" << std::endl;
   }
 }
 
 DCB_API void dcb_dart_fn_reply(uint64_t session_id, uint64_t reply_id, uint8_t ok,
                                const uint8_t* payload, size_t payload_len, const char* error_msg) {
-  auto session = dcb::SessionRegistry::instance().get(session_id);
-  if (!session) {
-    return;
+  std::shared_ptr<dcb::Session> session;
+  try {
+    session = dcb::SessionRegistry::instance().get(session_id);
+    if (!session) {
+      return;
+    }
+    std::vector<std::uint8_t> bytes;
+    if (payload != nullptr && payload_len > 0) {
+      bytes.assign(payload, payload + payload_len);
+    }
+    std::string err = error_msg ? error_msg : "";
+    session->complete_dart_fn(reply_id, ok != 0, std::move(bytes), std::move(err));
+  } catch (const std::exception& e) {
+    if (session) {
+      try {
+        session->complete_dart_fn(reply_id, false, {}, e.what());
+      } catch (...) {
+      }
+    }
+  } catch (...) {
+    if (session) {
+      try {
+        session->complete_dart_fn(reply_id, false, {}, "DartFn reply failed");
+      } catch (...) {
+      }
+    }
   }
-  std::vector<std::uint8_t> bytes;
-  if (payload != nullptr && payload_len > 0) {
-    bytes.assign(payload, payload + payload_len);
-  }
-  std::string err = error_msg ? error_msg : "";
-  session->complete_dart_fn(reply_id, ok != 0, std::move(bytes), std::move(err));
 }
 
 DCB_API void dcb_drop_object(uint64_t handle) {

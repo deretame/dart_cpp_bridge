@@ -469,7 +469,7 @@ Common issues:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `cmake not found` | CMake not on PATH | Install CMake >= 3.24 and ensure it is on PATH. |
+| `cmake not found` | CMake not on PATH | Install CMake >= 3.25 and ensure it is on PATH. |
 | `vcvarsall.bat not found` | Using Ninja on Windows without MSVC env | Install VS Build Tools, set `vsInstallPath`, or switch to `CmakeGenerator.msbuild`. |
 | `libc++_shared.so not found` | Android NDK path wrong / ABI mismatch | Verify `ndkPath`. If `abi` is omitted, check that `input.config.code.targetArchitecture` is supported. |
 | `Could not locate built library` | CMake output name mismatch | Ensure `libName` matches `add_library()` in `CMakeLists.txt`. |

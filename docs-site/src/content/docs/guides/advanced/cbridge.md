@@ -3,7 +3,7 @@ title: Pure C Bridge API
 description: C99-compatible API for pure C callers — encoding/decoding, async operations, and calling Dart functions
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 The C ABI in this chapter is stable across v1 and v2. C++ coroutine examples use
 `stdexec::task`; pure C callers still need no C++ dependency.
 :::

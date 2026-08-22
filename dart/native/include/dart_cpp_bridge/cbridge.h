@@ -24,7 +24,9 @@ extern "C" {
 // ─── DartFn call (C callback style) ───────────────────────────────────────────
 
 /// Notification function called after a Dart callback completes.
-/// Invoked on the bridge's io thread (do not block in this callback).
+/// Invoked on the bridge's io thread (do not block in this callback), except
+/// for shutdown fallback when the runtime stops before an accepted task reaches
+/// the io thread; that fallback runs on the thread calling shutdown.
 /// If marshaling to another thread is required, use dcb_async_* or post manually.
 ///
 /// @param userdata   user pointer passed to dcb_invoke_dart_fn
@@ -48,8 +50,10 @@ typedef void (*dcb_dart_fn_callback)(
 /// @param callback    callback invoked after Dart finishes execution
 /// @param userdata    user pointer forwarded to callback
 ///
-/// Returns 0 if the call was successfully initiated, -1 if the session is invalid.
-/// The callback is guaranteed to be called exactly once (success or failure).
+/// Returns 0 if the request was accepted. In that case [callback] is guaranteed
+/// to be called exactly once, including failure and shutdown fallback paths.
+/// Returns -1 if the request was rejected before acceptance; in that case the
+/// callback is never called and the caller retains ownership of [userdata].
 DCB_API int dcb_invoke_dart_fn(
     uint64_t session_id,
     uint64_t fn_id,

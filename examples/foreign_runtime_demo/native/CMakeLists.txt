@@ -14,7 +14,7 @@
 #   dcb_gen_tool generate dart_cpp_bridge.yaml
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.25)
 project(dcb_foreign_runtime_demo LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)

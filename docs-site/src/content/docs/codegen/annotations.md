@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 For `BRIDGE_ASYNC`, v2 headers return `stdexec::task<T>` or another supported
 stdexec sender. Published v1 projects should use the [version guide](/dart_cpp_bridge/versions/)
 before copying an async declaration.

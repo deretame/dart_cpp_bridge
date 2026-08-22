@@ -37,7 +37,7 @@ the bridge handles codec, scheduling, lifecycle, and Dart API generation.
 | Blocking work | Asio thread pool |
 | Cancellation | stop tokens |
 | Codegen | Python 3.13 + libclang-ng, pinned and hash-verified |
-| Build | CMake 3.24+ and Native Assets hooks |
+| Build | CMake 3.25+ and Native Assets hooks |
 
 ## Read next
 

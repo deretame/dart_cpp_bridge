@@ -424,7 +424,7 @@ bool cancel_task(std::string task_id) {
   }
   // stdexec::inplace_stop_source::request_stop() has the OPPOSITE return
   // semantics of std::stop_source (and of the pre-migration
-  // async_simple::Signal::emits()): it returns false when THIS call
+  // cooperative stop is requested: it returns false when THIS call
   // initiated the stop and true when a stop request had already been made.
   // Invert it so the Dart API keeps the established contract:
   // true = this call cancelled the task.

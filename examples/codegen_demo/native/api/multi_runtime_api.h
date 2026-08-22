@@ -53,7 +53,7 @@ BRIDGE_NORMAL
 void worker_stream(dcb::StreamSink<std::string> sink, std::int32_t count = 5,
                    std::int32_t interval_ms = 50);
 
-/// Call a Dart callback from Worker A's event loop (independent AsioExecutor).
+/// Call a Dart callback from Worker A's event loop (independent scheduler).
 /// Tests cross-runtime DartFn: the coroutine runs on Worker A's io thread,
 /// co_awaits the DartFn, and the reply is scheduled back to Worker A.
 BRIDGE_ASYNC

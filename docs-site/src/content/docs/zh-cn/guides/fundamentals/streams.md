@@ -3,7 +3,7 @@ title: Stream 流
 description: 用 StreamSink 向 Dart 暴露 C++ 数据流，包括可选 stream
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 异步 stream 示例使用 `stdexec::task` 和 `dcb::sleep`。stream wire 契约与 v1
 共用，变化仅在 C++ 异步签名。
 :::

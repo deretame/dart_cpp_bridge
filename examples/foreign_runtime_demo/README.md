@@ -1,4 +1,4 @@
-# Foreign Runtime Demo — libuv as a stdexec Scheduler (v2)
+# Foreign Runtime Demo — libuv as a stdexec Scheduler
 
 Demonstrates how a non-asio event loop (libuv) integrates with the bridge's
 stdexec sender world. This is the stdexec-era replacement for the old

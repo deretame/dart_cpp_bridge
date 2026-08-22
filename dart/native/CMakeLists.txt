@@ -13,7 +13,7 @@
 #   DLL, causing dcb_* symbols to be missing and Dart FFI lookups to fail.
 #   Therefore downstream must link with
 #   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime> to force all objects
-#   to be included. This genex requires CMake 3.24+ (OBJECT libraries avoid
+#   to be included. This genex requires CMake 3.25+ (OBJECT libraries avoid
 #   this step but cannot be installed/distributed).
 #
 # Single source of truth for dependency versions:
@@ -120,6 +120,14 @@ else()
         "DCB_FETCH_ASIO=OFF but no asio found: provide an `asio_iface` target "
         "or a CMake package `asio` (e.g. vcpkg), or keep DCB_FETCH_ASIO=ON.")
     endif()
+  endif()
+  # stdexec's standalone-Asio integration looks for the conventional `asio`
+  # target before deciding whether it must fetch its own copy. Preserve the
+  # parent-provided interface under that name in OFF mode as well; otherwise
+  # disabling DCB_FETCH_ASIO can still trigger a second CPM/FetchContent
+  # download during stdexec configuration.
+  if(NOT TARGET asio)
+    add_library(asio ALIAS asio_iface)
   endif()
 endif()
 

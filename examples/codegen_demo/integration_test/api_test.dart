@@ -967,7 +967,7 @@ void main() {
   // coroutine. The demo instead keeps a global task_id → Signal map: the
   // coroutine owns a Slot, and cancelTask(taskId) emits
   // SignalType::Terminate. The coroutine's cancellable timer throws
-  // async_simple::SignalException, which surfaces in Dart as a StateError.
+  // Cooperative cancellation surfaces in Dart as a StateError.
 
   testWidgets('C01: task completes normally when never cancelled', (
     tester,
@@ -1582,7 +1582,7 @@ void main() {
       await stopWorkers();
     });
 
-    testWidgets('call Dart callback from Worker A (independent AsioExecutor)', (
+    testWidgets('call Dart callback from Worker A (independent scheduler)', (
       tester,
     ) async {
       final result = await callDartFromWorkerA(
@@ -1592,7 +1592,7 @@ void main() {
       expect(result, 'dart-echo:hello');
     });
 
-    testWidgets('call Dart callback from Worker B (independent AsioExecutor)', (
+    testWidgets('call Dart callback from Worker B (independent scheduler)', (
       tester,
     ) async {
       final result = await callDartFromWorkerB(

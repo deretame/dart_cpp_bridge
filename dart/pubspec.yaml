@@ -2,7 +2,7 @@ name: dart_cpp_bridge
 description: >
   Dart ↔ C++20 bridge (FRB-like). Dart FFI session layer;
   Native Assets build hooks for Android, iOS, Linux, macOS, and Windows.
-version: 2.1.0
+version: 2.1.1
 homepage: https://github.com/deretame/dart_cpp_bridge
 # Monorepo: point at the package directory so pub.dev can verify.
 repository: https://github.com/deretame/dart_cpp_bridge/tree/main/dart

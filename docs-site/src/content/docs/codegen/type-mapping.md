@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-:::caution[v2 development line]
+:::note[v2.1.0]
 The examples on this page use `stdexec::task` and `dcb::sync_wait`. The Dart
 type mappings and wire encodings are shared with v1, but v1 C++ async signatures
 use async-simple. See [Versioned Documentation](/dart_cpp_bridge/versions/).

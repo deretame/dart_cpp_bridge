@@ -102,6 +102,8 @@ struct UvSchedState {
   // owned by its parent and must NOT be touched after run() returns (the
   // parent may be destroyed by the io thread as soon as set_value completes).
   struct StartNode : Node {
+    virtual ~StartNode() = default;
+
     enum Claim : int { kQueued = 0, kRunning = 1, kCancelled = 2 };
     std::atomic<int> claim{kQueued};
     virtual bool run() = 0;

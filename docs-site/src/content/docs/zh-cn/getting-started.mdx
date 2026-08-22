@@ -5,7 +5,7 @@ description: 环境准备、安装工具并构建第一个 dart_cpp_bridge 项�
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本指南按当前 stdexec 仓库实现编写。已发布的 1.x 项目请先查看
 [版本说明](/dart_cpp_bridge/zh-cn/versions/)，并让 v1 的 async-simple 头文件
 与生成物保持成套。
@@ -24,7 +24,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 开始之前，请确保你的开发环境满足以下条件：
 
-- **CMake >= 3.24**
+- **CMake >= 3.25**
 - **C++ 编译器** 支持 C++20（MSVC 2019+、GCC 10+、Clang 12+）
 - **Dart SDK >= 3.10.0**
 - **Git**（使用默认 CMake 依赖路径、需要拉取 Asio 和 stdexec 时必需；如果

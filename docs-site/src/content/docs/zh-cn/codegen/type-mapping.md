@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-:::caution[v2 开发线]
+:::note[v2.1.0]
 本页示例使用 `stdexec::task` 和 `dcb::sync_wait`。Dart 类型映射和 wire 编码
 与 v1 共用，但 v1 的 C++ 异步签名使用 async-simple。参见[版本文档](/dart_cpp_bridge/zh-cn/versions/)。
 :::

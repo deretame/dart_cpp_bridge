@@ -9,17 +9,17 @@ import 'package:dart_cpp_bridge/dart_cpp_bridge.dart';
 
 import 'api/bridge_api.dart';
 import 'api/counter.dart';
+
 /// Generated enum for `demo::api::OrderStatus`.
-enum OrderStatus {
-  created,
-  paid,
-  shipped,
-}
+enum OrderStatus { created, paid, shipped }
 
 void _writeDataClassPoint(ByteWriter w, Point v) {
   w.f64(v.x);
   w.f64(v.y);
-  if (v.label == null) { w.u8(0); } else { w.u8(1);
+  if (v.label == null) {
+    w.u8(0);
+  } else {
+    w.u8(1);
     w.str(v.label!);
   }
 }
@@ -31,6 +31,7 @@ Point _readDataClassPoint(ByteReader _r) {
     label: ((_r.u8() != 0) ? _r.str() : null),
   );
 }
+
 void _writeDataClassRect(ByteWriter w, Rect v) {
   _writeDataClassPoint(w, v.topLeft);
   _writeDataClassPoint(w, v.bottomRight);
@@ -56,7 +57,9 @@ final class BridgeApiImpl {
     if (i == null) throw StateError('DcbLib.init() must be called first');
     return i;
   }
-  static void initSingleton(DartCppBridge bridge) => _instance = BridgeApiImpl._(bridge);
+
+  static void initSingleton(DartCppBridge bridge) =>
+      _instance = BridgeApiImpl._(bridge);
   static void disposeSingleton() => _instance = null;
 
   static const int sumSetOrderedId = 10142861;
@@ -109,6 +112,7 @@ final class BridgeApiImpl {
   static const int negateBoolId = 1187695424;
   static const int failSyncId = 1225502033;
   static const int isTaskRunningId = 1229894954;
+  static const int makeCounterId = 1270341715;
   static const int echoBytesId = 1287481420;
   static const int testCbridgeAsyncFailId = 1312284767;
   static const int sleepGreetingId = 1347623235;
@@ -163,7 +167,10 @@ final class BridgeApiImpl {
       _payload.i32(_v);
     }
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(sumSetOrderedId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      sumSetOrderedId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -177,7 +184,10 @@ final class BridgeApiImpl {
     return Counter.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64());
   }
 
-  Future<String> callDartFromWorkerA(Future<String> Function(String) callback, String input) async {
+  Future<String> callDartFromWorkerA(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -192,7 +202,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(callDartFromWorkerAId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        callDartFromWorkerAId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -202,7 +215,10 @@ final class BridgeApiImpl {
   Future<String> collectAllDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAllDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -238,7 +254,12 @@ final class BridgeApiImpl {
   String syncDownloadWithProgress(String url, StreamController<int>? progress) {
     final _payload = ByteWriter();
     _payload.str(url);
-    final _bytes = bridge.invokeSyncMethodWithStream<int>(syncDownloadWithProgressId, _payload, progress, (final _r) => _r.i32());
+    final _bytes = bridge.invokeSyncMethodWithStream<int>(
+      syncDownloadWithProgressId,
+      _payload,
+      progress,
+      (final _r) => _r.i32(),
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -248,7 +269,10 @@ final class BridgeApiImpl {
     _payload.str(value.$2);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(pairEchoId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); return (_r.i32(), _r.str()); })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      return (_r.i32(), _r.str());
+    })();
   }
 
   Future<(int, String, bool)> tupleEcho((int, String, bool) value) async {
@@ -258,13 +282,19 @@ final class BridgeApiImpl {
     _payload.u8(value.$3 ? 1 : 0);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(tupleEchoId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); return (_r.i32(), _r.str(), _r.u8() != 0); })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      return (_r.i32(), _r.str(), _r.u8() != 0);
+    })();
   }
 
   Future<String> testForeignSleep() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testForeignSleepId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -273,7 +303,10 @@ final class BridgeApiImpl {
     _payload.str(message);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(fanOutId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); return (_r.str(), _r.str()); })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      return (_r.str(), _r.str());
+    })();
   }
 
   Future<String> stopWorkers() async {
@@ -283,7 +316,10 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
-  Future<String> callDartFromUv(Future<String> Function(String) callback, String input) async {
+  Future<String> callDartFromUv(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -298,7 +334,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(callDartFromUvId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        callDartFromUvId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -308,7 +347,10 @@ final class BridgeApiImpl {
   Future<String> stopUvWorker() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(stopUvWorkerId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      stopUvWorkerId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -323,31 +365,53 @@ final class BridgeApiImpl {
   Stream<int> failStream(String msg) {
     final _payload = ByteWriter();
     _payload.str(msg);
-    return bridge.openStream<int>(failStreamId, _payload.takeBytes(), (final _r) => _r.i32());
+    return bridge.openStream<int>(
+      failStreamId,
+      _payload.takeBytes(),
+      (final _r) => _r.i32(),
+    );
   }
 
-  Future<String> downloadWithProgress(String url, StreamController<int>? progress) async {
+  Future<String> downloadWithProgress(
+    String url,
+    StreamController<int>? progress,
+  ) async {
     final _payload = ByteWriter();
     _payload.str(url);
-    final _bytes = await bridge.invokeAsyncMethodWithStream<int>(downloadWithProgressId, _payload, progress, (final _r) => _r.i32());
+    final _bytes = await bridge.invokeAsyncMethodWithStream<int>(
+      downloadWithProgressId,
+      _payload,
+      progress,
+      (final _r) => _r.i32(),
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<String> startUvWorker() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(startUvWorkerId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      startUvWorkerId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<int?> maybeDouble(int? value) async {
     final _payload = ByteWriter();
-    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+    if (value == null) {
+      _payload.u8(0);
+    } else {
+      _payload.u8(1);
       _payload.i32(value);
     }
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(maybeDoubleId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? _r.i32() : null; })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _has = _r.u8() != 0;
+      return _has ? _r.i32() : null;
+    })();
   }
 
   Future<int> add(int a, int b) async {
@@ -377,7 +441,10 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
-  Future<String> testCbridgeInvoke(Future<String> Function(String) callback, String input) async {
+  Future<String> testCbridgeInvoke(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -392,7 +459,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(testCbridgeInvokeId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        testCbridgeInvokeId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -402,7 +472,10 @@ final class BridgeApiImpl {
   Future<String> testCbridgeAsync() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testCbridgeAsyncId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -410,7 +483,10 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.str(input);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(invokeRegisteredId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      invokeRegisteredId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -422,7 +498,10 @@ final class BridgeApiImpl {
       _payload.i32(_v);
     });
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(sumScoresOrderedId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      sumScoresOrderedId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -433,8 +512,19 @@ final class BridgeApiImpl {
       _payload.u8(_v ? 1 : 0);
     }
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(echoBoolListId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _n = _r.u32(); final _result = <bool>[]; for (var _i = 0; _i < _n; _i++) { _result.add(_r.u8() != 0); } return _result; })();
+    final _bytes = await bridge.invokeAsyncMethod(
+      echoBoolListId,
+      _payloadBytes,
+    );
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _n = _r.u32();
+      final _result = <bool>[];
+      for (var _i = 0; _i < _n; _i++) {
+        _result.add(_r.u8() != 0);
+      }
+      return _result;
+    })();
   }
 
   Future<String> pingWorker(String payload) async {
@@ -448,14 +538,20 @@ final class BridgeApiImpl {
   Future<String> collectAnyCancelDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAnyCancelDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAnyCancelDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<String> testForeignSleepLong() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testForeignSleepLongId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepLongId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -479,14 +575,20 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.i64(value);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(incrementI64Id, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      incrementI64Id,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i64();
   }
 
   Future<String> testChannelServiceConcurrent() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testChannelServiceConcurrentId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testChannelServiceConcurrentId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -495,41 +597,67 @@ final class BridgeApiImpl {
     _payload.i64(value.microsecondsSinceEpoch);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(echoTimeId, _payloadBytes);
-    return DateTime.fromMicrosecondsSinceEpoch(ByteReader(_bytes).i64(), isUtc: true);
+    return DateTime.fromMicrosecondsSinceEpoch(
+      ByteReader(_bytes).i64(),
+      isUtc: true,
+    );
   }
 
   Future<int> collectAllParaDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAllParaDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllParaDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
   Future<String> startWorkers() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(startWorkersId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      startWorkersId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
-  Future<String> cancellableTask(String taskId, int steps, int intervalMs) async {
+  Future<String> cancellableTask(
+    String taskId,
+    int steps,
+    int intervalMs,
+  ) async {
     final _payload = ByteWriter();
     _payload.str(taskId);
     _payload.i32(steps);
     _payload.i32(intervalMs);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(cancellableTaskId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      cancellableTaskId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<OrderStatus?> optionalStatus(OrderStatus? value) async {
     final _payload = ByteWriter();
-    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+    if (value == null) {
+      _payload.u8(0);
+    } else {
+      _payload.u8(1);
       _payload.i32(value.index);
     }
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(optionalStatusId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? OrderStatus.values[_r.i32()] : null; })();
+    final _bytes = await bridge.invokeAsyncMethod(
+      optionalStatusId,
+      _payloadBytes,
+    );
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _has = _r.u8() != 0;
+      return _has ? OrderStatus.values[_r.i32()] : null;
+    })();
   }
 
   Future<List<int>> echoList(List<int> values) async {
@@ -540,13 +668,24 @@ final class BridgeApiImpl {
     }
     final _payloadBytes = _payload.takeBytes();
     final _bytes = await bridge.invokeAsyncMethod(echoListId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _n = _r.u32(); final _result = <int>[]; for (var _i = 0; _i < _n; _i++) { _result.add(_r.i32()); } return _result; })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _n = _r.u32();
+      final _result = <int>[];
+      for (var _i = 0; _i < _n; _i++) {
+        _result.add(_r.i32());
+      }
+      return _result;
+    })();
   }
 
   Future<String> collectAllErrorDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAllErrorDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllErrorDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -554,11 +693,18 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.str(input);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(invokeRegisteredAsyncId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      invokeRegisteredAsyncId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
-  Future<String> concatDartFn(Future<String> Function(String, String) callback, String a, String b) async {
+  Future<String> concatDartFn(
+    Future<String> Function(String, String) callback,
+    String a,
+    String b,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -575,14 +721,20 @@ final class BridgeApiImpl {
       _payload.str(a);
       _payload.str(b);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(concatDartFnId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        concatDartFnId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
     }
   }
 
-  Future<String> testCbridgeInvokePureC(Future<String> Function(String) callback, String input) async {
+  Future<String> testCbridgeInvokePureC(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -597,7 +749,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(testCbridgeInvokePureCId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        testCbridgeInvokePureCId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -618,7 +773,10 @@ final class BridgeApiImpl {
     _payload.u64(data.address);
     _payload.i32(len);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(asyncEchoBytesId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      asyncEchoBytesId,
+      _payloadBytes,
+    );
     return Pointer<Uint8>.fromAddress(ByteReader(_bytes).u64());
   }
 
@@ -646,6 +804,14 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).u8() != 0;
   }
 
+  Future<Counter> makeCounter(int initialValue) async {
+    final _payload = ByteWriter();
+    _payload.i32(initialValue);
+    final _payloadBytes = _payload.takeBytes();
+    final _bytes = await bridge.invokeAsyncMethod(makeCounterId, _payloadBytes);
+    return Counter.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64());
+  }
+
   Pointer<Uint8> echoBytes(Pointer<Uint8> data, int len) {
     final _payload = ByteWriter();
     _payload.u64(data.address);
@@ -658,7 +824,10 @@ final class BridgeApiImpl {
   Future<String> testCbridgeAsyncFail() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncFailId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testCbridgeAsyncFailId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -666,7 +835,10 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.str(name);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(sleepGreetingId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      sleepGreetingId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -683,10 +855,16 @@ final class BridgeApiImpl {
     _payload.i64(value.microsecondsSinceEpoch);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = bridge.invokeSyncMethod(echoTimeSyncId, _payloadBytes);
-    return DateTime.fromMicrosecondsSinceEpoch(ByteReader(_bytes).i64(), isUtc: true);
+    return DateTime.fromMicrosecondsSinceEpoch(
+      ByteReader(_bytes).i64(),
+      isUtc: true,
+    );
   }
 
-  Future<String> callDartFromWorkerB(Future<String> Function(String) callback, String input) async {
+  Future<String> callDartFromWorkerB(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -701,7 +879,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(callDartFromWorkerBId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        callDartFromWorkerBId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -720,7 +901,11 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.i32(count);
     _payload.i32(intervalMs);
-    return bridge.openStream<String>(workerStreamId, _payload.takeBytes(), (final _r) => _r.str());
+    return bridge.openStream<String>(
+      workerStreamId,
+      _payload.takeBytes(),
+      (final _r) => _r.str(),
+    );
   }
 
   Future<int> failNonStd() async {
@@ -745,21 +930,30 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.u32(value);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(incrementU32Id, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      incrementU32Id,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).u32();
   }
 
   Future<String> testForeignSleepCancel() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testForeignSleepCancelId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testForeignSleepCancelId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<String> collectAllCancelDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAllCancelDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAllCancelDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -767,7 +961,11 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.i32(count);
     _payload.i32(intervalMs);
-    return bridge.openStream<int>(tickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
+    return bridge.openStream<int>(
+      tickStreamId,
+      _payload.takeBytes(),
+      (final _r) => _r.i32(),
+    );
   }
 
   Future<int> uvIntervalDemo(int count, int intervalMs) async {
@@ -775,7 +973,10 @@ final class BridgeApiImpl {
     _payload.i32(count);
     _payload.i32(intervalMs);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(uvIntervalDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      uvIntervalDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -806,7 +1007,10 @@ final class BridgeApiImpl {
   Future<String> collectAnyDemo() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(collectAnyDemoId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      collectAnyDemoId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -818,7 +1022,10 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).str();
   }
 
-  Future<String> greetDartFn(Future<String> Function(String) callback, String name) async {
+  Future<String> greetDartFn(
+    Future<String> Function(String) callback,
+    String name,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -833,7 +1040,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(name);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(greetDartFnId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        greetDartFnId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -845,7 +1055,33 @@ final class BridgeApiImpl {
     _payload.i32(n);
     final _payloadBytes = _payload.takeBytes();
     final _bytes = bridge.invokeSyncMethod(nestedCubeId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _n = _r.u32(); final _result = <List<List<int>>>[]; for (var _i = 0; _i < _n; _i++) { _result.add((() { final _n = _r.u32(); final _result = <List<int>>[]; for (var _i = 0; _i < _n; _i++) { _result.add((() { final _n = _r.u32(); final _result = <int>[]; for (var _i = 0; _i < _n; _i++) { _result.add(_r.i32()); } return _result; })()); } return _result; })()); } return _result; })();
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _n = _r.u32();
+      final _result = <List<List<int>>>[];
+      for (var _i = 0; _i < _n; _i++) {
+        _result.add(
+          (() {
+            final _n = _r.u32();
+            final _result = <List<int>>[];
+            for (var _i = 0; _i < _n; _i++) {
+              _result.add(
+                (() {
+                  final _n = _r.u32();
+                  final _result = <int>[];
+                  for (var _i = 0; _i < _n; _i++) {
+                    _result.add(_r.i32());
+                  }
+                  return _result;
+                })(),
+              );
+            }
+            return _result;
+          })(),
+        );
+      }
+      return _result;
+    })();
   }
 
   Future<int> sumSet(Set<int> values) async {
@@ -863,14 +1099,20 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.str(message);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(processMessageId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      processMessageId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
   Future<String> testCbridgeAsyncCancel() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testCbridgeAsyncCancelId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testCbridgeAsyncCancelId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -888,7 +1130,10 @@ final class BridgeApiImpl {
   Future<String> testCbridgePureCCancel() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testCbridgePureCCancelId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testCbridgePureCCancelId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
@@ -896,17 +1141,27 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.i32(count);
     _payload.i32(intervalMs);
-    return bridge.openStream<String>(uvStreamId, _payload.takeBytes(), (final _r) => _r.str());
+    return bridge.openStream<String>(
+      uvStreamId,
+      _payload.takeBytes(),
+      (final _r) => _r.str(),
+    );
   }
 
   Future<String> testChannelService() async {
     final _payload = ByteWriter();
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(testChannelServiceId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      testChannelServiceId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).str();
   }
 
-  Future<int> syncDartFnBlockingUs(Future<String> Function(String) callback, String input) async {
+  Future<int> syncDartFnBlockingUs(
+    Future<String> Function(String) callback,
+    String input,
+  ) async {
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
       final _a0 = _r.str();
@@ -921,7 +1176,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(input);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(syncDartFnBlockingUsId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        syncDartFnBlockingUsId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).i64();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -938,12 +1196,22 @@ final class BridgeApiImpl {
 
   Future<String?> optionalString(String? value) async {
     final _payload = ByteWriter();
-    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+    if (value == null) {
+      _payload.u8(0);
+    } else {
+      _payload.u8(1);
       _payload.str(value);
     }
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(optionalStringId, _payloadBytes);
-    return (() { final _r = ByteReader(_bytes); final _has = _r.u8() != 0; return _has ? _r.str() : null; })();
+    final _bytes = await bridge.invokeAsyncMethod(
+      optionalStringId,
+      _payloadBytes,
+    );
+    return (() {
+      final _r = ByteReader(_bytes);
+      final _has = _r.u8() != 0;
+      return _has ? _r.str() : null;
+    })();
   }
 
   Future<OrderStatus> nextStatus(OrderStatus current) async {
@@ -958,7 +1226,10 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.i32(initialValue);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = bridge.invokeSyncMethod(counterNewWithInitialValueId, _payloadBytes);
+    final _bytes = bridge.invokeSyncMethod(
+      counterNewWithInitialValueId,
+      _payloadBytes,
+    );
     return Counter.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64());
   }
 
@@ -974,7 +1245,10 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.u64(self.handle);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(counterValueId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      counterValueId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -1011,7 +1285,10 @@ final class BridgeApiImpl {
     _payload.u64(self.handle);
     _payload.i32(sleepMs);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(counterSleepAndGetId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      counterSleepAndGetId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -1024,7 +1301,10 @@ final class BridgeApiImpl {
       _payload.i32(_v);
     }
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(counterAddListId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      counterAddListId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -1032,7 +1312,10 @@ final class BridgeApiImpl {
     self.ensureAlive();
     final _payload = ByteWriter();
     _payload.u64(self.handle);
-    if (value == null) { _payload.u8(0); } else { _payload.u8(1);
+    if (value == null) {
+      _payload.u8(0);
+    } else {
+      _payload.u8(1);
       _payload.i32(value);
     }
     final _payloadBytes = _payload.takeBytes();
@@ -1044,7 +1327,10 @@ final class BridgeApiImpl {
     final _payload = ByteWriter();
     _payload.u64(self.handle);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(counterDuplicateId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      counterDuplicateId,
+      _payloadBytes,
+    );
     return Counter.fromHandle(bridge: bridge, handle: ByteReader(_bytes).u64());
   }
 
@@ -1055,7 +1341,10 @@ final class BridgeApiImpl {
     _payload.u64(self.handle);
     _payload.u64(other.handle);
     final _payloadBytes = _payload.takeBytes();
-    final _bytes = await bridge.invokeAsyncMethod(counterAddToId, _payloadBytes);
+    final _bytes = await bridge.invokeAsyncMethod(
+      counterAddToId,
+      _payloadBytes,
+    );
     return ByteReader(_bytes).i32();
   }
 
@@ -1068,7 +1357,11 @@ final class BridgeApiImpl {
     return ByteReader(_bytes).i32();
   }
 
-  Future<String> counterGreetDartFn(Counter self, Future<String> Function(String) callback, String name) async {
+  Future<String> counterGreetDartFn(
+    Counter self,
+    Future<String> Function(String) callback,
+    String name,
+  ) async {
     self.ensureAlive();
     final _callbackWrapper = (Uint8List _argBytes) async {
       final _r = ByteReader(_argBytes);
@@ -1085,7 +1378,10 @@ final class BridgeApiImpl {
       _payload.u64(_callbackId);
       _payload.str(name);
       final _payloadBytes = _payload.takeBytes();
-      final _bytes = await bridge.invokeAsyncMethod(counterGreetDartFnId, _payloadBytes);
+      final _bytes = await bridge.invokeAsyncMethod(
+        counterGreetDartFnId,
+        _payloadBytes,
+      );
       return ByteReader(_bytes).str();
     } finally {
       bridge.unregisterDartFn(_callbackId);
@@ -1098,7 +1394,11 @@ final class BridgeApiImpl {
     _payload.u64(self.handle);
     _payload.i32(count);
     _payload.i32(intervalMs);
-    return bridge.openStream<int>(counterTickStreamId, _payload.takeBytes(), (final _r) => _r.i32());
+    return bridge.openStream<int>(
+      counterTickStreamId,
+      _payload.takeBytes(),
+      (final _r) => _r.i32(),
+    );
   }
 
   int counterAliveCount() {

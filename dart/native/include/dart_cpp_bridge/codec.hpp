@@ -362,7 +362,7 @@ class ByteReader {
 
  private:
   void need(std::size_t n) {
-    if (pos_ + n > len_) {
+    if (pos_ > len_ || n > len_ - pos_) {
       throw std::runtime_error("codec: truncated buffer");
     }
   }
