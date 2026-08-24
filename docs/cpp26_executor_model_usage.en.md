@@ -313,6 +313,15 @@ auto [sch2] = sync_wait(get_scheduler()).value();
 >   single-threaded event loop, or its scheduler thread**. If the awaited work
 >   needs that thread to make progress, the call self-deadlocks. In a
 >   coroutine, use `co_await` directly.
+>
+> A multi-runner scheduler does not make this safe. `sync_wait` occupies the
+> calling runner until it returns; it does not release that runner while it is
+> waiting. One raw `stdexec::sync_wait` can complete when a spare runner is
+> available to execute the awaited work, after which the blocked runner returns
+> to the scheduler. If every runner waits for work queued on the same scheduler,
+> all runners are occupied and the scheduler deadlocks. This repository's
+> `dcb::sync_wait` therefore rejects calls from every io scheduler runner,
+> regardless of the configured runner count.
 
 ### 5.2 `start_detached`: fire-and-forget
 

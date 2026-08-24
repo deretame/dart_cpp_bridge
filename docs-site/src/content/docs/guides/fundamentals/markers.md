@@ -88,7 +88,7 @@ stdexec::task<std::string> greet_dart(
 ```
 
 Do not call a potentially suspending DartFn from `BRIDGE_SYNC`. If a blocking
-caller needs the result, use `dcb::sync_wait` off the io thread.
+caller needs the result, use `dcb::sync_wait` off the io scheduler runners.
 
 ## Decision guide
 

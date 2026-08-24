@@ -21,8 +21,8 @@ description: v2 codegen、线程、取消、生命周期和 scheduler 的常见�
 
 | 坑 | 后果 | 正确做法 |
 |---|---|---|
-| 阻塞 io 线程 | 整个事件循环停顿 | 使用 `dcb::spawn_blocking` 或 `BRIDGE_NORMAL` |
-| 在 io 线程调用 `dcb::sync_wait` | 自死锁 | 只从 worker 或外部线程调用 |
+| 阻塞 io scheduler runner | 该 runner 在等待期间不可用；所有 runner 都阻塞时整个 scheduler 停顿 | 使用 `dcb::spawn_blocking` 或 `BRIDGE_NORMAL` |
+| 在 io scheduler runner 调用 `dcb::sync_wait` | 包装器会拒绝；原始 `stdexec::sync_wait` 在所有 runner 等待同一 scheduler 时会死锁 | 只从 worker 或外部线程调用 |
 | 在 `BRIDGE_SYNC` 中调用 DartFn | sync 调用阻塞时 Dart 无法回复 | 使用 `BRIDGE_ASYNC`、`BRIDGE_NORMAL` 或显式卸载 |
 | 协程 lambda 捕获请求状态 | 懒协程恢复时可能已超过完整表达式生命周期 | 使用零捕获 IIFE，通过参数传递状态 |
 

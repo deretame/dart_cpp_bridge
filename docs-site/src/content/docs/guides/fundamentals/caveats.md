@@ -21,8 +21,8 @@ use [Versioned Documentation](/dart_cpp_bridge/versions/) and the v1 archive.
 
 | Gotcha | What happens | Fix |
 |---|---|---|
-| Blocking the io thread | The whole event loop stalls | Use `dcb::spawn_blocking` or `BRIDGE_NORMAL` |
-| `dcb::sync_wait` on the io thread | Self-deadlock | Call it only from a worker or external thread |
+| Blocking an io scheduler runner | That runner is unavailable while blocked; if all runners block, the whole scheduler stalls | Use `dcb::spawn_blocking` or `BRIDGE_NORMAL` |
+| `dcb::sync_wait` on an io scheduler runner | The wrapper rejects it; raw `stdexec::sync_wait` can deadlock when all runners wait on the same scheduler | Call it only from a worker or external thread |
 | DartFn inside `BRIDGE_SYNC` | Dart cannot reply while the sync call blocks | Use `BRIDGE_ASYNC`, `BRIDGE_NORMAL`, or an explicit offload |
 | A coroutine lambda captures request state | Lazy resumption can outlive the full expression | Use a zero-capture IIFE and pass state as parameters |
 

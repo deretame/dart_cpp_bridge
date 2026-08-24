@@ -37,8 +37,8 @@ When migrating from the legacy runtime:
 - Regenerate bindings with the matching `dcb_gen_tool` release. Do not mix
   legacy generated native code, runtime headers, and current tooling.
 - Update native CMake integration for C++20 and the vendored stdexec target
-  (`STDEXEC::stdexec`), and keep blocking work off the single-threaded I/O
-  scheduler.
+  (`STDEXEC::stdexec`), and keep blocking work off the I/O scheduler. It uses
+  one runner thread by default and can be configured before startup.
 
 ## Quickstart
 

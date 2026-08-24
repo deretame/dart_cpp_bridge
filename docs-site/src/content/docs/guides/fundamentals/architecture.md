@@ -31,7 +31,8 @@ bindings, and the Dart API layer. Async C++ declarations use
 
 The process-wide `dcb::Runtime~ owns:
 
-- one Asio io thread exposed as `IoContextScheduler~;
+- an Asio io scheduler exposed as `IoContextScheduler` (one runner by
+  default, configurable before startup);
 - a blocking Asio thread pool;
 - scheduler-aware channels and timers;
 - the Dart post callback and session lifecycle.
@@ -96,8 +97,10 @@ reply arrives.
 - **foreign loop threads**: user-provided stdexec schedulers;
 - **Dart isolate**: Dart code and closure execution.
 
-Never block the io thread. Use `dcb::sync_wait` only from a worker or external
-thread, and use stop tokens for cooperative cancellation.
+Never block an io scheduler runner. Use `dcb::sync_wait` only from a worker or
+external thread, and use stop tokens for cooperative cancellation. Multiple io
+runners do not remove this rule: a raw `stdexec::sync_wait` occupies its runner
+until completion and deadlocks the scheduler if all runners wait for work on it.
 
 ## Further reading
 

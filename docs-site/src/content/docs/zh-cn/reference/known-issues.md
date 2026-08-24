@@ -36,7 +36,11 @@ codegen 无法解析 `using Foo = ...` 或 `typedef ...`。头文件中请直接
 
 - 阻塞工作必须使用 `spawn_blocking` 或投递到 `thread_pool`
 - `set_pool_threads()` 必须在 Runtime `start()` 之前调用
-- Runtime 是单线程设计，这是有意为之
+- Runtime 默认使用一个 io runner；需要多 runner 时在启动前配置 `ioThreads`，
+  并自行同步共享状态
+- 多个 io runner 不会让阻塞等待自动安全：原始 `stdexec::sync_wait` 会一直占用
+  当前 runner；如果所有 runner 都等待该 scheduler 上的任务，整个 scheduler 会
+  死锁；`dcb::sync_wait` 会拒绝 io runner 上的调用
 - 生成的代码需要手动运行 `dcb_gen_tool generate` 重新生成
 - 头文件应只放声明，数据类和不透明类必须定义在被扫描的头文件内
 - `DartFn::operator()` 仅异步；阻塞调用从 worker 或外部线程使用

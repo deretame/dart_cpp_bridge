@@ -69,6 +69,11 @@ DCB_API void dcb_set_verbose_errors(uint8_t enabled);
 // dcb_session_open() that starts the runtime; ignored after start.
 DCB_API void dcb_set_pool_threads(uint32_t n);
 
+// Set the io scheduler runner count (default: 1). Must be called before the
+// first dcb_session_open() that starts the runtime; ignored after start.
+// Passing zero is normalized to one.
+DCB_API void dcb_set_io_threads(uint32_t n);
+
 // Return the address of dcb_session_finalizer. Needed because @Native external
 // functions cannot yield a function pointer directly, yet NativeFinalizer
 // requires one.

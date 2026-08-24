@@ -31,7 +31,7 @@ description: 当前 stdexec 版 dart_cpp_bridge 的核心概念
 | --- | --- |
 | C++ | C++20 |
 | 异步模型 | stdexec sender / `stdexec::task` |
-| 内置事件循环 | Asio `io_context`，单 io 线程 |
+| 内置事件循环 | Asio `io_context`，默认一个 io runner |
 | 阻塞工作 | Asio thread pool |
 | 取消 | stop token |
 | Codegen | Python 3.13 + libclang-ng，固定版本并校验 hash |

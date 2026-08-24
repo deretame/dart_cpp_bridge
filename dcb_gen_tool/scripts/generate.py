@@ -2787,6 +2787,9 @@ external void _dcbSetVerboseErrors(int enabled);
 @Native<SetPoolThreadsC>(assetId: _kAssetId, symbol: 'dcb_set_pool_threads')
 external void _dcbSetPoolThreads(int n);
 
+@Native<SetIoThreadsC>(assetId: _kAssetId, symbol: 'dcb_set_io_threads')
+external void _dcbSetIoThreads(int n);
+
 @Native<Pointer<Void> Function()>(
   assetId: _kAssetId,
   symbol: 'dcb_session_finalizer_ptr',
@@ -2826,6 +2829,7 @@ NativeBindings createDcbBindings() {{
     free: _dcbFree,
     setVerboseErrors: _dcbSetVerboseErrors,
     setPoolThreads: _dcbSetPoolThreads,
+    setIoThreads: _dcbSetIoThreads,
     dropObject: _dcbDropObjectPtr().cast<FinalizerFn>(),
     objectFinalizer: _dcbObjectFinalizerPtr().cast<FinalizerFn>(),
     objectFinalizerToken: _dcbObjectFinalizerToken,
@@ -2873,11 +2877,16 @@ final class {lib_class} {{
 
   /// Initialize (call once per Isolate).
   ///
-  /// [threadPoolSize] sets the native thread pool concurrency (default 4).
+  /// [threadPoolSize] sets the native blocking thread pool concurrency (default 4).
+  /// [ioThreads] sets the io scheduler runner count (default 1).
   /// [verboseErrors] controls whether C++ errors include function names (default true).
-  static Future<void> init({{int threadPoolSize = 4, bool verboseErrors = true}}) async {{
+  static Future<void> init({{int threadPoolSize = 4, int ioThreads = 1, bool verboseErrors = true}}) async {{
     if (_bridge != null) return;
-    final b = await DartCppBridge.init(bindings: createDcbBindings(), poolThreads: threadPoolSize);
+    final b = await DartCppBridge.init(
+      bindings: createDcbBindings(),
+      poolThreads: threadPoolSize,
+      ioThreads: ioThreads,
+    );
     b.setVerboseErrors(verboseErrors);
     _bridge = b;
     {impl_class}.initSingleton(b);

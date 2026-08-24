@@ -21,6 +21,7 @@ class DartCppBridge implements Finalizable {
   static Future<DartCppBridge> init({
     required NativeBindings bindings,
     int poolThreads = 4,
+    int ioThreads = 1,
   });
 
   void dispose();
@@ -71,6 +72,7 @@ class Runtime {
   void stop();
   bool running() const;
   void set_pool_threads(std::uint32_t n);
+  void set_io_threads(std::uint32_t n);
 
   DCB_ASIO_NS::io_context& io();
   IoContextScheduler* io_scheduler();
@@ -83,8 +85,9 @@ class Runtime {
 }  // namespace dcb
 ```
 
-`io_scheduler()` 是单线程 Asio scheduler；blocking scheduler 用于
-`BRIDGE_NORMAL` dispatch 和 `spawn_blocking`。
+`io_scheduler()` 是 Asio scheduler，默认一个 runner，也可以在 Runtime 启动前
+配置 runner 数量；blocking scheduler 用于 `BRIDGE_NORMAL` dispatch 和
+`spawn_blocking`。
 
 ### Sender 与 task 辅助
 
@@ -99,8 +102,11 @@ auto sender = stdexec::starts_on(
 auto result = dcb::sync_wait(std::move(sender));
 ```
 
-只在 io 线程之外使用 `dcb::sync_wait`。fire-and-forget 应使用由 scope
-持有的 stdexec spawn，并在销毁 scope 前排空它。
+只在 io scheduler runner 之外使用 `dcb::sync_wait`。即使配置了多个 runner，
+包装器也会拒绝所有 io runner 上的调用。原始 `stdexec::sync_wait` 在还有空闲
+runner 时可能完成，但会一直占用调用线程；如果所有 runner 都等待同一 scheduler
+上的任务，就会让整个 scheduler 死锁。fire-and-forget 应使用由 scope 持有的
+stdexec spawn，并在销毁 scope 前排空它。
 
 ### StreamSink
 

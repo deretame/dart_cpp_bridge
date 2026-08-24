@@ -35,7 +35,10 @@ void Runtime::start() {
     pool_ = std::make_unique<exec::asio::asio_thread_pool>(pool_threads_);
     guard_ = std::make_unique<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>>(
         DCB_ASIO_NS::make_work_guard(io_));
-    io_thread_ = std::make_unique<std::thread>([this] { io_.run(); });
+    io_threads_.reserve(io_threads_count_);
+    for (std::uint32_t i = 0; i < io_threads_count_; ++i) {
+      io_threads_.emplace_back([this] { io_.run(); });
+    }
     // Publish running only after every required resource exists. A failed
     // start therefore cannot leave later callers in a fake running state.
     started_.store(true, std::memory_order_release);
@@ -46,10 +49,12 @@ void Runtime::start() {
       guard_.reset();
     }
     io_.stop();
-    if (io_thread_ && io_thread_->joinable()) {
-      io_thread_->join();
+    for (auto& thread : io_threads_) {
+      if (thread.joinable()) {
+        thread.join();
+      }
     }
-    io_thread_.reset();
+    io_threads_.clear();
     pool_.reset();
     started_.store(false, std::memory_order_release);
     lifecycle_ = Lifecycle::kStopped;
@@ -64,7 +69,7 @@ void Runtime::stop() {
   if (lifecycle_ == Lifecycle::kStopped || lifecycle_ == Lifecycle::kStopping) {
     return;
   }
-  if (io_thread_ && io_thread_->get_id() == std::this_thread::get_id()) {
+  if (io_.get_executor().running_in_this_thread()) {
     // Reject self-stop before changing lifecycle state or taking ownership of
     // resources. The public shutdown contract requires the main isolate.
     throw std::logic_error("Runtime::stop() cannot run on the io thread");
@@ -76,7 +81,7 @@ void Runtime::stop() {
   // Everything below can run user code or block and must not hold the gate:
   // shutdown callbacks may re-enter the public API.
   auto guard = std::move(guard_);
-  auto io_thread = std::move(io_thread_);
+  auto io_threads = std::move(io_threads_);
   auto pool = std::move(pool_);
   lock.unlock();
 
@@ -85,8 +90,10 @@ void Runtime::stop() {
     guard->reset();
   }
   io_.stop();
-  if (io_thread && io_thread->joinable()) {
-    io_thread->join();
+  for (auto& thread : io_threads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
   }
   // asio_thread_pool's destructor stops and joins the pool threads.
   pool.reset();

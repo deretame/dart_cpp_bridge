@@ -36,7 +36,11 @@ Never block the `io_context` thread.
 
 - Blocking work must use `spawn_blocking` or be posted to the `thread_pool`
 - `set_pool_threads()` must be called before `Runtime::start()`
-- The Runtime is single-threaded by design
+- The Runtime uses one io runner by default; configure `ioThreads` before startup
+  when multiple runners are needed, and synchronize shared state accordingly
+- Multiple io runners do not make blocking waits safe: raw `stdexec::sync_wait`
+  occupies its runner until completion, and blocks the whole scheduler if every
+  runner waits for work on that scheduler; `dcb::sync_wait` rejects io runners
 - Generated code must be regenerated manually by running `dcb_gen_tool generate`
 - Headers should contain only declarations; data classes and opaque classes must be defined inside the scanned headers
 - `DartFn::operator()` is async only; for blocking calls use `dcb::sync_wait(...)`

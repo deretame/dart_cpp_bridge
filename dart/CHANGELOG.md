@@ -1,3 +1,10 @@
+## 2.2.0
+
+- Added configurable io scheduler runner count through `DartCppBridge.init`
+  and Native Assets-generated bindings; the default remains one runner.
+- Added a runtime deadlock guard and documented the multi-runner boundary for
+  raw `stdexec::sync_wait` calls.
+
 ## 2.1.1
 
 - Hardened runtime lifecycle, C bridge completion, Native Assets target

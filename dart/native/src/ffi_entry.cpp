@@ -355,6 +355,10 @@ DCB_API void dcb_set_pool_threads(uint32_t n) {
   dcb::Runtime::instance().set_pool_threads(n);
 }
 
+DCB_API void dcb_set_io_threads(uint32_t n) {
+  dcb::Runtime::instance().set_io_threads(n);
+}
+
 DCB_API void* dcb_session_finalizer_ptr(void) {
   return reinterpret_cast<void*>(&dcb_session_finalizer);
 }

@@ -34,7 +34,8 @@ wire protocol、生成文件布局和 method ID 契约保持稳定，但 C++ 异
 - 使用匹配的 `dcb_gen_tool` 重新生成绑定，不要混用旧版生成的 native 代码、
   运行时头文件和当前工具链。
 - native CMake 集成需要 C++20 和 vendored stdexec target
-  （`STDEXEC::stdexec`）；阻塞工作不要放在单线程 I/O scheduler 上执行。
+  （`STDEXEC::stdexec`）；阻塞工作不要放在 I/O scheduler 上执行。默认只有
+  一个调度线程，也可以在启动前配置线程数量。
 
 ## 快速开始
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.0
+
+- Generated initialization APIs now expose the configurable io scheduler
+  runner count, defaulting to one for compatibility.
+- Version aligned with `dart_cpp_bridge` 2.2.0.
+
 ## 2.1.1
 
 - Added fail-fast validation for Dart name collisions and stable method-ID

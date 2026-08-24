@@ -23,6 +23,7 @@ class DartCppBridge implements Finalizable {
   static Future<DartCppBridge> init({
     required NativeBindings bindings,
     int poolThreads = 4,
+    int ioThreads = 1,
   });
 
   void dispose();
@@ -74,6 +75,7 @@ class Runtime {
   void stop();
   bool running() const;
   void set_pool_threads(std::uint32_t n);
+  void set_io_threads(std::uint32_t n);
 
   DCB_ASIO_NS::io_context& io();
   IoContextScheduler* io_scheduler();
@@ -86,8 +88,9 @@ class Runtime {
 }  // namespace dcb
 ```
 
-`io_scheduler()` is the single-threaded Asio scheduler. The blocking
-scheduler is used by `BRIDGE_NORMAL` dispatch and `spawn_blocking`.
+`io_scheduler()` is the Asio scheduler, using one runner by default and allowing
+the runner count to be configured before startup. The blocking scheduler is used
+by `BRIDGE_NORMAL` dispatch and `spawn_blocking`.
 
 ### Sender and task helpers
 
@@ -102,8 +105,12 @@ auto sender = stdexec::starts_on(
 auto result = dcb::sync_wait(std::move(sender));
 ```
 
-Use `dcb::sync_wait` only off the io thread. For fire-and-forget work, use a
-scope-owned stdexec spawn operation and drain the scope before destroying it.
+Use `dcb::sync_wait` only off the io scheduler runners. The wrapper rejects calls
+from every io runner even when multiple runners are configured. A raw
+`stdexec::sync_wait` may complete with one spare runner, but blocks each runner
+until completion and deadlocks when all runners wait for work on that scheduler.
+For fire-and-forget work, use a scope-owned stdexec spawn operation and drain the
+scope before destroying it.
 
 ### StreamSink
 

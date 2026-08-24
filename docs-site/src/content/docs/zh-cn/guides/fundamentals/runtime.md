@@ -13,7 +13,8 @@ description: 已发布 v2.1.0 使用的 Asio 与 stdexec 运行时
 
 ## Runtime 组件
 
-- **Asio `io_context`** — 一个事件循环线程，负责 bridge dispatch 和非阻塞任务；
+- **Asio `io_context`** — 默认一个 runner，负责 bridge dispatch 和非阻塞任务；
+  runner 数量可在启动前配置；
 - **`IoContextScheduler`** — v2 的 stdexec scheduler，由
   `Runtime::io_scheduler()` 返回；
 - **Asio thread pool** — blocking scheduler，由
@@ -31,7 +32,7 @@ stdexec/Asio 时的 CMake 配置见[依赖所有权与 Asio 命名空间](/dart_
 
 auto& runtime = dcb::Runtime::instance();
 runtime.start();                         // 通常由 Dart init 完成
-auto* io = runtime.io_scheduler();        // 单线程 scheduler
+auto* io = runtime.io_scheduler();        // 默认一个 runner
 auto blocking = runtime.blocking_scheduler();
 ```
 
@@ -76,7 +77,9 @@ blocking pool 执行，但 Dart 侧仍得到 `Future<T>`。
 ## 在非协程函数中等待
 
 `dcb::sync_wait(sender)` 是给非协程调用方使用的阻塞便利函数。它会拒绝在
-io 线程调用，因为在那里等待会造成事件循环自死锁：
+任何 io scheduler runner 上调用，因为在那里等待会造成事件循环自死锁。即使
+配置了多个 runner，原始 `stdexec::sync_wait` 也只是在还有空闲 runner 时可能
+完成；它会占用调用线程，所有 runner 同时等待时仍会让 scheduler 死锁：
 
 ```cpp
 auto result = dcb::sync_wait(
@@ -102,6 +105,12 @@ sender。`recv()` 会观察 stop token。v2 使用
 通过 `set_stopped()` 完成。Dart `Future` 不能被强制取消，需要时应由业务层
 额外暴露 task ID 和 cancel 方法。
 
+## Scheduler 配置
+
+io scheduler 默认有 1 个 runner。必须在第一个 session 启动 Runtime 前通过
+`DartCppBridge.init(ioThreads: 2)` 配置；C++ 可以在 `start()` 前调用
+`Runtime::set_io_threads(2)`。传入 0 会规范化为 1，启动后修改会被忽略。
+
 ## 线程池配置
 
 内置 blocking pool 默认有 4 个线程。必须在第一个 session 启动 Runtime 前
@@ -114,8 +123,8 @@ sender。`recv()` 会观察 stop token。v2 使用
 
 :::caution
 
-- 不要在 io 线程执行阻塞 I/O、sleep 或阻塞锁；
-- 不要从 io 线程调用 `dcb::sync_wait`；
+- 不要在 io scheduler runner 执行阻塞 I/O、sleep 或阻塞锁；
+- 不要从 io scheduler runner 调用 `dcb::sync_wait`；
 - 传给 detached 或 scope 操作的完成 lambda 尽量标记 `noexcept`；
 - 销毁 scheduler 前先排空结构化并发 scope。
 :::

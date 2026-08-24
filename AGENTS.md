@@ -90,7 +90,7 @@ and both demo fixtures were migrated in the same sweep.
 - **Status**: Released / stable. `dart_cpp_bridge` (dart package) and
   `dcb_gen_tool` are both published at **2.1.0**. Public APIs are stable;
   avoid breaking changes (see [Compatibility policy](#compatibility-policy)).
-- **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines/senders and a single-threaded Asio event loop.
+- **Goal**: Give C++ libraries a clean integration surface (sync / async / stream / DartFn reverse calls) using C++20 coroutines/senders and a configurable Asio event loop (one runner by default).
 - **Repository**: <https://github.com/deretame/dart_cpp_bridge>
 
 ### High-level architecture
@@ -101,7 +101,7 @@ Dart Isolate(s)
   Future / Stream / DartFn callbacks
        ⇅  FFI binary frames
 Runtime (process-wide)
-  asio::io_context (single-threaded) + scheduler/executor adaptor
+  asio::io_context (one runner by default; configurable) + scheduler/executor adaptor
   thread pool (blocking / normal work)
   wire: sync / async coroutine-sender / stream / DartFn
 ```
@@ -156,7 +156,7 @@ internals and the documented coroutine-type switch.
 | Layer        | Technology                                                   | Notes                                                                                          |
 | ------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | C++ standard | C++20 minimum                                                | Coroutines, concepts. Requires recent MSVC/GCC/Clang. stdexec needs **only** C++20.             |
-| Event loop   | [Asio](https://think-async.com/Asio/) standalone             | `asio::io_context` single-threaded; timers, post, completion.                                   |
+| Event loop   | [Asio](https://think-async.com/Asio/) standalone             | `asio::io_context`; one runner by default, configurable before startup; timers, post, completion. |
 | Concurrency  | stdexec (P2300 senders/receivers), vendored `third_party/stdexec` | async-simple fully removed — migration complete (base runtime, generator, both demo fixtures). See [Current initiative](#current-initiative-async-simple--stdexec-migration). |
 | Dart side    | Dart 3 + `package:ffi`                                       | Isolates, `ReceivePort`, `Completer`, `Stream`, `NativeFinalizer`.                              |
 | Dart SDK     | `>= 3.10.0` (dev: puro)                                       | `dart/pubspec.yaml` floor; develop with `puro dart` / `puro flutter`. Native Assets hooks need 3.10+; link hooks need 3.13+.               |
@@ -449,8 +449,8 @@ Covers generated `BRIDGE_SYNC` / `BRIDGE_ASYNC` / `BRIDGE_NORMAL` bindings.
 
 ## Common pitfalls
 
-- **Sync DartFn on the io thread**: `DartFn::operator()` returns a sender (`detail::dartfn_sender<Ret>`, async only). For blocking contexts, use `dcb::sync_wait(fn(args...))` — the deadlock-guarded wrapper (runtime.hpp) that rejects calls on the io thread with `std::logic_error`. Calling `sync_wait` on the `io_context` thread is a self-deadlock. The library does not auto-offload.
-- **Runtime single-threaded by design**: `asio::io_context` runs on one thread. This is intentional to reduce locking; misuse by blocking the io thread is the caller's problem.
+- **Sync DartFn on an io runner**: `DartFn::operator()` returns a sender (`detail::dartfn_sender<Ret>`, async only). For blocking contexts, use `dcb::sync_wait(fn(args...))` — the deadlock-guarded wrapper (runtime.hpp) that rejects calls on every io runner with `std::logic_error`. A raw `stdexec::sync_wait` may complete with a spare runner, but blocks the whole scheduler if all runners wait for work on it. The library does not auto-offload.
+- **Runtime io scheduler runners**: `asio::io_context` uses one runner by default and can be configured before startup. A raw `stdexec::sync_wait` occupies its runner until completion; if every runner waits for work on the same scheduler, the whole scheduler deadlocks. `dcb::sync_wait` rejects calls from all io runners.
 - **Generated code is not a build step**: codegen must be run manually after API header changes. Native Assets hooks compile and link only; they do not regenerate code.
 - **No direct Dart-side cancellation**: a Dart `Future` cannot be force-cancelled. Cancellation is cooperative — via stdexec stop tokens (`inplace_stop_source` / `stop_token`, see `docs/channel_stop_token_design.md`) — and must be exposed by business code (e.g. a task_id → stop-source map plus a `cancelTask`-style API). Stream subscription cancellation only stops new events from being delivered; the C++ side continues running and silently drops late `add()` calls.
 - **stdexec top pitfalls** (details in `docs/cpp26_executor_model_usage.md`):

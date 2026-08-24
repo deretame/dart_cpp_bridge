@@ -34,7 +34,7 @@ C++ 冒烟：`build/Release/dcb_smoke.exe`（oneshot 跨线程、io 不堵、Dar
 
 | 设计项 | 实现 | 备注 |
 |--------|------|------|
-| asio `io_context` **单线程** | ✅ | `Runtime` |
+| asio `io_context`（默认一个 runner，可配置） | ✅ | `Runtime` |
 | `AsioExecutor`（async_simple） | ✅ | `schedule` → `asio::post(io)` |
 | `asio::thread_pool` + post | ✅ | normal / ticks 间隔 sleep |
 | `spawn_blocking` → Lazy | ⚠️ 部分 | API 仍在；normal 路径多用 pool post |

@@ -15,8 +15,8 @@ runtime scheduler without creating another event loop.
 
 ## Runtime components
 
-- **Asio `io_context`** — one event-loop thread for bridge dispatch and
-  non-blocking async work.
+- **Asio `io_context`** — one runner by default for bridge dispatch and
+  non-blocking async work; the runner count is configurable before startup.
 - **`IoContextScheduler`** — the v2 stdexec scheduler returned by
   `Runtime::io_scheduler()`.
 - **Asio thread pool** — the blocking scheduler returned by
@@ -37,7 +37,7 @@ for host-provided stdexec/Asio configuration.
 
 auto& runtime = dcb::Runtime::instance();
 runtime.start();                         // normally done by Dart init
-auto* io = runtime.io_scheduler();        // single-threaded scheduler
+auto* io = runtime.io_scheduler();        // one runner by default
 auto blocking = runtime.blocking_scheduler();
 ```
 
@@ -85,8 +85,10 @@ dispatch sends it to the runtime's blocking pool and still returns
 ## Waiting from a non-coroutine function
 
 `dcb::sync_wait(sender)` is a blocking convenience for non-coroutine callers.
-It rejects calls made on the io thread because waiting there would deadlock the
-event loop:
+It rejects calls made on any io scheduler runner because waiting there would
+deadlock the event loop. A raw `stdexec::sync_wait` can finish with one spare
+runner, but occupies every runner that calls it and deadlocks the scheduler if
+all runners wait for work on that scheduler:
 
 ```cpp
 auto result = dcb::sync_wait(
@@ -113,6 +115,13 @@ complete through `set_stopped()`. A Dart `Future` is not force-cancellable, so
 applications that need cancellation should expose an explicit task ID and
 cancel method.
 
+## Scheduler configuration
+
+The io scheduler uses one runner by default. Configure it before the first
+session starts the runtime with `DartCppBridge.init(ioThreads: 2)`; C++ can
+call `Runtime::set_io_threads(2)` before `start()`. The value is normalized to
+one when zero is supplied and changes after startup are ignored.
+
 ## Pool configuration
 
 The built-in blocking pool defaults to four threads. Configure it before the
@@ -126,8 +135,8 @@ see [Threading and Blocking Work](/dart_cpp_bridge/guides/fundamentals/threading
 
 :::caution
 
-- Never perform blocking I/O, sleep, or a blocking lock on the io thread.
-- Do not call `dcb::sync_wait` from the io thread.
+- Never perform blocking I/O, sleep, or a blocking lock on an io scheduler runner.
+- Do not call `dcb::sync_wait` from an io scheduler runner.
 - Keep sender completion lambdas `noexcept` when passing them to detached or
   scope-owned operations.
 - Drain structured-concurrency scopes before destroying their scheduler.

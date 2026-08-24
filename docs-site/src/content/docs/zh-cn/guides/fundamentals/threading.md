@@ -7,11 +7,12 @@ v2 Runtime 有两个内置执行上下文：
 
 | 上下文 | 线程数 | 用途 |
 |--------|--------|------|
-| io scheduler | 一个 Asio 事件循环线程 | bridge dispatch、定时器、非阻塞协程续接 |
+| io scheduler | 默认一个，可配置 | bridge dispatch、定时器、非阻塞协程续接 |
 | blocking scheduler | 可配置的 Asio 线程池 | BRIDGE_NORMAL 和默认 spawn_blocking |
 
-io 线程是有意设计为单线程的，这让 bridge dispatch 和 session 状态更容易
-推理，但也意味着一个阻塞调用会卡住所有 isolate 的异步进度。
+io scheduler 默认只有一个线程，保持原来的单线程行为；需要更多事件循环
+并发时可以在启动前配置线程数量。配置多个线程后，业务共享状态需要由应用
+自己同步。
 
 ## 选择正确的入口
 
@@ -44,6 +45,35 @@ stdexec::task<Decoded> load_and_decode(std::string path) {
 
 callable 在 blocking pool 执行；完成后 sender 会切回 bridge io scheduler，
 task 可以继续执行而不会阻塞 io 线程。
+
+## 配置 io scheduler
+
+io scheduler 默认使用一个线程。必须在第一个 session 启动 Runtime 前配置：
+
+~~~dart
+await DcbLib.init(ioThreads: 2);
+~~~
+
+底层 API 使用同名参数：
+
+~~~dart
+await DartCppBridge.init(
+  bindings: createBindings(),
+  ioThreads: 2,
+);
+~~~
+
+C++ 管理 Runtime 时，在 `Runtime::start()` 前调用
+`Runtime::set_io_threads(2)`。传入 0 会规范化为 1；启动后修改会被忽略。
+它配置的是共享 Asio `io_context` 的 runner 数量，不是每个 isolate 一个
+scheduler。
+
+增加 runner 数量不会让阻塞等待自动安全。原始
+`stdexec::sync_wait` 会一直占用调用它的 runner，直到等待返回。2 个 runner
+时，如果只有一个 runner 在等待，另一个空闲 runner 可以执行被等待的任务；
+任务结束后，之前被占用的线程会回到 `io_context` 并继续接收工作。如果每个
+runner 都在等待同一个 scheduler 上排队的任务，所有 runner 都被占用，整个
+scheduler 仍然会死锁。
 
 ## 配置内置线程池
 
@@ -110,14 +140,17 @@ auto result = dcb::sync_wait(
         stdexec::just(42)));
 ~~~
 
-它会阻塞调用线程直到完成，并返回 optional tuple。从 io 线程调用会抛异常，
-避免事件循环自死锁。BRIDGE_ASYNC task 中应使用 co_await；BRIDGE_NORMAL 中
-可以使用 sync_wait，但仍要避免形成业务层循环等待。
+它会阻塞调用线程直到完成，并返回 optional tuple。从任何 io scheduler runner
+调用都会抛异常，不依赖“可能还有空闲线程”来规避死锁。BRIDGE_ASYNC task 中
+应使用 co_await；BRIDGE_NORMAL 中可以使用 sync_wait，但仍要避免形成业务层
+循环等待。
 
 ## 线程安全检查清单
 
-- 把 bridge io 回调视为在同一个线程执行；
-- 不要在该线程调用 sleep_for、等待互斥锁、执行阻塞 I/O 或使用 sync_wait；
+- 把 bridge io 回调视为运行在配置的 scheduler runner 上；当 `ioThreads > 1`
+  时，共享状态必须自行同步；
+- 不要在 scheduler runner 调用 sleep_for、等待互斥锁、执行阻塞 I/O 或使用
+  sync_wait；
 - channel sender 可以从 pool 线程 send；mpsc receiver 仍然只能单消费者；
 - 指针 buffer 必须存活到整个 native operation 完成，尤其是 operation 被
   移到线程池时；

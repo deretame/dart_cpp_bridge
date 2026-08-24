@@ -85,7 +85,7 @@ stdexec::task<std::string> greet_dart(
 ```
 
 不要从 `BRIDGE_SYNC` 调用可能挂起的 DartFn。阻塞调用方需要结果时，应在
-io 线程之外使用 `dcb::sync_wait`。
+io scheduler runner 之外使用 `dcb::sync_wait`。
 
 ## 选择步骤
 

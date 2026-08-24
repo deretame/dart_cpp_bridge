@@ -5,6 +5,8 @@
 # Build outputs:
 #   - dart_cpp_bridge.dll : base runtime + hand-written demo_api wire dispatch
 #   - dcb_smoke.exe       : pure C++ smoke test (no Dart VM)
+#   - dcb_raw_sync_wait_probe.exe : isolated raw stdexec::sync_wait deadlock probe
+#   - dcb_raw_sync_wait_multithread_probe.exe : raw sync_wait multi-thread probe
 #
 # Dart tests (dart/test/) load the DLL built in this directory.
 #
@@ -54,6 +56,20 @@ add_executable(dcb_smoke smoke_main.cpp demo_api.cpp)
 target_link_libraries(dcb_smoke PRIVATE
   $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 
+# Isolated probe: raw stdexec::sync_wait intentionally wedges its io thread.
+# It detects that condition and exits from the probe process without joining;
+# never run this code inside dcb_smoke or another long-lived test process.
+add_executable(dcb_raw_sync_wait_probe raw_sync_wait_probe.cpp)
+target_link_libraries(dcb_raw_sync_wait_probe PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+
+# Multi-thread probe: one raw sync_wait can use a spare runner, but one waiter
+# per runner blocks the entire scheduler. The "all" test intentionally exits
+# from the child process after detecting that condition.
+add_executable(dcb_raw_sync_wait_multithread_probe raw_sync_wait_multithread_probe.cpp)
+target_link_libraries(dcb_raw_sync_wait_multithread_probe PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+
 # --- Channel throughput benchmark (no Dart VM) ---
 add_executable(dcb_bench bench_channel.cpp)
 target_link_libraries(dcb_bench PRIVATE
@@ -73,19 +89,35 @@ target_link_libraries(dcb_tests PRIVATE
 # --- CTest registration (smoke = runtime e2e, tests = doctest units, bench = perf) ---
 enable_testing()
 add_test(NAME dcb_smoke COMMAND dcb_smoke)
+add_test(NAME dcb_raw_sync_wait_probe COMMAND dcb_raw_sync_wait_probe)
+add_test(NAME dcb_raw_sync_wait_one_spare_thread
+         COMMAND dcb_raw_sync_wait_multithread_probe one)
+add_test(NAME dcb_raw_sync_wait_all_threads
+         COMMAND dcb_raw_sync_wait_multithread_probe all)
 add_test(NAME dcb_tests COMMAND dcb_tests)
 add_test(NAME dcb_bench COMMAND dcb_bench 4 n=10000)
-set_tests_properties(dcb_smoke dcb_tests dcb_bench PROPERTIES TIMEOUT 180)
+set_tests_properties(
+  dcb_smoke
+  dcb_raw_sync_wait_probe
+  dcb_raw_sync_wait_one_spare_thread
+  dcb_raw_sync_wait_all_threads
+  dcb_tests
+  dcb_bench
+  PROPERTIES TIMEOUT 180)
 
 if(WIN32)
   if(MSVC)
     target_compile_options(dcb_base_demo PRIVATE /utf-8)
     target_compile_options(dcb_smoke PRIVATE /utf-8)
+    target_compile_options(dcb_raw_sync_wait_probe PRIVATE /utf-8)
+    target_compile_options(dcb_raw_sync_wait_multithread_probe PRIVATE /utf-8)
     target_compile_options(dcb_bench PRIVATE /utf-8)
     target_compile_options(dcb_tests PRIVATE /utf-8)
   else()
     target_compile_options(dcb_base_demo PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
     target_compile_options(dcb_smoke PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    target_compile_options(dcb_raw_sync_wait_probe PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
+    target_compile_options(dcb_raw_sync_wait_multithread_probe PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
     target_compile_options(dcb_bench PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
     target_compile_options(dcb_tests PRIVATE -finput-charset=UTF-8 -fexec-charset=UTF-8)
   endif()

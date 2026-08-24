@@ -66,6 +66,8 @@ typedef SetVerboseErrorsC = Void Function(Uint8);
 typedef SetVerboseErrorsD = void Function(int);
 typedef SetPoolThreadsC = Void Function(Uint32);
 typedef SetPoolThreadsD = void Function(int);
+typedef SetIoThreadsC = Void Function(Uint32);
+typedef SetIoThreadsD = void Function(int);
 
 typedef FinalizerFn = NativeFunction<Void Function(Pointer<Void>)>;
 
@@ -102,6 +104,7 @@ class NativeBindings {
     required this.dropObject,
     this.objectFinalizer,
     this.objectFinalizerToken,
+    this.setIoThreads,
   });
 
   final InitDartApiD initDartApi;
@@ -116,6 +119,9 @@ class NativeBindings {
   final FreeD free;
   final SetVerboseErrorsD setVerboseErrors;
   final SetPoolThreadsD setPoolThreads;
+  /// Optional for source compatibility with bindings created before the
+  /// configurable io scheduler was added.
+  final SetIoThreadsD? setIoThreads;
   /// Legacy uint64-handle finalizer pointer. Kept for source compatibility.
   final Pointer<FinalizerFn> dropObject;
   /// ABI-safe opaque-object finalizer callback. New generated bindings fill

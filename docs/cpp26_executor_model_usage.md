@@ -297,6 +297,13 @@ auto [sch2] = sync_wait(get_scheduler()).value();   // 拿到 sync_wait 提供�
 > - `sync_wait` 是阻塞 API。技术上它可以写进任何普通 C++ 调用位置，但**不要在协程、
 >   单线程事件循环或其 scheduler 线程里调用**；如果被等待的操作还需要该线程推进，
 >   就会自锁。协程内请直接 `co_await`。
+>
+> 多 runner 调度器不会让这种调用变安全。`sync_wait` 会一直占用调用它的
+> runner，等待期间不会把这个线程释放回调度器。只有一个 runner 调用原始
+> `stdexec::sync_wait` 时，如果还有空闲 runner 执行被等待的任务，等待可以完成，
+> 原线程随后回到调度器；如果每个 runner 都在等待同一个调度器上的任务，所有
+> runner 都被占住，调度器就会死锁。因此本仓库的 `dcb::sync_wait` 不论配置了
+> 多少个 io runner，都会拒绝在 io scheduler runner 上调用。
 
 ### 5.2 start_detached：发射后不理（fire-and-forget）
 

@@ -30,7 +30,8 @@ Dart API。v2 的异步 C++ 声明使用 `stdexec::task<T>` 或其他受支持�
 
 进程级 `dcb::Runtime` 负责：
 
-- 一个 Asio io 线程，并通过 `IoContextScheduler` 暴露；
+- 一个通过 `IoContextScheduler` 暴露的 Asio io scheduler（默认一个 runner，
+  可在启动前配置）；
 - blocking Asio thread pool；
 - 支持 scheduler 的通道和 timer；
 - Dart post callback 与 session 生命周期。
@@ -91,8 +92,10 @@ Stream 使用 `StreamSink<T>` 发送 `streamData`、`streamEnd`、
 - **外部 loop 线程**：用户提供的 stdexec scheduler；
 - **Dart isolate**：Dart 代码和闭包执行。
 
-不要阻塞 io 线程。只在 worker 或外部线程使用 `dcb::sync_wait`，取消使用
-stop token 做协作式传播。
+不要阻塞 io scheduler runner。只在 worker 或外部线程使用
+`dcb::sync_wait`，取消使用 stop token 做协作式传播。多个 io runner 也不会
+取消这条规则：原始 `stdexec::sync_wait` 会一直占用调用它的 runner，所有
+runner 都等待该 scheduler 上的任务时仍会让 scheduler 死锁。
 
 ## 延伸阅读
 

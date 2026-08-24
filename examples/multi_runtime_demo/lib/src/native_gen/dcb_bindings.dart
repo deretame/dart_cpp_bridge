@@ -55,6 +55,9 @@ external void _dcbSetVerboseErrors(int enabled);
 @Native<SetPoolThreadsC>(assetId: _kAssetId, symbol: 'dcb_set_pool_threads')
 external void _dcbSetPoolThreads(int n);
 
+@Native<SetIoThreadsC>(assetId: _kAssetId, symbol: 'dcb_set_io_threads')
+external void _dcbSetIoThreads(int n);
+
 @Native<Pointer<Void> Function()>(
   assetId: _kAssetId,
   symbol: 'dcb_session_finalizer_ptr',
@@ -94,6 +97,7 @@ NativeBindings createDcbBindings() {
     free: _dcbFree,
     setVerboseErrors: _dcbSetVerboseErrors,
     setPoolThreads: _dcbSetPoolThreads,
+    setIoThreads: _dcbSetIoThreads,
     dropObject: _dcbDropObjectPtr().cast<FinalizerFn>(),
     objectFinalizer: _dcbObjectFinalizerPtr().cast<FinalizerFn>(),
     objectFinalizerToken: _dcbObjectFinalizerToken,

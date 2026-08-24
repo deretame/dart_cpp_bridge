@@ -30,16 +30,19 @@ final class DcbLib {
 
   /// Initialize (call once per Isolate).
   ///
-  /// [threadPoolSize] sets the native thread pool concurrency (default 4).
+  /// [threadPoolSize] sets the native blocking thread pool concurrency (default 4).
+  /// [ioThreads] sets the io scheduler runner count (default 1).
   /// [verboseErrors] controls whether C++ errors include function names (default true).
   static Future<void> init({
     int threadPoolSize = 4,
+    int ioThreads = 1,
     bool verboseErrors = true,
   }) async {
     if (_bridge != null) return;
     final b = await DartCppBridge.init(
       bindings: createDcbBindings(),
       poolThreads: threadPoolSize,
+      ioThreads: ioThreads,
     );
     b.setVerboseErrors(verboseErrors);
     _bridge = b;

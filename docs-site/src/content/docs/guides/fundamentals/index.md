@@ -33,7 +33,7 @@ the bridge handles codec, scheduling, lifecycle, and Dart API generation.
 | --- | --- |
 | C++ | C++20 |
 | Async model | stdexec senders / `stdexec::task` |
-| Built-in event loop | Asio `io_context`, one io thread |
+| Built-in event loop | Asio `io_context`, one io runner by default |
 | Blocking work | Asio thread pool |
 | Cancellation | stop tokens |
 | Codegen | Python 3.13 + libclang-ng, pinned and hash-verified |

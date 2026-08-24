@@ -82,6 +82,7 @@ final class DartCppBridge implements Finalizable {
   static Future<DartCppBridge> init({
     required NativeBindings bindings,
     int poolThreads = 4,
+    int ioThreads = 1,
   }) async {
     if (_instance != null) return _instance!;
 
@@ -97,8 +98,11 @@ final class DartCppBridge implements Finalizable {
       throw StateError('Dart_InitializeApiDL failed: $rc');
     }
 
-    // Configure pool size before runtime starts (session_open triggers start).
+    // Configure both schedulers before runtime starts (session_open triggers
+    // start). The io scheduler defaults to one runner thread for compatibility
+    // with the original single-threaded runtime.
     b.setPoolThreads(poolThreads);
+    b.setIoThreads?.call(ioThreads);
 
     final rp = ReceivePort();
     final sessionId = b.sessionOpen(rp.sendPort.nativePort);

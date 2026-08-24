@@ -35,6 +35,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace dcb {
 
@@ -44,14 +45,15 @@ namespace dcb {
 struct Unit {};
 
 // P2300 (std::execution / stdexec) scheduler adapter that runs sender work on
-// an asio::io_context event loop — the single-threaded io thread. Design
+// an asio::io_context event loop — one thread by default, with an optional
+// configurable number of runner threads. Design
 // reference: docs/cpp26_executor_model_usage.md §12.6 (Asio adapter).
 //
 // `stdexec::schedule(*sched)` returns the official exec::asio adapter sender
-// for `asio::post(io_context, use_sender)`: the posted handler runs on the io
-// thread, so every step of a chain launched with
-// `stdexec::starts_on(*sched, ...)` executes on the io thread, and its
-// completion fires back on the io thread. Error/stopped mapping follows the
+// for `asio::post(io_context, use_sender)`: the posted handler runs on one of
+// the scheduler runner threads, so every step of a chain launched with
+// `stdexec::starts_on(*sched, ...)` executes on a scheduler thread, and its
+// completion fires back on a scheduler thread. Error/stopped mapping follows the
 // adapter contract: operation_aborted / operation_canceled -> set_stopped,
 // other error_code -> set_error(std::exception_ptr).
 //
@@ -62,13 +64,14 @@ struct Unit {};
 // Lifetime: pending schedule operations capture the io_context reference, so
 // the scheduler must not outlive the io_context. The Runtime owns both and
 // guarantees the order: io_context member declared before the scheduler
-// member; stop() joins the io thread before destruction.
+// member; stop() joins all io threads before destruction.
 //
 // The scheduler is trivially copyable-equivalent in the sense required by the
 // stdexec scheduler concept: copies share the underlying io_context pointer.
 // current_thread_is_io() delegates to asio's own
 // executor_type::running_in_this_thread(), so no thread-id bookkeeping is
-// needed (it backs dcb::sync_wait's self-deadlock guard).
+// needed (it backs dcb::sync_wait's self-deadlock guard for every runner
+// thread).
 class IoContextScheduler {
  public:
   using scheduler_concept = stdexec::scheduler_tag;
@@ -148,13 +151,23 @@ class Runtime {
     return true;
   }
 
-  /// Set thread pool size (must be called before start; default 4).
+  /// Set blocking thread pool size (must be called before start; default 4).
   void set_pool_threads(std::uint32_t n) {
     std::lock_guard lock(start_stop_mu_);
     if (lifecycle_ != Lifecycle::kStopped) {
       return;
     }
     pool_threads_ = n ? n : 1;
+  }
+
+  /// Set the number of threads that run the io scheduler (must be called
+  /// before start; default 1). A value of zero is normalized to one.
+  void set_io_threads(std::uint32_t n) {
+    std::lock_guard lock(start_stop_mu_);
+    if (lifecycle_ != Lifecycle::kStopped) {
+      return;
+    }
+    io_threads_count_ = n ? n : 1;
   }
 
   void ensure_running() {
@@ -168,9 +181,10 @@ class Runtime {
   /// The blocking thread pool executor (asio interop: asio::post(rt.pool(), ...)).
   DCB_ASIO_NS::thread_pool::executor_type pool() { return pool_->get_executor(); }
 
-  /// The scheduler that runs on the single-threaded io_context event loop.
+  /// The scheduler that runs on the io_context event loop. It uses one runner
+  /// thread by default; configure more with set_io_threads() before start().
   /// Business senders are launched here (stdexec::starts_on(*io_scheduler(),
-  /// sndr)); completions are delivered here.
+  /// sndr)); completions are delivered on a scheduler runner thread.
   IoContextScheduler* io_scheduler() { return &io_sched_; }
 
   /// The scheduler backed by the blocking thread pool (official
@@ -209,10 +223,11 @@ class Runtime {
   IoContextScheduler io_sched_{io_};
   std::unique_ptr<exec::asio::asio_thread_pool> pool_;
   std::unique_ptr<DCB_ASIO_NS::executor_work_guard<DCB_ASIO_NS::io_context::executor_type>> guard_;
-  std::unique_ptr<std::thread> io_thread_;
+  std::vector<std::thread> io_threads_;
   std::atomic<bool> started_{false};
   Lifecycle lifecycle_{Lifecycle::kStopped};
   std::uint32_t pool_threads_{4};
+  std::uint32_t io_threads_count_{1};
   DartPostFn post_fn_{nullptr};
   void* post_userdata_{nullptr};
   mutable std::mutex post_mu_;

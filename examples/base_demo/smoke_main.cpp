@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -477,6 +478,62 @@ void test_syncawait_rejected_on_io_thread() {
   }
   Runtime::instance().stop();
   std::printf("sync_wait rejected on io thread ok\n");
+}
+
+void test_io_scheduler_thread_count() {
+  using namespace dcb;
+  Runtime::instance().set_io_threads(2);
+  Runtime::instance().start();
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool release = false;
+  int entered = 0;
+  auto both_entered = std::make_shared<std::promise<void>>();
+  auto entered_future = both_entered->get_future();
+
+  auto wait_for_release = [&] {
+    {
+      std::lock_guard lock(mu);
+      ++entered;
+      if (entered == 2) {
+        try {
+          both_entered->set_value();
+        } catch (...) {
+        }
+      }
+    }
+    cv.notify_all();
+    std::unique_lock lock(mu);
+    cv.wait(lock, [&] { return release; });
+  };
+
+  DCB_ASIO_NS::post(Runtime::instance().io(), wait_for_release);
+  DCB_ASIO_NS::post(Runtime::instance().io(), wait_for_release);
+
+  if (entered_future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
+    {
+      std::lock_guard lock(mu);
+      release = true;
+    }
+    cv.notify_all();
+    Runtime::instance().stop();
+    Runtime::instance().set_io_threads(1);
+    fail("io scheduler did not run two handlers concurrently");
+  }
+
+  {
+    std::lock_guard lock(mu);
+    release = true;
+  }
+  cv.notify_all();
+  Runtime::instance().stop();
+  Runtime::instance().set_io_threads(1);
+
+  if (entered != 2) {
+    fail("io scheduler thread count test entered the wrong number of handlers");
+  }
+  std::printf("io scheduler configurable thread count ok\n");
 }
 
 void test_spawn_blocking_awaited_no_block_io() {
@@ -1202,6 +1259,7 @@ int main() {
   test_spawn_wait_result();
   test_spawn_syncawait_exception();
   test_syncawait_rejected_on_io_thread();
+  test_io_scheduler_thread_count();
   test_spawn_blocking_awaited_no_block_io();
   test_spawn_blocking_fire_and_forget();
   test_spawn_blocking_explicit_scheduler();
