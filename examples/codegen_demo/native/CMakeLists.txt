@@ -14,7 +14,7 @@
 #      FetchContent_Declare(
 #        dart_cpp_bridge
 #        GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#        GIT_TAG        v2.2.0  # or pin a commit
+#        GIT_TAG        v2.3.0  # or pin a commit
 #      )
 #      FetchContent_MakeAvailable(dart_cpp_bridge)
 #      target_link_libraries(my_bridge PRIVATE

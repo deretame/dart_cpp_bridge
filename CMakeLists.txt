@@ -7,7 +7,7 @@
 #   include(FetchContent)
 #   FetchContent_Declare(dart_cpp_bridge
 #     GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#     GIT_TAG v2.2.0)
+#     GIT_TAG v2.3.0)
 #   FetchContent_MakeAvailable(dart_cpp_bridge)
 #   target_link_libraries(app PRIVATE
 #     $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)

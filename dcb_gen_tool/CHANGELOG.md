@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.0
+
+- Version aligned with `dart_cpp_bridge` 2.3.0. Code generation continues to
+  resolve the runtime headers from the local Dart package configuration.
+
 ## 2.2.0
 
 - Generated initialization APIs now expose the configurable io scheduler

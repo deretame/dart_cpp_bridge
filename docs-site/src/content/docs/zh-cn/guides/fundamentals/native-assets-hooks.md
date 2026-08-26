@@ -116,7 +116,7 @@ include(FetchContent)
 FetchContent_Declare(
   dart_cpp_bridge
   GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-  GIT_TAG v2.2.0  # 或固定到一个 commit
+  GIT_TAG v2.3.0  # 或固定到一个 commit
 )
 FetchContent_MakeAvailable(dart_cpp_bridge)
 

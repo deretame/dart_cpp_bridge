@@ -1,3 +1,11 @@
+## 2.3.0
+
+- Added optional CMake `FetchContent` integration for consuming the native
+  bridge from GitHub, while keeping local Dart package resolution as the
+  default workflow.
+- Added build-tree handling for automatically fetched Dart API DL headers so
+  the fetched source tree remains unchanged.
+
 ## 2.2.0
 
 - Added configurable io scheduler runner count through `DartCppBridge.init`
