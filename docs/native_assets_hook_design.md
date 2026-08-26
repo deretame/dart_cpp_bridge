@@ -172,13 +172,13 @@ hook 经 `input.userDefines['key']` / `input.userDefines.path('key')` 读取。�
 ### 3.3 基础库链接模型
 
 [`dart/native/CMakeLists.txt`](../dart/native/CMakeLists.txt) 产出 `dart_cpp_bridge::runtime`
-（STATIC 库），下游以 WHOLE_ARCHIVE 链接。依赖版本（asio 1.30.2 / async-simple 1.4）在此单点钉死并传递。
+（STATIC 库），下游以 WHOLE_ARCHIVE 链接。依赖版本（Asio、stdexec、MPMCQueue）在此单点钉死并传递。
 
 ### 3.4 Dart API 头文件
 
-`dart_api_dl.c/.h` 由 [`dart/native/cmake/fetch_dart_api.cmake`](../dart/native/cmake/fetch_dart_api.cmake) 下载到
-`dart/native/third_party/dart_api/`（gitignored）。hook 构建前必须确保其存在
-（CMake 在缺失时会 `FATAL_ERROR` 提示）。
+`dart_api_dl.c/.h` 由 [`dart/native/cmake/fetch_dart_api.cmake`](../dart/native/cmake/fetch_dart_api.cmake) 下载。
+如果源码树中不存在这些 gitignored 文件，native CMake 会自动下载到构建目录；
+也可以通过 `DCB_DART_API_DIR` 指定已有目录。
 
 ### 3.5 库加载迁移
 
@@ -427,13 +427,13 @@ Uri resolveDcbNativeDir(BuildInput input) {
 
 - 用 `output.dependencies.add(uri)` 声明所有参与编译的源/头文件与 `CMakeLists.txt`，
   使源码变更触发 hook 重跑。
-- **FetchContent 的 hermeticity 权衡**：asio / async-simple 由 CMake `FetchContent` 在
+- **FetchContent 的 hermeticity 权衡**：Asio / stdexec / MPMCQueue 由 CMake `FetchContent` 在
   configure 期 `git clone`，依赖网络与 git。半密封环境透传代理变量，但首次构建仍需网络。
   - 选项 1（现状）：保留 FetchContent，接受首构联网；CMake 自身有 `_deps` 缓存。
-  - 选项 2（更 hermetic）：vendor asio / async-simple 进仓库或改为 `find_package`/CPM 缓存。
+  - 选项 2（更 hermetic）：vendor 依赖进仓库或改为 `find_package`/CPM 缓存。
   - **建议**：Phase 3 先用选项 1 跑通，hermetic 优化列为后续。
-- `dart_api` 头文件：hook 构建前确保已下载（可在 CMake 内自动 `include(fetch_dart_api.cmake)`
-  或 hook 预检）。
+- `dart_api` 头文件：native CMake 缺失时自动下载，也支持关闭自动下载并通过
+  `DCB_DART_API_DIR` 指向预取目录。
 
 ---
 

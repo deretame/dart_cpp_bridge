@@ -164,15 +164,19 @@ include(FetchContent)
 FetchContent_Declare(
   dart_cpp_bridge
   GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-  GIT_TAG        main   # or pin to tag/commit
+  GIT_TAG        v2.2.0 # or pin a commit
 )
 FetchContent_MakeAvailable(dart_cpp_bridge)
 
-# dart_cpp_bridge target PUBLIC exposes asio + stdexec
-target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
+# The runtime target PUBLIC exposes Asio, stdexec, MPMCQueue, and C++20.
+target_link_libraries(my_bridge PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 ```
 
-> Note: FetchContent integration is not yet productionized (Phase 3). Currently recommended within monorepo or manually specify `DCB_ROOT`.
+The native CMake automatically fetches the pinned dependencies and the Dart
+API DL headers when they are not already present. To use parent-provided
+dependencies, set `DCB_FETCH_ASIO=OFF`, `DCB_FETCH_STDEXEC=OFF`, or
+`DCB_FETCH_MPMCQUEUE=OFF` and provide the corresponding CMake targets.
 
 ---
 

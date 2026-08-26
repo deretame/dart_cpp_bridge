@@ -87,19 +87,69 @@ await DcbCMakeBuilder(
 
 With `false`, the builder skips generated configure arguments such as `-G`, architecture, toolchain, `CMAKE_BUILD_TYPE`, runtime linkage, `BUILD_SHARED_LIBS`, and `CMAKE_EXPORT_COMPILE_COMMANDS`. The required `-S/-B` arguments, the later `cmake --build` invocation, `--parallel`, and explicitly supplied `extraDefines` are still kept. In this mode `DcbBuildOptions.debug` no longer sets the configure-time build type, and `copyCompileCommands` does not force CMake to generate the file (the builder still copies it if the project generates one itself).
 
-## CMake dependency ownership
+## Choose a CMake integration mode
 
-The `dart/native` CMake project can be embedded in a larger CMake build. By
-default it retains a self-contained `FetchContent` path for the pinned
-standalone Asio and stdexec dependencies. If the host project already owns
-these dependencies through a package manager, a monorepo, or its own
-`FetchContent` declarations, turn off the corresponding fetch options before
-adding the bridge:
+Use the local Dart package for the standard Dart/Flutter workflow. Use
+`FetchContent` when the native part is built from a CMake project that owns the
+top-level build and wants CMake to obtain the bridge source from GitHub.
+
+### Local Dart package (default)
+
+This is the normal workflow:
+
+1. Add `dart_cpp_bridge` to `pubspec.yaml` and run `dart pub get`.
+2. Run `dcb_gen_tool generate` after changing the API headers.
+3. Let the Native Assets hook build the native target, or configure the same
+   CMake project directly.
+
+During code generation, `dcb_gen_tool` resolves
+`dart_cpp_bridge/native/include` from the local package recorded in
+`.dart_tool/package_config.json`. The default workflow does not require a
+GitHub checkout or a `FetchContent` declaration.
+
+### GitHub FetchContent (optional)
+
+Use this mode when the CMake project should obtain the bridge source itself.
+The repository root is a CMake entry point, so it can be consumed directly:
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  dart_cpp_bridge
+  GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
+  GIT_TAG v2.2.0  # or pin an exact commit
+)
+FetchContent_MakeAvailable(dart_cpp_bridge)
+
+# generated/wire_dispatch.cpp is produced by dcb_gen_tool.
+add_library(my_bridge SHARED
+  generated/wire_dispatch.cpp
+  api_impl/bridge_api.cpp
+)
+target_link_libraries(my_bridge PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+```
+
+The top-level entry adds `dart/native`. By default, that CMake project fetches
+the pinned Asio, stdexec, and MPMCQueue dependencies. If the Dart API DL
+headers are not already available, they are downloaded into the build
+directory; the fetched source tree is not modified.
+
+Run code generation in the Dart project as usual. FetchContent only determines
+where CMake gets the native bridge and its build dependencies.
+
+### Reuse dependencies from the parent CMake project
+
+If the parent project already provides Asio, stdexec, or MPMCQueue through a
+package manager, a monorepo, or its own `FetchContent` declarations, disable
+the corresponding bridge fetch options before adding `dart/native`:
 
 ```cmake
 # Set these before add_subdirectory(dart_cpp_bridge/dart/native ...).
 set(DCB_FETCH_STDEXEC OFF CACHE BOOL "" FORCE)
 set(DCB_FETCH_ASIO OFF CACHE BOOL "" FORCE)
+set(DCB_FETCH_MPMCQUEUE OFF CACHE BOOL "" FORCE)
 
 # The host project must provide these targets before add_subdirectory:
 #   STDEXEC::stdexec
@@ -115,8 +165,9 @@ target, or make `find_package(asio CONFIG)` expose `asio::asio`. The bridge
 then links its runtime target against these host-provided targets without
 downloading or patching Asio/stdexec itself.
 
-This only changes ownership of Asio and stdexec. Other native dependencies
-and the Dart API headers keep their existing build/download behavior.
+This only changes ownership of the native dependencies. `DCB_FETCH_DART_API`
+controls automatic Dart API DL header download, and `DCB_DART_API_DIR` can point
+at a pre-fetched copy when automatic download is disabled.
 
 ## Selecting the Asio namespace
 

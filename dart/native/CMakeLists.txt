@@ -17,7 +17,7 @@
 #   this step but cannot be installed/distributed).
 #
 # Single source of truth for dependency versions:
-#   asio / async-simple / stdexec versions are pinned only in this file.
+#   asio / stdexec / MPMCQueue versions are pinned only in this file.
 #   Downstream targets linking dart_cpp_bridge::runtime transitively receive
 #   both include paths and compile definitions — no need to declare them
 #   separately, no version drift.
@@ -34,7 +34,7 @@
 #   FetchContent_Declare(
 #     dart_cpp_bridge
 #     GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#     GIT_TAG        main  # or pin a tag/commit
+#     GIT_TAG        v2.2.0  # or pin a commit
 #   )
 #   FetchContent_MakeAvailable(dart_cpp_bridge)
 #   target_link_libraries(my_bridge PRIVATE
@@ -43,10 +43,6 @@
 
 cmake_minimum_required(VERSION 3.25)
 project(dart_cpp_bridge LANGUAGES C CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 
@@ -69,7 +65,12 @@ include(FetchContent)
 # =============================================================================
 option(DCB_FETCH_STDEXEC "Fetch stdexec via FetchContent; OFF when the parent provides STDEXEC::stdexec" ON)
 option(DCB_FETCH_ASIO "Fetch standalone asio via FetchContent; OFF when the parent provides asio" ON)
+option(DCB_FETCH_MPMCQUEUE "Fetch rigtorp::MPMCQueue via FetchContent; OFF when the parent provides MPMCQueue" ON)
+option(DCB_FETCH_DART_API "Fetch Dart API DL headers automatically when they are missing" ON)
 option(DCB_USE_BOOST_ASIO "Use boost::asio instead of standalone asio" OFF)
+set(DCB_DART_API_VERSION "3.10.0" CACHE STRING "Dart SDK version used for dart_api_dl headers")
+set(DCB_DART_API_DIR "" CACHE PATH
+  "Directory containing dart_api_dl.c and the Dart API DL headers")
 
 # --- asio (header-only) ---
 # Version bumped to 1.31.0: stdexec's official standalone-asio integration
@@ -83,6 +84,18 @@ if(DCB_USE_BOOST_ASIO)
   if(NOT TARGET asio_iface)
     add_library(asio_iface INTERFACE)
     target_compile_definitions(asio_iface INTERFACE DCB_USE_BOOST_ASIO)
+  endif()
+elseif(TARGET asio_iface)
+  # The parent already owns the bridge-facing interface. Do not declare a
+  # second FetchContent dependency just because DCB_FETCH_ASIO defaults ON.
+elseif(TARGET asio OR TARGET asio::asio)
+  # Reuse a conventional parent-provided target and normalize it to the
+  # interface target consumed by the bridge.
+  add_library(asio_iface INTERFACE)
+  if(TARGET asio)
+    target_link_libraries(asio_iface INTERFACE asio)
+  else()
+    target_link_libraries(asio_iface INTERFACE asio::asio)
   endif()
 elseif(DCB_FETCH_ASIO)
   FetchContent_Declare(
@@ -110,16 +123,14 @@ elseif(DCB_FETCH_ASIO)
 else()
   # Parent-provided asio: reuse an existing `asio_iface` target if present,
   # otherwise find_package(asio).
-  if(NOT TARGET asio_iface)
-    find_package(asio CONFIG QUIET)
-    if(TARGET asio::asio)
-      add_library(asio_iface INTERFACE)
-      target_link_libraries(asio_iface INTERFACE asio::asio)
-    else()
-      message(FATAL_ERROR
-        "DCB_FETCH_ASIO=OFF but no asio found: provide an `asio_iface` target "
-        "or a CMake package `asio` (e.g. vcpkg), or keep DCB_FETCH_ASIO=ON.")
-    endif()
+  find_package(asio CONFIG QUIET)
+  if(TARGET asio::asio)
+    add_library(asio_iface INTERFACE)
+    target_link_libraries(asio_iface INTERFACE asio::asio)
+  else()
+    message(FATAL_ERROR
+      "DCB_FETCH_ASIO=OFF but no asio found: provide an `asio_iface` target "
+      "or a CMake package `asio` (e.g. vcpkg), or keep DCB_FETCH_ASIO=ON.")
   endif()
   # stdexec's standalone-Asio integration looks for the conventional `asio`
   # target before deciding whether it must fetch its own copy. Preserve the
@@ -129,6 +140,13 @@ else()
   if(NOT TARGET asio)
     add_library(asio ALIAS asio_iface)
   endif()
+endif()
+
+# Normalize every standalone-Asio path to the target name expected by
+# stdexec's ConfigureASIO. This is intentionally done after all branches:
+# parent projects may provide `asio_iface`, `asio`, or `asio::asio`.
+if(NOT TARGET asio)
+  add_library(asio ALIAS asio_iface)
 endif()
 
 # MinGW-style toolchains (e.g. MSYS2 clang/gcc) do not link the Winsock
@@ -141,13 +159,29 @@ endif()
 # Strict-FIFO bounded queue (ring buffer, atomic ticket order) used as the
 # buffer of co::mpsc::bounded channels. Pinned to commit b9808ede (master,
 # 2024-05). MIT license.
-FetchContent_Declare(
-  mpmcqueue
-  GIT_REPOSITORY https://github.com/rigtorp/MPMCQueue.git
-  GIT_TAG        b9808ede08f26fa9df4df4e081d19cace8f6c6ea
-  GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(mpmcqueue)
+if(NOT TARGET MPMCQueue AND NOT TARGET MPMCQueue::MPMCQueue)
+  if(DCB_FETCH_MPMCQUEUE)
+    FetchContent_Declare(
+      mpmcqueue
+      GIT_REPOSITORY https://github.com/rigtorp/MPMCQueue.git
+      GIT_TAG        b9808ede08f26fa9df4df4e081d19cace8f6c6ea
+      GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(mpmcqueue)
+  else()
+    find_package(MPMCQueue CONFIG QUIET)
+  endif()
+endif()
+
+if(NOT TARGET MPMCQueue)
+  if(TARGET MPMCQueue::MPMCQueue)
+    add_library(MPMCQueue ALIAS MPMCQueue::MPMCQueue)
+  else()
+    message(FATAL_ERROR
+      "No MPMCQueue target found. Provide MPMCQueue or MPMCQueue::MPMCQueue, "
+      "or keep DCB_FETCH_MPMCQUEUE=ON.")
+  endif()
+endif()
 
 # --- stdexec (header-only, std::execution P2300 reference implementation) ---
 # Migration experiment (branch feat/stdexec-migration): async-simple is fully
@@ -158,9 +192,8 @@ FetchContent_MakeAvailable(mpmcqueue)
 # 6d7ad689f4d4, 2026-05-11, project VERSION 0.11.0; main has no formal
 # release tags).
 # This tag's own CMakeLists requires CMake >= 3.25 (main requires 3.28),
-# hence cmake_minimum_required above. When built as a subproject
-# (STDEXEC_MAIN_PROJECT=OFF) tests/docs default OFF; examples default ON,
-# so disable them explicitly.
+# hence cmake_minimum_required above. When fetched below, tests/docs default
+# OFF; examples default ON, so disable them explicitly.
 #
 # PATCH_COMMAND: stdexec's __any_allocator relies on [class.access] (members
 # of a class template may access private members of other specializations),
@@ -168,21 +201,29 @@ FetchContent_MakeAvailable(mpmcqueue)
 # declaration. stdexec::task's type-erased task_scheduler is built on
 # __any_allocator, so without the patch no MSVC build using stdexec::task
 # (or a scheduler that cannot be stored inline) would compile.
-set(STDEXEC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(STDEXEC_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(STDEXEC_INSTALL OFF CACHE BOOL "" FORCE)
-# Enable the Asio adapter (experimental::execution::asio): use_sender
-# completion token, asio_thread_pool (STDEXEC::asio_pool alias), etc. It is
-# header-only and links against the `asio` alias target declared above.
-# The asio implementation follows DCB_USE_BOOST_ASIO: boost / standalone.
-set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
-if(DCB_USE_BOOST_ASIO)
-  set(STDEXEC_ASIO_IMPLEMENTATION "boost" CACHE STRING "" FORCE)
-else()
-  set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
-endif()
-if(DCB_FETCH_STDEXEC)
+if(TARGET STDEXEC::stdexec OR TARGET STDEXEC::asioexec)
+  if(NOT TARGET STDEXEC::stdexec OR NOT TARGET STDEXEC::asioexec)
+    message(FATAL_ERROR
+      "The parent provided an incomplete stdexec setup: both "
+      "STDEXEC::stdexec and STDEXEC::asioexec are required.")
+  endif()
+elseif(DCB_FETCH_STDEXEC)
+  # Enable the Asio adapter (experimental::execution::asio): use_sender
+  # completion token, asio_thread_pool (STDEXEC::asio_pool alias), etc. It is
+  # header-only and links against the `asio` alias target declared above.
+  # The asio implementation follows DCB_USE_BOOST_ASIO: boost / standalone.
+  # Keep these settings local to the dependency we own; parent-provided
+  # stdexec must retain its own configuration.
+  set(STDEXEC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  set(STDEXEC_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(STDEXEC_INSTALL OFF CACHE BOOL "" FORCE)
+  set(STDEXEC_ENABLE_ASIO ON CACHE BOOL "" FORCE)
+  if(DCB_USE_BOOST_ASIO)
+    set(STDEXEC_ASIO_IMPLEMENTATION "boost" CACHE STRING "" FORCE)
+  else()
+    set(STDEXEC_ASIO_IMPLEMENTATION "standalone" CACHE STRING "" FORCE)
+  endif()
   FetchContent_Declare(
     stdexec
     GIT_REPOSITORY https://github.com/NVIDIA/stdexec.git
@@ -190,7 +231,7 @@ if(DCB_FETCH_STDEXEC)
     GIT_SHALLOW    TRUE
     PATCH_COMMAND  "${CMAKE_COMMAND}"
                      -DSTDEXEC_SRC=<SOURCE_DIR>
-                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_stdexec_any_allocator.cmake"
+                     -P "${CMAKE_CURRENT_LIST_DIR}/cmake/patch_stdexec_any_allocator.cmake"
   )
   FetchContent_MakeAvailable(stdexec)
   # Boost.Asio mode: stdexec's ConfigureASIO has provided Boost::asio via
@@ -217,23 +258,79 @@ else()
   # handle it itself); the STDEXEC_* options must also be configured by the
   # parent before add_subdirectory (setting them after MakeAvailable has no
   # effect).
-  if(NOT TARGET STDEXEC::stdexec)
-    find_package(stdexec CONFIG QUIET)
-    if(NOT TARGET STDEXEC::stdexec)
-      message(FATAL_ERROR
-        "DCB_FETCH_STDEXEC=OFF but no STDEXEC::stdexec target found. "
-        "The parent project must provide stdexec (vcpkg or FetchContent "
-        "with STDEXEC_ENABLE_ASIO matching DCB_USE_BOOST_ASIO).")
-    endif()
+  find_package(stdexec CONFIG QUIET)
+  if(NOT TARGET STDEXEC::stdexec OR NOT TARGET STDEXEC::asioexec)
+    message(FATAL_ERROR
+      "DCB_FETCH_STDEXEC=OFF but no complete stdexec setup was found. "
+      "The parent project must provide STDEXEC::stdexec and "
+      "STDEXEC::asioexec (vcpkg or FetchContent with STDEXEC_ENABLE_ASIO "
+      "matching DCB_USE_BOOST_ASIO).")
   endif()
 endif()
 
-# --- dart_api_dl (downloaded via fetch_dart_api.cmake) ---
-set(DCB_DART_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/dart_api)
-if(NOT EXISTS "${DCB_DART_API_DIR}/dart_api_dl.c")
-  message(FATAL_ERROR
-    "Missing third_party/dart_api. Run: cmake -P cmake/fetch_dart_api.cmake")
+# --- dart_api_dl (downloaded automatically for FetchContent consumers) ---
+set(_dcb_dart_api_source_dir "${CMAKE_CURRENT_LIST_DIR}/third_party/dart_api")
+set(_dcb_dart_api_files
+  dart_api_dl.c
+  dart_api_dl.h
+  dart_api.h
+  dart_native_api.h
+  dart_version.h
+  internal/dart_api_dl_impl.h
+)
+set(_dcb_dart_api_source_ready TRUE)
+foreach(_dcb_file IN LISTS _dcb_dart_api_files)
+  if(NOT EXISTS "${_dcb_dart_api_source_dir}/${_dcb_file}")
+    set(_dcb_dart_api_source_ready FALSE)
+    break()
+  endif()
+endforeach()
+
+if(DCB_DART_API_DIR)
+  set(_dcb_dart_api_dir "${DCB_DART_API_DIR}")
+elseif(_dcb_dart_api_source_ready)
+  # Keep the existing monorepo workflow fast and source-compatible when the
+  # ignored headers have already been downloaded by fetch_dart_api.cmake.
+  set(_dcb_dart_api_dir "${_dcb_dart_api_source_dir}")
+else()
+  # A fetched source tree may be read-only or may not contain generated/ignored
+  # files. Store the downloaded Dart API in the build tree instead of mutating
+  # the dependency checkout.
+  set(_dcb_dart_api_dir "${CMAKE_CURRENT_BINARY_DIR}/dart_api")
 endif()
+
+set(_dcb_dart_api_ready TRUE)
+foreach(_dcb_file IN LISTS _dcb_dart_api_files)
+  if(NOT EXISTS "${_dcb_dart_api_dir}/${_dcb_file}")
+    set(_dcb_dart_api_ready FALSE)
+    break()
+  endif()
+endforeach()
+
+if(NOT _dcb_dart_api_ready)
+  if(NOT DCB_FETCH_DART_API)
+    message(FATAL_ERROR
+      "Dart API DL headers are missing from '${_dcb_dart_api_dir}'. "
+      "Run cmake -P cmake/fetch_dart_api.cmake, set DCB_DART_API_DIR, "
+      "or keep DCB_FETCH_DART_API=ON.")
+  endif()
+  message(STATUS
+    "dart_cpp_bridge: fetching Dart API DL headers into ${_dcb_dart_api_dir}")
+  execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+      "-DDCB_DART_API_OUT=${_dcb_dart_api_dir}"
+      "-DDCB_DART_API_VERSION=${DCB_DART_API_VERSION}"
+      -P "${CMAKE_CURRENT_LIST_DIR}/cmake/fetch_dart_api.cmake"
+    RESULT_VARIABLE _dcb_dart_api_result
+  )
+  if(NOT _dcb_dart_api_result EQUAL 0)
+    message(FATAL_ERROR
+      "Failed to fetch the Dart API DL headers (exit code "
+      "${_dcb_dart_api_result}).")
+  endif()
+endif()
+
+set(DCB_DART_API_DIR "${_dcb_dart_api_dir}")
 
 # --- Base runtime (STATIC library, downstream links with WHOLE_ARCHIVE) ---
 # Migration note (feat/stdexec-migration): src/cbridge.cpp has been re-ported to
@@ -250,7 +347,12 @@ add_library(dcb_runtime STATIC
   src/ffi_entry.cpp
   ${DCB_DART_API_DIR}/dart_api_dl.c
 )
-set_target_properties(dcb_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(dcb_runtime PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  CXX_EXTENSIONS OFF
+  CXX_STANDARD_REQUIRED ON
+)
+target_compile_features(dcb_runtime PUBLIC cxx_std_20)
 
 target_include_directories(dcb_runtime
   PUBLIC
@@ -260,6 +362,12 @@ target_include_directories(dcb_runtime
 )
 
 target_compile_definitions(dcb_runtime PUBLIC DART_CPP_BRIDGE_BUILD)
+if(DCB_USE_BOOST_ASIO)
+  # Keep the namespace selection on the public runtime target as well as on
+  # the internal Asio interface. This remains correct when the parent supplied
+  # an existing/imported `asio_iface` that cannot be modified here.
+  target_compile_definitions(dcb_runtime PUBLIC DCB_USE_BOOST_ASIO)
+endif()
 # stdexec::task's task_scheduler preallocates a fixed-size operation state
 # (STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE, default 72 bytes) to schedule work
 # on the task's home scheduler. Storing the asio::post operation state of
@@ -299,6 +407,11 @@ if(DCB_BUILD_SHARED)
     src/ffi_entry.cpp
     ${DCB_DART_API_DIR}/dart_api_dl.c
   )
+  set_target_properties(dcb_shared PROPERTIES
+    CXX_EXTENSIONS OFF
+    CXX_STANDARD_REQUIRED ON
+  )
+  target_compile_features(dcb_shared PUBLIC cxx_std_20)
   target_include_directories(dcb_shared
     PUBLIC
       ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -306,6 +419,9 @@ if(DCB_BUILD_SHARED)
       ${DCB_DART_API_DIR}
   )
   target_compile_definitions(dcb_shared PRIVATE DART_CPP_BRIDGE_BUILD)
+  if(DCB_USE_BOOST_ASIO)
+    target_compile_definitions(dcb_shared PRIVATE DCB_USE_BOOST_ASIO)
+  endif()
   target_compile_definitions(dcb_shared PUBLIC STDEXEC_TASK_SCHEDULE_OPSTATE_SIZE=256)
   target_link_libraries(dcb_shared PRIVATE asio_iface MPMCQueue STDEXEC::stdexec STDEXEC::asioexec)
   if(WIN32)

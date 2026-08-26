@@ -58,6 +58,23 @@ defines:
 | `defines` | ❌ | `BRIDGE_CODEGEN`、`DART_CPP_BRIDGE_CODEGEN` | 传给 clang 的预处理宏列表 |
 | `dart_code` | ❌ | 无 | 向生成的数据类中注入自定义 Dart 代码，可替换自动生成的 `toString()` |
 
+## 代码生成与 CMake
+
+代码生成使用项目中安装的 Dart package。先在 `pubspec.yaml` 中添加
+`dart_cpp_bridge`，运行 `dart pub get`，然后执行：
+
+```bash
+dcb_gen_tool generate dart_cpp_bridge.yaml
+```
+
+生成器从 `.dart_tool/package_config.json` 读取 package 位置，并从这个本地
+package 的 `dart_cpp_bridge/native/include` 解析运行时头文件。这就是默认的
+代码生成流程。
+
+native 构建时，可以使用本地 package，也可以使用仓库提供的 CMake
+`FetchContent` 集成方式。CMake 集成方式的选择不会改变生成器命令，也不会改变
+生成器的 include 路径解析方式。
+
 ## 运行代码生成
 
 ```bash

@@ -105,7 +105,7 @@ Dart 侧回调无论 sync/async 都在 **Isolate 事件循环**执行。细节�
 | Dart CLI 工具链 (`dcb_codegen`) | ✅ | 替代旧 PowerShell/Shell 脚本；`dart run bin/codegen.dart` 一键 bootstrap + 运行 |
 | 显式类标记 `BRIDGE_DATA_CLASS` / `BRIDGE_OPAQUE` | ✅ | 对齐 FRB `RustAutoOpaque` 模式；opaque 类忽略公开字段，只生成方法 |
 | Native Assets hook | ❌ |
-| examples 用户模板 + PUBLIC 暴露依赖 | ⏳ | `codegen_demo` 可作模板雏形；未产品化 FetchContent 接入 |
+| examples 用户模板 + PUBLIC 暴露依赖 | ✅ | 顶层 `CMakeLists.txt` 支持 FetchContent；runtime PUBLIC 传递依赖和 C++20 |
 
 ---
 

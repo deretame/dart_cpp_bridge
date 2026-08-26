@@ -8,7 +8,8 @@
 #
 # This file lives in the native/ directory; hook/build.dart points sourceDir: 'native' at it.
 # The base runtime is brought in via dcb_find_package.cmake and linked with WHOLE_ARCHIVE to keep dcb_* exports.
-# asio / async-simple versions are pinned and propagated by the base library; only libuv is declared here.
+# asio / stdexec / MPMCQueue versions are pinned and propagated by the base
+# library; only libuv is declared here.
 #
 # Run codegen before building:
 #   dcb_gen_tool generate dart_cpp_bridge.yaml

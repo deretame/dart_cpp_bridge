@@ -8,19 +8,20 @@
 # Integration options:
 #   A) Monorepo (current approach): automatically resolved via package_config.json
 #      dart_cpp_bridge package path, linked with WHOLE_ARCHIVE to dart_cpp_bridge::runtime.
-#   B) External project (FetchContent, recommended after Phase 3 productization):
+#   B) External project (FetchContent):
 #
 #      include(FetchContent)
 #      FetchContent_Declare(
 #        dart_cpp_bridge
 #        GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-#        GIT_TAG        main  # or pin a tag/commit
+#        GIT_TAG        v2.2.0  # or pin a commit
 #      )
 #      FetchContent_MakeAvailable(dart_cpp_bridge)
 #      target_link_libraries(my_bridge PRIVATE
 #        $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 #
-#   In both approaches, asio / async-simple versions are pinned and propagated by the base library; no need to declare them yourself.
+#   In both approaches, asio / stdexec / MPMCQueue versions are pinned and
+#   propagated by the base library; no need to declare them yourself.
 #   WHOLE_ARCHIVE forces all objects to be linked, keeping dcb_* FFI exports.
 #
 # Customization checklist:

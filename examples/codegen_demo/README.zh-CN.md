@@ -164,15 +164,18 @@ include(FetchContent)
 FetchContent_Declare(
   dart_cpp_bridge
   GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
-  GIT_TAG        main   # 或钉死 tag/commit
+  GIT_TAG        v2.2.0 # 或固定 commit
 )
 FetchContent_MakeAvailable(dart_cpp_bridge)
 
-# dart_cpp_bridge 目标已 PUBLIC 暴露 asio + stdexec
-target_link_libraries(my_bridge PRIVATE dart_cpp_bridge)
+# runtime target 会 PUBLIC 传递 Asio、stdexec、MPMCQueue 和 C++20
+target_link_libraries(my_bridge PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
 ```
 
-> 注：当前 FetchContent 接入尚未产品化（Phase 3），目前推荐在 monorepo 内或手动指定 `DCB_ROOT`。
+native CMake 在依赖或 Dart API DL 头文件缺失时会自动获取固定版本。
+如果由父工程提供依赖，可设置 `DCB_FETCH_ASIO=OFF`、
+`DCB_FETCH_STDEXEC=OFF` 或 `DCB_FETCH_MPMCQUEUE=OFF`，并提供对应的 CMake target。
 
 ---
 

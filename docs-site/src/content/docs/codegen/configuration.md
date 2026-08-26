@@ -59,6 +59,24 @@ defines:
 | `defines` | ❌ | `BRIDGE_CODEGEN`, `DART_CPP_BRIDGE_CODEGEN` | Preprocessor macros passed to clang |
 | `dart_code` | ❌ | None | Inject custom Dart code into generated data classes; can replace the auto-generated `toString()` |
 
+## Code generation and CMake
+
+Code generation uses the Dart package installed in the project. Add
+`dart_cpp_bridge` to `pubspec.yaml`, run `dart pub get`, and then run:
+
+```bash
+dcb_gen_tool generate dart_cpp_bridge.yaml
+```
+
+The generator reads the package location from
+`.dart_tool/package_config.json` and resolves the runtime headers under
+`dart_cpp_bridge/native/include` from that local package. This is the default
+code-generation workflow.
+
+The native build can use either that local package or the repository's optional
+CMake `FetchContent` integration. The choice of CMake integration does not
+change the generator command or its include-path resolution.
+
 ## Running Code Generation
 
 ```bash

@@ -12,7 +12,8 @@
 #
 # The base runtime is brought in via add_subdirectory and linked with WHOLE_ARCHIVE
 # for dart_cpp_bridge::runtime (STATIC library, forces all objects to be linked so dcb_* exports survive).
-# asio / async-simple versions are pinned and propagated by the base library; no need to declare them here.
+# asio / stdexec / MPMCQueue versions are pinned and propagated by the base
+# library; no need to declare them here.
 # =============================================================================
 
 cmake_minimum_required(VERSION 3.25)

@@ -87,17 +87,65 @@ await DcbCMakeBuilder(
 
 `false` 会跳过 builder 自动生成的 `-G`、架构、工具链、`CMAKE_BUILD_TYPE`、运行时链接、`BUILD_SHARED_LIBS` 和 `CMAKE_EXPORT_COMPILE_COMMANDS` 等 configure 参数；`-S/-B`、后续的 `cmake --build`、`--parallel` 以及你显式提供的 `extraDefines` 仍然会保留。关闭后，`DcbBuildOptions.debug` 不再通过 configure 参数设置构建类型，`copyCompileCommands` 也不会强制 CMake 生成该文件（但如果项目自行生成，builder 仍会尝试复制它）。
 
-## CMake 依赖由谁负责
+## 选择 CMake 集成方式
 
-`dart/native` 下的 CMake 可以嵌入更大的 CMake 工程。默认情况下，它仍
-保留通过 `FetchContent` 拉取固定版本 standalone Asio 和 stdexec 的路径。
-如果宿主工程已经通过包管理器、monorepo 或自己的 `FetchContent` 声明管理
-这些依赖，可以在加入 bridge 之前关闭对应的 fetch 选项：
+标准的 Dart/Flutter 项目使用本地 Dart package。只有当 native 部分由一个
+自行管理顶层构建的 CMake 工程负责时，才需要使用 `FetchContent` 从 GitHub
+获取 bridge 源码。
+
+### 本地 Dart package（默认）
+
+标准流程如下：
+
+1. 在 `pubspec.yaml` 中添加 `dart_cpp_bridge`，然后运行 `dart pub get`。
+2. 修改 API 头文件后运行 `dcb_gen_tool generate`。
+3. 让 Native Assets hook 构建 native target，或直接配置同一个 CMake 工程。
+
+代码生成时，`dcb_gen_tool` 从 `.dart_tool/package_config.json` 中记录的本地
+package 解析 `dart_cpp_bridge/native/include`。默认流程不需要 GitHub checkout，
+也不需要声明 `FetchContent`。
+
+### GitHub FetchContent（可选）
+
+如果希望由 CMake 工程自行获取 bridge 源码，可以直接使用仓库根目录提供的
+CMake 入口：
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+  dart_cpp_bridge
+  GIT_REPOSITORY https://github.com/deretame/dart_cpp_bridge.git
+  GIT_TAG v2.2.0  # 或固定到一个 commit
+)
+FetchContent_MakeAvailable(dart_cpp_bridge)
+
+# generated/wire_dispatch.cpp 由 dcb_gen_tool 生成。
+add_library(my_bridge SHARED
+  generated/wire_dispatch.cpp
+  api_impl/bridge_api.cpp
+)
+target_link_libraries(my_bridge PRIVATE
+  $<LINK_LIBRARY:WHOLE_ARCHIVE,dart_cpp_bridge::runtime>)
+```
+
+顶层入口会加入 `dart/native`。默认情况下，该 CMake 项目会获取固定版本的
+Asio、stdexec 和 MPMCQueue。如果 Dart API DL 头文件不存在，会下载到构建目录，
+不会修改 FetchContent 拉取下来的源码目录。
+
+代码生成仍在 Dart 项目中按平常方式执行；FetchContent 只决定 CMake 从哪里获取
+native bridge 及其构建依赖。
+
+### 使用父级 CMake 工程提供的依赖
+
+如果父级工程已经通过包管理器、monorepo 或自己的 `FetchContent` 声明提供
+Asio、stdexec 或 MPMCQueue，可以在加入 `dart/native` 之前关闭对应的 fetch 选项：
 
 ```cmake
 # 在 add_subdirectory(dart_cpp_bridge/dart/native ...) 之前设置。
 set(DCB_FETCH_STDEXEC OFF CACHE BOOL "" FORCE)
 set(DCB_FETCH_ASIO OFF CACHE BOOL "" FORCE)
+set(DCB_FETCH_MPMCQUEUE OFF CACHE BOOL "" FORCE)
 
 # 宿主工程必须在 add_subdirectory 之前提供这些 target：
 #   STDEXEC::stdexec
@@ -112,8 +160,8 @@ add_subdirectory(path/to/dart_cpp_bridge/dart/native
 `find_package(asio CONFIG)` 暴露 `asio::asio`。之后 runtime 会直接链接
 这些宿主 target，不再自行下载或 patch Asio/stdexec。
 
-这只改变 Asio 和 stdexec 的依赖所有权；其他 native 依赖以及 Dart API
-头文件仍保持现有的构建/下载流程。
+这只改变 native 依赖的所有权。`DCB_FETCH_DART_API` 控制 Dart API DL
+头文件是否自动下载；关闭后可以通过 `DCB_DART_API_DIR` 指定预取目录。
 
 ## 选择 Asio 命名空间
 
